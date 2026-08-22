@@ -32,5 +32,6 @@
       <section class="import-panel"><div><p class="eyebrow">Migration center</p><h2>Import a cpmove backup</h2><p class="import-copy">Stage a cPanel backup, review its contents, then restore website files and selected SQL databases into an isolated StePanel site.</p></div><form action="/api/cpmove/import" method="post" enctype="multipart/form-data" class="import-form"><label class="file-input"><span>Choose .tar.gz backup</span><input type="file" name="backup" accept=".gz,.tgz,.tar.gz" required></label><input name="username" placeholder="Account username" pattern="[a-z0-9_-]{1,32}" required><label class="check"><input type="checkbox" name="restore_databases"> Restore SQL databases</label><input name="confirm" placeholder="Type IMPORT to authorize" required><button class="primary-action" type="submit">Review &amp; restore</button></form></section>
     </main>
   </div>
+<script>document.querySelectorAll('form[action="/api/cpmove/import"]').forEach(function(form){form.addEventListener('submit',function(){var match=document.cookie.match(/(?:^|; )stepanel_csrf=([^;]+)/);if(match){var field=document.createElement('input');field.type='hidden';field.name='csrf';field.value=decodeURIComponent(match[1]);form.appendChild(field);}});});</script>
 </body>
 </html>

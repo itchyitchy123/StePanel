@@ -13,7 +13,7 @@ go build -trimpath -ldflags='-s -w' -o stepanel .
 sudo ./install.sh
 ```
 
-The installer creates:
+The installer also enables the Apache proxy, proxy_http, and headers modules on Debian-family systems. Replace the example hostname in the generated virtual host before production use. The installer creates:
 
 | Path | Purpose |
 | --- | --- |

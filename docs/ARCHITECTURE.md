@@ -25,3 +25,5 @@ StePanel HTTP server
 6. SQL restore is opt-in and uses account-prefixed database names.
 
 The current release does not provide authentication, authorization, rate limiting, or TLS. These are required before internet-facing production use.
+
+When configured, StePanel provides signed, expiring sessions, CSRF tokens for mutating forms, security response headers, and JSONL audit events. The current restore implementation runs inside the service account and writes only to the configured site root; a dedicated privileged helper remains the next hardening step for database/socket operations.

@@ -7,7 +7,7 @@ func TestSafeArchivePath(t *testing.T) {
 	for _, path := range valid {
 		if !safeArchivePath(path) { t.Errorf("expected archive path to be valid: %q", path) }
 	}
-	invalid := []string{"/etc/passwd", "../../etc/passwd", "homedir/../../etc/passwd", ".."}
+	invalid := []string{"/etc/passwd", "../../etc/passwd", "homedir/../../etc/passwd", "..", `homedir\\..\\etc\\passwd`}
 	for _, path := range invalid {
 		if safeArchivePath(path) { t.Errorf("expected archive path to be rejected: %q", path) }
 	}

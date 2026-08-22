@@ -15,7 +15,7 @@ RestartSec=5s
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/var/lib/ste-panel /var/www
+ReadWritePaths=/var/lib/ste-panel /var/www/sites
 
 [Install]
 WantedBy=multi-user.target

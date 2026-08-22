@@ -58,6 +58,9 @@ The installer creates a `stepanel` service account, installs the LAMP packages, 
 | `STEPANEL_LISTEN` | `:8080` | `127.0.0.1:8090` | HTTP listen address |
 | `STEPANEL_IMPORT_ROOT` | `data/imports` | `/var/lib/ste-panel/imports` | Private staging directory |
 | `STEPANEL_WEB_ROOT` | `data/www` | `/var/www` | Site destination root |
+| `STEPANEL_AUDIT_LOG` | `data/stepanel-audit.jsonl` | `/var/lib/ste-panel/audit.jsonl` | Append-only operational audit log |
+
+Set `STEPANEL_ADMIN_USERNAME`, `STEPANEL_ADMIN_PASSWORD`, and a long random `STEPANEL_SESSION_SECRET` in `/etc/ste-panel.env` before exposing the service. Authentication is disabled when the admin password is absent, which is intended only for local development.
 
 ## API surface
 
@@ -66,6 +69,7 @@ The installer creates a `stepanel` service account, installs the LAMP packages, 
 | `GET` | `/api/health` | Service discovery and liveness |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a multipart backup |
 | `POST` | `/api/cpmove/import` | Authorized restore of files and optional SQL |
+| `GET` | `/metrics` | Minimal Prometheus-compatible process metric |
 
 ## Security model
 
