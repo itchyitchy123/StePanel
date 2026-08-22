@@ -1,0 +1,7 @@
+/stepanel
+/bin/
+/dist/
+/coverage.out
+/data/
+*.log
+.DS_Store

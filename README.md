@@ -1,44 +1,78 @@
 # StePanel
 
-StePanel is a Go-based server control plane for small hosting fleets. It installs and supervises a LAMP stack, provides a focused operations dashboard, and can restore cPanel `cpmove` archives into isolated site roots.
+![CI](https://github.com/itchyitchy123/StePanel/actions/workflows/ci.yml/badge.svg)
 
-## What is included
+StePanel is a focused server control plane for small hosting fleets. It installs a LAMP foundation, exposes a calm operational dashboard, and provides a guarded workflow for importing cPanel `cpmove` backups.
 
-- Debian/Ubuntu and RHEL-family installation script for Apache, MySQL/MariaDB, PHP, and StePanel.
-- systemd service with a restricted service account and writable paths limited to application data and web roots.
-- cpmove `.tar.gz` inspection with archive size and path-traversal validation.
-- staged website restore to `/var/www/sites/<account>/public`.
-- optional SQL restore through the local `mysql` client, with account-prefixed database names.
-- JSON health endpoint at `/api/health`.
+> **Project status:** early development. Authentication, authorization, TLS termination, and a complete multi-tenant control plane are not implemented yet. Use behind an authenticated HTTPS reverse proxy and review every restore in a non-production environment first.
 
-## Install on a fresh server
+## Capabilities
 
-Build the binary on a machine with Go 1.22+, copy the repository and binary to the server, then run:
+- Apache, MySQL/MariaDB, PHP, and StePanel installation on Debian/Ubuntu and RHEL-family servers.
+- Dedicated system user and systemd service with restricted writable paths.
+- cpmove `.tar.gz` validation before extraction, including archive size and traversal checks.
+- Timestamped private staging for backups.
+- Website restore to `/var/www/sites/<account>/public`.
+- Optional SQL restore using account-prefixed database names.
+- JSON health endpoint for monitoring integrations.
+- Server-rendered Go application with a small dependency surface.
+
+## Quick start
+
+### Build and run locally
+
+Requires Go 1.22 or newer.
 
 ```sh
-go build -o stepanel .
+make check
+go run .
+```
+
+Open <http://localhost:8080>. Local development defaults to `data/imports` and `data/www`, so root access is not required.
+
+### Install on a server
+
+Build a release binary, copy the repository and binary to the target host, and run the installer as root:
+
+```sh
+go build -trimpath -ldflags='-s -w' -o stepanel .
 sudo ./install.sh
 ```
 
-The installer creates a `stepanel` system user, stores imports in `/var/lib/ste-panel/imports`, and binds the control plane to `127.0.0.1:8090`. Put Apache or an existing edge proxy in front of it and enable HTTPS before exposing the dashboard publicly.
+The installer creates a `stepanel` service account, installs the LAMP packages, configures systemd, and binds StePanel to `127.0.0.1:8090`. Configure the Apache reverse proxy in [`deploy/apache/stepanel.conf`](deploy/apache/stepanel.conf) and enable HTTPS before exposing it.
 
-## cpmove import
+## Documentation
 
-1. Open the StePanel dashboard.
-2. Select a cPanel `.tar.gz`/`.tgz` archive and enter the destination account username.
-3. Choose whether SQL databases should be restored.
-4. Type `IMPORT` to explicitly authorize the restore.
-
-The application validates the archive and extracts it into a timestamped staging directory before copying files. Database names are prefixed with the target account name. Existing site files may be overwritten, so take a snapshot before importing into a live site.
+- [Installation guide](docs/INSTALLATION.md)
+- [cpmove import guide](docs/CPMOVE_IMPORTS.md)
+- [Architecture and safety model](docs/ARCHITECTURE.md)
+- [Operations runbook](docs/OPERATIONS.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
 ## Configuration
 
-| Variable | Default | Purpose |
+| Variable | Default in development | Installed default | Purpose |
+| --- | --- | --- | --- |
+| `STEPANEL_LISTEN` | `:8080` | `127.0.0.1:8090` | HTTP listen address |
+| `STEPANEL_IMPORT_ROOT` | `data/imports` | `/var/lib/ste-panel/imports` | Private staging directory |
+| `STEPANEL_WEB_ROOT` | `data/www` | `/var/www` | Site destination root |
+
+## API surface
+
+| Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `STEPANEL_LISTEN` | `:8080` | HTTP listen address |
-| `STEPANEL_IMPORT_ROOT` | `/var/lib/ste-panel/imports` | Staging directory |
-| `STEPANEL_WEB_ROOT` | `/var/www` | Site destination root |
+| `GET` | `/api/health` | Service discovery and liveness |
+| `POST` | `/api/cpmove/inspect` | Validate and inspect a multipart backup |
+| `POST` | `/api/cpmove/import` | Authorized restore of files and optional SQL |
 
-## Security notes
+## Security model
 
-The initial release intentionally does not include user authentication or TLS termination. Deploy it behind an authenticated HTTPS reverse proxy or Apache before use on a network. Import endpoints require root and an explicit `IMPORT` confirmation, but authentication and role-based access are required before production exposure.
+The importer requires root, rejects unsafe archive paths, stages the upload privately, and requires the literal `IMPORT` confirmation. SQL restoration is opt-in. Existing site files can be overwritten, so snapshot the destination first.
+
+StePanel does not yet provide authentication or TLS. Do not bind it publicly. Place it behind an authenticated reverse proxy, restrict access to trusted administrators, and use HTTPS.
+
+## License
+
+StePanel is released under the [MIT License](LICENSE).
