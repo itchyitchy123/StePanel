@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }} · operations cockpit</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="StePanel home"><span class="brand-mark">S</span><span>StePanel</span></a>
+      <div class="topbar-meta"><span class="pulse"></span> Control plane online <span class="divider"></span> <span>22 Aug 2026</span><button class="avatar" aria-label="Account menu">ST</button></div>
+    </header>
+    <main class="content">
+      <section class="hero">
+        <div><p class="eyebrow">Workspace / Overview</p><h1>Good evening, Stephen.</h1><p class="lede">A calm view of the systems that keep your work moving.</p></div>
+        <button class="primary-action">+ Provision resource</button>
+      </section>
+      <section class="metrics" aria-label="Fleet summary">
+        <article class="metric"><span class="metric-label">Fleet health</span><strong>96.4%</strong><span class="metric-note positive">↑ 2.1% this week</span></article>
+        <article class="metric"><span class="metric-label">Active nodes</span><strong>24 <small>/ 26</small></strong><span class="metric-note">2 in maintenance</span></article>
+        <article class="metric"><span class="metric-label">Monthly spend</span><strong>€184.20</strong><span class="metric-note">€42.80 below budget</span></article>
+        <article class="metric"><span class="metric-label">Open alerts</span><strong>03</strong><span class="metric-note warning">1 needs attention</span></article>
+      </section>
+      <div class="section-heading"><div><p class="eyebrow">Your infrastructure</p><h2>Resources</h2></div><button class="quiet-action">View activity →</button></div>
+      <section class="resource-table" aria-label="Infrastructure resources">
+        <div class="table-head"><span>Resource</span><span>Location</span><span>State</span><span>Load</span><span>Uptime</span><span></span></div>
+        {{ range .Servers }}<div class="table-row"><span class="resource-name"><span class="server-icon">⌁</span><span><strong>{{ .Name }}</strong><small>Compute node</small></span></span><span class="muted">{{ .Region }}</span><span><span class="status {{ if eq .Status "Operational" }}status-ok{{ else }}status-warn{{ end }}"><i></i>{{ .Status }}</span></span><span class="mono">{{ .Load }}</span><span class="mono muted">{{ .Uptime }}</span><button class="row-action" aria-label="Open {{ .Name }}">···</button></div>{{ end }}
+      </section>
+      <section class="lower-grid"><article class="activity-card"><div class="card-heading"><div><p class="eyebrow">Live feed</p><h2>Recent activity</h2></div><span class="live-label"><i></i> Live</span></div><div class="activity-item"><span class="activity-dot blue"></span><div><strong>Snapshot completed</strong><p>vault-core-02 · 12 minutes ago</p></div><span class="activity-time">12m</span></div><div class="activity-item"><span class="activity-dot green"></span><div><strong>Certificate renewed</strong><p>edge-north-01 · 48 minutes ago</p></div><span class="activity-time">48m</span></div><div class="activity-item"><span class="activity-dot amber"></span><div><strong>Maintenance scheduled</strong><p>build-west-01 · 2 hours ago</p></div><span class="activity-time">2h</span></div></article><article class="brief-card"><span class="brief-icon">✦</span><p class="eyebrow">StePanel brief</p><h2>One maintenance window is coming up.</h2><p>build-west-01 will be unavailable tomorrow at 02:00 UTC for a scheduled kernel update.</p><button class="text-action">Review schedule <span>→</span></button></article></section>
+    </main>
+  </div>
+</body>
+</html>
