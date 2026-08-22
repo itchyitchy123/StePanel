@@ -1,26 +1,44 @@
 # StePanel
 
-StePanel is an original infrastructure operations cockpit written in Go. It is being designed as a calm, high-signal control plane for small fleets: health at a glance, resource activity, maintenance windows, and an extensible API for future provisioning and observability features.
+StePanel is a Go-based server control plane for small hosting fleets. It installs and supervises a LAMP stack, provides a focused operations dashboard, and can restore cPanel `cpmove` archives into isolated site roots.
 
-This repository is intentionally independent of the referenced `zepanel` project. That repository currently contains only a GitLab scaffold and has no application implementation to port.
+## What is included
 
-## Run locally
+- Debian/Ubuntu and RHEL-family installation script for Apache, MySQL/MariaDB, PHP, and StePanel.
+- systemd service with a restricted service account and writable paths limited to application data and web roots.
+- cpmove `.tar.gz` inspection with archive size and path-traversal validation.
+- staged website restore to `/var/www/sites/<account>/public`.
+- optional SQL restore through the local `mysql` client, with account-prefixed database names.
+- JSON health endpoint at `/api/health`.
 
-Requires Go 1.22 or newer.
+## Install on a fresh server
+
+Build the binary on a machine with Go 1.22+, copy the repository and binary to the server, then run:
 
 ```sh
-go run .
+go build -o stepanel .
+sudo ./install.sh
 ```
 
-Open <http://localhost:8080>.
+The installer creates a `stepanel` system user, stores imports in `/var/lib/ste-panel/imports`, and binds the control plane to `127.0.0.1:8090`. Put Apache or an existing edge proxy in front of it and enable HTTPS before exposing the dashboard publicly.
 
-## Direction
+## cpmove import
 
-- Go standard-library backend first, with a small dependency surface.
-- Server-rendered HTML for the initial cockpit and progressively enhanced interactions.
-- Clear separation between control-plane API, resource adapters, and presentation.
-- Distinct visual identity: warm paper canvas, dark ink, lime signal color, and operational typography.
+1. Open the StePanel dashboard.
+2. Select a cPanel `.tar.gz`/`.tgz` archive and enter the destination account username.
+3. Choose whether SQL databases should be restored.
+4. Type `IMPORT` to explicitly authorize the restore.
 
-## Planned modules
+The application validates the archive and extracts it into a timestamped staging directory before copying files. Database names are prefixed with the target account name. Existing site files may be overwritten, so take a snapshot before importing into a live site.
 
-The next implementation slice is authentication and a real resource model, followed by adapters for system metrics, service lifecycle, backups, certificates, and audit events.
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `STEPANEL_LISTEN` | `:8080` | HTTP listen address |
+| `STEPANEL_IMPORT_ROOT` | `/var/lib/ste-panel/imports` | Staging directory |
+| `STEPANEL_WEB_ROOT` | `/var/www` | Site destination root |
+
+## Security notes
+
+The initial release intentionally does not include user authentication or TLS termination. Deploy it behind an authenticated HTTPS reverse proxy or Apache before use on a network. Import endpoints require root and an explicit `IMPORT` confirmation, but authentication and role-based access are required before production exposure.

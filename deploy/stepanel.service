@@ -1,0 +1,21 @@
+[Unit]
+Description=StePanel infrastructure control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stepanel
+Group=stepanel
+WorkingDirectory=/opt/stepanel
+EnvironmentFile=/etc/ste-panel.env
+ExecStart=/opt/stepanel/stepanel
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/ste-panel /var/www
+
+[Install]
+WantedBy=multi-user.target
