@@ -1,0 +1,53 @@
+{{- define "stepanel.labels" -}}
+app.kubernetes.io/name: stepanel
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stepanel.labels" . | sha256sum | trunc 12 }}
+  labels:
+    {{- include "stepanel.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: stepanel
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-stepanel
+  labels:
+    {{- include "stepanel.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stepanel
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: stepanel
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: stepanel
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{name: http, containerPort: 8080}]
+          env:
+            - {name: STEPANEL_PRODUCTION, value: "true"}
+            - {name: STEPANEL_LISTEN, value: ":8080"}
+            - name: STEPANEL_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: admin-password}}
+            - name: STEPANEL_SESSION_SECRET
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: session-secret}}
+          readinessProbe: {httpGet: {path: /api/health, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 15, periodSeconds: 20}
+          resources: {{- toYaml .Values.resources | nindent 12 }}

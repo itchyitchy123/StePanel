@@ -1,0 +1,16 @@
+image:
+  repository: ghcr.io/itchyitchy123/stepanel
+  tag: latest
+  pullPolicy: IfNotPresent
+replicaCount: 2
+service:
+  port: 8080
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: 500m, memory: 512Mi}
+secrets:
+  existingSecret: stepanel-secrets
+ingress:
+  enabled: false
+  className: ""
+  host: stepanel.example.com

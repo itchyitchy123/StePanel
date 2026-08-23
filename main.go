@@ -17,10 +17,11 @@ import (
 )
 
 type App struct {
-	Config Config
-	View   *template.Template
-	Auth   Auth
-	Jobs   *Jobs
+	Config  Config
+	View    *template.Template
+	Auth    Auth
+	Jobs    *Jobs
+	Metrics *Metrics
 }
 
 func main() {
@@ -35,7 +36,7 @@ func main() {
 	if cfg.Production && !auth.Enabled {
 		log.Fatal("authentication must be configured in production")
 	}
-	app := &App{Config: cfg, View: template.Must(template.ParseFiles("web/index.html")), Auth: auth, Jobs: NewJobs()}
+	app := &App{Config: cfg, View: template.Must(template.ParseFiles("web/index.html")), Auth: auth, Jobs: NewJobs(), Metrics: NewMetrics()}
 	if !app.Auth.Enabled {
 		log.Println("warning: authentication is disabled; set STEPANEL_ADMIN_PASSWORD and STEPANEL_SESSION_SECRET")
 	}
@@ -89,7 +90,7 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-	_, _ = w.Write([]byte("# HELP stepanel_up StePanel process health\n# TYPE stepanel_up gauge\nstepanel_up 1\n"))
+	a.Metrics.Write(w)
 }
 func (a *App) inspect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -160,10 +161,14 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	databaseRestore := r.FormValue("restore_databases") == "on"
 	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + user
+	a.Metrics.RestoreStarted()
 	a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
+		var restoreErr error
+		defer func() { a.Metrics.RestoreFinished(restoreErr) }()
 		defer os.Remove(tempPath)
 		staged, openErr := os.Open(tempPath)
 		if openErr != nil {
+			restoreErr = openErr
 			return ImportResult{}, openErr
 		}
 		defer staged.Close()

@@ -1,0 +1,29 @@
+{
+  "title": "StePanel restore operations",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Active restores",
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 0},
+      "targets": [{"expr": "stepanel_restore_jobs_active", "legendFormat": "active"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Restore throughput",
+      "gridPos": {"h": 8, "w": 16, "x": 8, "y": 0},
+      "targets": [
+        {"expr": "rate(stepanel_restore_jobs_completed_total[5m])", "legendFormat": "completed/s"},
+        {"expr": "rate(stepanel_restore_jobs_failed_total[5m])", "legendFormat": "failed/s"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Restore failures",
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 5},
+      "targets": [{"expr": "increase(stepanel_restore_jobs_failed_total[24h])", "legendFormat": "last 24h"}]
+    }
+  ]
+}
