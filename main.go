@@ -56,6 +56,7 @@ func main() {
 	mux.HandleFunc("/api/health", app.health)
 	mux.Handle("/api/services", app.Auth.Require(http.HandlerFunc(app.services)))
 	mux.Handle("/api/security/audit", app.Auth.Require(http.HandlerFunc(app.securityAudit)))
+	mux.Handle("/api/security/scan", app.Auth.Require(http.HandlerFunc(app.malwareScan)))
 	mux.Handle("/api/node/versions", app.Auth.Require(http.HandlerFunc(app.nodeVersions)))
 	mux.Handle("/api/node/select", app.Auth.Require(http.HandlerFunc(app.selectNode)))
 	mux.Handle("/api/proxy/deploy", app.Auth.Require(http.HandlerFunc(app.deployProxy)))

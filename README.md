@@ -95,6 +95,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 - [Architecture and safety model](docs/ARCHITECTURE.md)
 - [Feature catalog](docs/FEATURES.md)
 - [Threat model](docs/THREAT_MODEL.md)
+- [Malware guard](docs/MALWARE_GUARD.md)
 - [Release procedure](docs/RELEASING.md)
 - [Operations runbook](docs/OPERATIONS.md)
 - [Product roadmap](docs/ROADMAP.md)
@@ -124,6 +125,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | `GET` | `/api/node/versions` | List installed NVM Node versions |
 | `POST` | `/api/node/select` | Select an installed Node version for a managed site |
 | `POST` | `/api/proxy/deploy` | Generate and reload a validated Apache reverse proxy |
+| `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
 | `POST` | `/api/cpmove/import` | Start an authorized restore job |
 | `GET` | `/api/jobs/<id>` | Poll restore status |
@@ -155,6 +157,11 @@ Node versions through NVM. The panel can select an installed version per site
 and generate a validated Apache reverse proxy for a local app backend.
 Managed apps are supervised by per-site systemd units and can be started,
 stopped, or restarted through the authenticated API.
+
+Set `STEPANEL_INSTALL_SECURITY=1` to install ClamAV, inotify-based PHP
+monitoring, and recoverable quarantine handling. This is a defense-in-depth
+layer, not a guarantee against all malware; keep applications patched and use
+least-privilege service accounts.
 Mailbox contents are preserved in the private mail root and reported by the
 restore job; activation still requires destination domain, mailbox, DNS, TLS,
 and credential mapping.

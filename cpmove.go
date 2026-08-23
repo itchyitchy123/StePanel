@@ -153,7 +153,13 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 		_ = os.Rename(backup, home)
 		return ImportResult{}, err
 	}
-	if source := firstExisting(filepath.Join(stage, "homedir", "public_html"), filepath.Join(stage, "homedir", user, "public_html")); source != "" {
+	source := firstExisting(filepath.Join(stage, "homedir", "public_html"), filepath.Join(stage, "homedir", user, "public_html"))
+	if source != "" {
+		if findings, scanErr := scanPHP(source); scanErr != nil {
+			return ImportResult{}, fmt.Errorf("malware scan failed: %w", scanErr)
+		} else if len(findings) > 0 {
+			return ImportResult{}, fmt.Errorf("restore blocked: malware scan detected %d suspicious PHP file(s)", len(findings))
+		}
 		if err = copyTree(source, home); err != nil {
 			_ = os.RemoveAll(home)
 			_ = os.Rename(backup, home)

@@ -13,6 +13,7 @@ FPM_LENS_BINARY="${STEPANEL_FPM_LENS_BINARY:-}"
 INSTALL_MODSEC="${STEPANEL_INSTALL_MODSEC:-0}"; MODSEC_MODE="${STEPANEL_MODSEC_MODE:-DetectionOnly}"
 INSTALL_MAIL="${STEPANEL_INSTALL_MAIL:-0}"
 INSTALL_NODE="${STEPANEL_INSTALL_NODE:-0}"; NODE_VERSIONS="${STEPANEL_NODE_VERSIONS:-20.18.0}"
+INSTALL_SECURITY="${STEPANEL_INSTALL_SECURITY:-0}"
 if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then read -r -s -p "StePanel admin password: " ADMIN_PASSWORD; echo; fi
 if [[ -z "$ADMIN_PASSWORD" ]]; then echo "Set STEPANEL_ADMIN_PASSWORD or run the installer interactively." >&2; exit 1; fi
 if [[ -z "$SESSION_SECRET" ]]; then SESSION_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"; fi
@@ -57,6 +58,7 @@ if [[ "$INSTALL_MODSEC" != "0" && "$INSTALL_MODSEC" != "1" ]]; then echo "STEPAN
 if [[ "$MODSEC_MODE" != "Off" && "$MODSEC_MODE" != "DetectionOnly" && "$MODSEC_MODE" != "On" ]]; then echo "STEPANEL_MODSEC_MODE must be Off, DetectionOnly, or On." >&2; exit 1; fi
 if [[ "$INSTALL_MAIL" != "0" && "$INSTALL_MAIL" != "1" ]]; then echo "STEPANEL_INSTALL_MAIL must be 0 or 1." >&2; exit 1; fi
 if [[ "$INSTALL_NODE" != "0" && "$INSTALL_NODE" != "1" ]]; then echo "STEPANEL_INSTALL_NODE must be 0 or 1." >&2; exit 1; fi
+if [[ "$INSTALL_SECURITY" != "0" && "$INSTALL_SECURITY" != "1" ]]; then echo "STEPANEL_INSTALL_SECURITY must be 0 or 1." >&2; exit 1; fi
 [[ "$NODE_VERSIONS" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(,v?[0-9]+\.[0-9]+\.[0-9]+)*$ ]] || { echo "Invalid STEPANEL_NODE_VERSIONS." >&2; exit 1; }
 
 install_mail_stack() {
@@ -121,6 +123,10 @@ install -d -m 0755 "$APP_DIR/integrations"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
 usermod -a -G "$WEB_GROUP" "$APP_USER"
 if [[ "$INSTALL_NODE" == "1" ]]; then bash "$ROOT_DIR/deploy/integrations/install-node-nvm.sh" "$APP_USER" "$APP_DIR/.nvm" "$NODE_VERSIONS"; fi
+if [[ "$INSTALL_SECURITY" == "1" ]]; then
+  if [[ "$PKG" == "apt" ]]; then apt-get install -y clamav clamav-daemon inotify-tools; else dnf install -y clamav clamav-update inotify-tools; fi
+  install -d -m 0700 "$DATA_DIR/quarantine"
+fi
 install -m 0755 "$ROOT_DIR/stepanel" "$APP_DIR/stepanel"
 install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/integrations/install-fail2ban.sh"
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
@@ -134,10 +140,13 @@ if [[ "$PKG" == "apt" ]]; then install -m 0644 "$ROOT_DIR/deploy/apache/stepanel
 chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$DATA_DIR"; chown "$APP_USER:$WEB_GROUP" /var/www/sites; chmod 2750 /var/www/sites
 printf 'STEPANEL_ENV=production\nSTEPANEL_LISTEN=127.0.0.1:8090\nSTEPANEL_ADMIN_USERNAME=%s\nSTEPANEL_ADMIN_PASSWORD=%s\nSTEPANEL_SESSION_SECRET=%s\nSTEPANEL_DB_ENGINE=%s\nSTEPANEL_DB_VERSION=%s\nSTEPANEL_IMPORT_ROOT=%s/imports\nSTEPANEL_WEB_ROOT=/var/www\nSTEPANEL_MAIL_ROOT=%s/mail\nSTEPANEL_NVM_DIR=%s/.nvm\nSTEPANEL_PROXY_ROOT=%s/proxy\nSTEPANEL_APP_ROOT=%s/apps\nSTEPANEL_APPCTL=/usr/local/sbin/stepanel-appctl\nSTEPANEL_APACHE_RELOAD=/usr/local/sbin/stepanel-apache-reload\nSTEPANEL_AUDIT_LOG=%s/audit.jsonl\n' "$ADMIN_USERNAME" "$ADMIN_PASSWORD" "$SESSION_SECRET" "$DB_ENGINE" "$DB_VERSION" "$DATA_DIR" "$DATA_DIR" "$APP_DIR" "$DATA_DIR" "$DATA_DIR" "$DATA_DIR" > "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
+printf 'STEPANEL_MALWARE_ROOT=%s/quarantine\n' "$DATA_DIR" >> "$ENV_FILE"
 install -m 0644 "$ROOT_DIR/deploy/stepanel.service" /etc/systemd/system/stepanel.service
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-apache-reload" /usr/local/sbin/stepanel-apache-reload
+if [[ "$INSTALL_SECURITY" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-malware-guard" /usr/local/sbin/stepanel-malware-guard; install -m 0644 "$ROOT_DIR/deploy/stepanel-malware-guard.service" /etc/systemd/system/stepanel-malware-guard.service; fi
 if [[ "$PKG" == "apt" ]]; then printf 'IncludeOptional %s/proxy/*.conf\n' "$DATA_DIR" > /etc/apache2/conf-available/stepanel-proxy.conf; a2enconf stepanel-proxy >/dev/null; else printf 'IncludeOptional %s/proxy/*.conf\n' "$DATA_DIR" > /etc/httpd/conf.d/stepanel-proxy.conf; fi
 systemctl daemon-reload; systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" stepanel; systemctl reload "$APACHE_SERVICE" || true
+if [[ "$INSTALL_SECURITY" == "1" ]]; then systemctl enable --now stepanel-malware-guard; fi
 if [[ "$INSTALL_MAIL" == "1" ]]; then systemctl enable --now "$([[ "$PKG" == "apt" ]] && echo exim4 || echo exim)" dovecot "$MAIL_SPAM_SERVICE"; fi
 if [[ "$INSTALL_FAIL2BAN" == "1" ]]; then
   bash "$APP_DIR/integrations/install-fail2ban.sh" --yes --jails "$FAIL2BAN_JAILS" --ignore-ip "$FAIL2BAN_IGNORE_IP"
