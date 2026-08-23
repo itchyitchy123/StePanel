@@ -1,38 +1,51 @@
 # StePanel
 
-![CI](https://github.com/itchyitchy123/StePanel/actions/workflows/ci.yml/badge.svg) ![Release](https://img.shields.io/github/v/release/itchyitchy123/StePanel?display_name=tag)
+![CI](https://github.com/itchyitchy123/StePanel/actions/workflows/ci.yml/badge.svg) ![Release](https://img.shields.io/github/v/release/itchyitchy123/StePanel?display_name=tag) ![License](https://img.shields.io/github/license/itchyitchy123/StePanel)
 
-StePanel is a focused server control plane for small hosting fleets. It installs a LAMP foundation, exposes a calm operational dashboard, and provides a guarded workflow for importing cPanel `cpmove` backups.
+> A modern, safety-first control plane for LAMP hosting and cPanel migrations.
 
-> **Project status:** early development. Authentication, authorization, TLS termination, and a complete multi-tenant control plane are not implemented yet. Use behind an authenticated HTTPS reverse proxy and review every restore in a non-production environment first.
+StePanel is an open-source server management panel written in Go. It installs Apache, PHP, and a selectable MySQL or MariaDB version, provides a focused operations dashboard, and imports cPanel `cpmove` backups through an asynchronous, validated workflow.
 
-## Capabilities
+It is designed for people who want a small, understandable hosting control plane instead of a large opaque platform.
 
-- Apache, MySQL/MariaDB, PHP, and StePanel installation on Debian/Ubuntu and RHEL-family servers.
-- Dedicated system user and systemd service with restricted writable paths.
-- cpmove `.tar.gz` validation before extraction, including archive size and traversal checks.
-- Timestamped private staging for backups.
-- Website restore to `/var/www/sites/<account>/public`.
-- Optional SQL restore using account-prefixed database names.
-- JSON health endpoint for monitoring integrations.
-- Server-rendered Go application with a small dependency surface.
+## Why StePanel?
 
-## Quick start
+- **Migration-focused:** move cPanel accounts into a controlled LAMP environment.
+- **Safety-first:** validate archives, reject unsafe entries, stage uploads privately, and expose restore status as a job.
+- **Small footprint:** a Go control plane with a limited dependency surface.
+- **Operator-friendly:** clear health endpoints, audit events, systemd deployment, and readable documentation.
+- **Flexible database layer:** choose MySQL or MariaDB and request an exact repository version during installation.
 
-### Build and run locally
+## Current capabilities
 
-Requires Go 1.22 or newer.
+| Area | Included today |
+| --- | --- |
+| Installation | Apache, PHP, MySQL/MariaDB, systemd, Debian/Ubuntu and RHEL-family systems |
+| Migration | cPanel `.tar.gz` inspection, safe staging, website restore, optional SQL restore |
+| Operations | Dashboard, health endpoint, metrics endpoint, audit log, asynchronous restore jobs |
+| Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |
+| Delivery | Dockerfile, ARM64/AMD64 release workflow, checksums, CI, vulnerability scanning |
+
+> **Status:** StePanel is in early development. It is not yet a complete multi-tenant hosting platform. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
+
+## See it quickly
+
+### Local development
+
+Requirements: Go 1.22+.
 
 ```sh
+git clone https://github.com/itchyitchy123/StePanel.git
+cd StePanel
 make check
 go run .
 ```
 
-Open <http://localhost:8080>. Local development defaults to `data/imports` and `data/www`, so root access is not required.
+Open <http://localhost:8080>. Local development uses `data/imports` and `data/www`, so root access is not required.
 
-### Container image
+### Container
 
-The container packages the StePanel control plane only. It does not install Apache or MySQL/MariaDB inside the container; use the host installer for a complete LAMP server or connect the control plane to separately managed services.
+The container packages the control plane only. It does not run Apache or MySQL/MariaDB inside the container.
 
 ```sh
 docker build -t stepanel:local .
@@ -42,57 +55,70 @@ docker run --rm -p 8080:8080 \
   stepanel:local
 ```
 
-### Install on a server
+### Server installation
 
-Build a release binary, copy the repository and binary to the target host, and run the installer as root:
+Build a release binary and run the installer as root:
 
 ```sh
 go build -trimpath -ldflags='-s -w' -o stepanel .
-sudo ./install.sh
+sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
+  STEPANEL_DB_ENGINE=mariadb \
+  STEPANEL_DB_VERSION=default ./install.sh
 ```
 
-The installer creates a `stepanel` service account, installs the LAMP packages, configures systemd, and binds StePanel to `127.0.0.1:8090`. Configure the Apache reverse proxy in [`deploy/apache/stepanel.conf`](deploy/apache/stepanel.conf) and enable HTTPS before exposing it.
+The installer records the selected database engine/version, creates a restricted `stepanel` service account, and binds the control plane to `127.0.0.1:8090`. Configure [`deploy/apache/stepanel.conf`](deploy/apache/stepanel.conf) and HTTPS before exposing it.
+
+## cpmove migration
+
+1. Snapshot the destination server.
+2. Open the migration center and upload a cPanel `.tar.gz` archive.
+3. Choose the destination account and whether SQL should be restored.
+4. Type `IMPORT` to authorize the operation.
+5. Poll the returned job status until it completes or fails.
+6. Review the audit log and verify the site before switching traffic.
+
+Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are restored to account-prefixed database names. Existing destination files can be overwritten; always snapshot first.
 
 ## Documentation
 
 - [Installation guide](docs/INSTALLATION.md)
-- [cpmove import guide](docs/CPMOVE_IMPORTS.md)
+- [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
 - [Architecture and safety model](docs/ARCHITECTURE.md)
 - [Operations runbook](docs/OPERATIONS.md)
+- [Product roadmap](docs/ROADMAP.md)
+- [Launch kit and repository metadata](docs/LAUNCH_KIT.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
-- [Product roadmap](docs/ROADMAP.md)
 - [Release artifacts](https://github.com/itchyitchy123/StePanel/releases)
-
-## Configuration
-
-| Variable | Default in development | Installed default | Purpose |
-| --- | --- | --- | --- |
-| `STEPANEL_LISTEN` | `:8080` | `127.0.0.1:8090` | HTTP listen address |
-| `STEPANEL_IMPORT_ROOT` | `data/imports` | `/var/lib/ste-panel/imports` | Private staging directory |
-| `STEPANEL_WEB_ROOT` | `data/www` | `/var/www` | Site destination root |
-| `STEPANEL_AUDIT_LOG` | `data/stepanel-audit.jsonl` | `/var/lib/ste-panel/audit.jsonl` | Append-only operational audit log |
-| `STEPANEL_DB_ENGINE` | `mysql` | Selected during installation | MySQL or MariaDB |
-| `STEPANEL_DB_VERSION` | `default` | Selected during installation | Exact repository version or distribution default |
-
-Set `STEPANEL_ADMIN_USERNAME`, `STEPANEL_ADMIN_PASSWORD`, and a long random `STEPANEL_SESSION_SECRET` in `/etc/ste-panel.env` before exposing the service. Authentication is disabled when the admin password is absent, which is intended only for local development.
 
 ## API surface
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | Service discovery and liveness |
-| `POST` | `/api/cpmove/inspect` | Validate and inspect a multipart backup |
-| `POST` | `/api/cpmove/import` | Authorized restore of files and optional SQL |
-| `GET` | `/api/jobs/<id>` | Poll an asynchronous restore job |
-| `GET` | `/metrics` | Minimal Prometheus-compatible process metric |
+| `GET` | `/api/health` | Version and service health |
+| `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
+| `POST` | `/api/cpmove/import` | Start an authorized restore job |
+| `GET` | `/api/jobs/<id>` | Poll restore status |
+| `GET` | `/metrics` | Prometheus-compatible process metric |
 
-## Security model
+## Configuration
 
-The importer requires root, rejects unsafe archive paths, stages the upload privately, and requires the literal `IMPORT` confirmation. SQL restoration is opt-in. Existing site files can be overwritten, so snapshot the destination first.
+| Variable | Purpose |
+| --- | --- |
+| `STEPANEL_LISTEN` | HTTP listen address |
+| `STEPANEL_ADMIN_USERNAME` | Administrator username |
+| `STEPANEL_ADMIN_PASSWORD` | Administrator password |
+| `STEPANEL_SESSION_SECRET` | Persistent session-signing secret, minimum 32 characters |
+| `STEPANEL_DB_ENGINE` | `mysql` or `mariadb` during installation |
+| `STEPANEL_DB_VERSION` | `default` or an exact repository version |
+| `STEPANEL_IMPORT_ROOT` | Private backup staging directory |
+| `STEPANEL_WEB_ROOT` | Site destination root |
+| `STEPANEL_AUDIT_LOG` | JSONL audit log path |
 
-StePanel does not yet provide authentication or TLS. Do not bind it publicly. Place it behind an authenticated reverse proxy, restrict access to trusted administrators, and use HTTPS.
+## Roadmap
+
+The next product milestones are first-run setup, site/domain lifecycle, PHP-FPM management, HTTPS automation, snapshot-backed rollback, scheduled backups, and multi-user roles. See the [roadmap](docs/ROADMAP.md) for the full plan.
 
 ## License
 
