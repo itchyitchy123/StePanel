@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -19,7 +20,7 @@ type ServiceSummary struct {
 
 func ServiceStatus() map[string]string {
 	result := map[string]string{}
-	for _, service := range []string{"apache2", "httpd", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd"} {
+	for _, service := range []string{"apache2", "httpd", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
 		if _, err := exec.LookPath(service); err == nil {
 			result[service] = "installed"
 		}
@@ -54,7 +55,7 @@ func ServiceSummaries() []ServiceSummary {
 			}
 		}
 	}
-	services := []string{"apache2", "mysql", "php-fpm", "fail2ban", "modsecurity", "exim", "dovecot", "spamassassin"}
+	services := []string{"apache2", "mysql", "php-fpm", "fail2ban", "modsecurity", "exim", "dovecot", "spamassassin", "vsftpd"}
 	result := make([]ServiceSummary, 0, len(services))
 	for _, name := range services {
 		state := status[name]
@@ -76,6 +77,22 @@ func ServiceSummaries() []ServiceSummary {
 		result = append(result, ServiceSummary{Name: name, Region: "this server", Status: state, Load: load, Uptime: uptime})
 	}
 	return result
+}
+
+func (a *App) ftpStatus(w http.ResponseWriter, r *http.Request) {
+	status := ServiceStatus()["vsftpd"]
+	if status == "" {
+		status = "missing"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"service":           "vsftpd",
+		"status":            status,
+		"anonymous":         false,
+		"local_user_chroot": true,
+		"passive_ports":     []int{a.Config.FTPPassiveMin, a.Config.FTPPassiveMax},
+		"ftps_required":     false,
+		"setup_warning":     "Configure FTPS, firewall rules, and per-site users before external access.",
+	})
 }
 
 func formatUptime(seconds float64) string {

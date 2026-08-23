@@ -25,7 +25,7 @@ resource "kubernetes_deployment" "stepanel" {
     labels    = {"app.kubernetes.io/name" = "stepanel"}
   }
   spec {
-    replicas = 2
+    replicas = 1
     selector {
       match_labels = {"app.kubernetes.io/name" = "stepanel"}
     }
@@ -45,8 +45,8 @@ resource "kubernetes_deployment" "stepanel" {
             container_port = 8080
           }
           env {
-            name  = "STEPANEL_PRODUCTION"
-            value = "true"
+            name  = "STEPANEL_ENV"
+            value = "production"
           }
           env {
             name  = "STEPANEL_LISTEN"
@@ -89,8 +89,46 @@ resource "kubernetes_deployment" "stepanel" {
             requests = {cpu = "100m", memory = "128Mi"}
             limits   = {cpu = "500m", memory = "512Mi"}
           }
+          volume_mount {
+            name       = "stepanel-data"
+            mount_path = "/var/lib/ste-panel"
+          }
+          volume_mount {
+            name       = "stepanel-sites"
+            mount_path = "/var/www/sites"
+          }
+        }
+        volume {
+          name = "stepanel-data"
+          persistent_volume_claim { claim_name = kubernetes_persistent_volume_claim.stepanel_data.metadata[0].name }
+        }
+        volume {
+          name = "stepanel-sites"
+          persistent_volume_claim { claim_name = kubernetes_persistent_volume_claim.stepanel_sites.metadata[0].name }
         }
       }
     }
+  }
+}
+
+resource "kubernetes_persistent_volume_claim" "stepanel_data" {
+  metadata {
+    name      = "stepanel-data"
+    namespace = kubernetes_namespace.stepanel.metadata[0].name
+  }
+  spec {
+    access_modes = ["ReadWriteOnce"]
+    resources { requests = { storage = "10Gi" } }
+  }
+}
+
+resource "kubernetes_persistent_volume_claim" "stepanel_sites" {
+  metadata {
+    name      = "stepanel-sites"
+    namespace = kubernetes_namespace.stepanel.metadata[0].name
+  }
+  spec {
+    access_modes = ["ReadWriteOnce"]
+    resources { requests = { storage = "10Gi" } }
   }
 }

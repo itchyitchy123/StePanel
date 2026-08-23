@@ -20,7 +20,7 @@ It is designed for people who want a small, understandable hosting control plane
 
 | Area | Included today |
 | --- | --- |
-| Installation | Apache, PHP, MySQL/MariaDB, optional Exim/Dovecot/SpamAssassin, systemd, Debian/Ubuntu and RHEL-family systems |
+| Installation | Apache, PHP, MySQL/MariaDB, optional Exim/Dovecot/SpamAssassin/vsftpd, systemd, Debian/Ubuntu and RHEL-family systems |
 | Migration | cPanel `.tar.gz` inspection, safe staging, website, SQL, and staged mailbox restore |
 | Operations | Dashboard, health endpoint, metrics endpoint, audit log, asynchronous restore jobs |
 | Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |
@@ -86,17 +86,31 @@ The installer records the selected database engine/version, creates a restricted
 
 Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are restored to account-prefixed database names. Existing destination files can be overwritten; always snapshot first.
 
+## WordPress `.wpress` migration
+
+The panel also restores All-in-One WP Migration archives. Install
+`wpress-extract`, WP-CLI, and a MariaDB/MySQL client on the host, then use the
+WordPress migration card in the dashboard. The authenticated preflight endpoint
+is `/api/wpress/preflight`.
+
+The restore provisions a site-prefixed database and user, imports the archive,
+converts the archive table prefix with WP-CLI serialized-data support, and can
+replace the old site URL. Existing site files require the explicit overwrite
+checkbox and should be backed up first.
+
 ## Documentation
 
 - [Installation guide](docs/INSTALLATION.md)
 - [Node application deployment](docs/NODE_APPS.md)
 - [Node application lifecycle](docs/APP_LIFECYCLE.md)
 - [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
+- [WordPress WPress migration guide](docs/WPRESS_IMPORTS.md)
 - [Architecture and safety model](docs/ARCHITECTURE.md)
 - [Feature catalog](docs/FEATURES.md)
 - [Threat model](docs/THREAT_MODEL.md)
 - [Malware guard](docs/MALWARE_GUARD.md)
 - [HTTPS certificates](docs/CERTIFICATES.md)
+- [API contract](docs/openapi.yaml)
 - [Release procedure](docs/RELEASING.md)
 - [Operations runbook](docs/OPERATIONS.md)
 - [Product roadmap](docs/ROADMAP.md)
@@ -122,6 +136,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | --- | --- | --- |
 | `GET` | `/api/health` | Version and service health |
 | `GET` | `/api/services` | Authenticated live Apache, PHP, database, Fail2Ban, and ModSecurity inventory |
+| `GET` | `/api/ftp` | Authenticated vsftpd status, chroot posture, and passive-port configuration |
 | `GET` | `/api/security/audit` | Authenticated configuration and security posture checks |
 | `GET` | `/api/node/versions` | List installed NVM Node versions |
 | `POST` | `/api/node/select` | Select an installed Node version for a managed site |
@@ -151,14 +166,24 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | `STEPANEL_IMPORT_ROOT` | Private backup staging directory |
 | `STEPANEL_WEB_ROOT` | Site destination root |
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |
+| `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; default `wpress-extract` |
+| `STEPANEL_WPCLI` | WP-CLI executable; default `wp` |
 | `STEPANEL_DB_HOST` | MySQL/MariaDB host used for SQL imports |
 | `STEPANEL_DB_USER` | Database user used for SQL imports |
 | `STEPANEL_DB_PASSWORD` | Database password supplied through the process environment |
 | `STEPANEL_MAIL_ROOT` | Private root for staged cPanel mailbox data |
 | `STEPANEL_METRICS_PUBLIC` | Set to `1` only when Prometheus metrics must be unauthenticated |
+| `STEPANEL_STAGE_RETENTION_HOURS` | Retention for completed restore staging directories; default `168` |
+| `STEPANEL_MIN_FREE_BYTES` | Minimum free space required before accepting a restore; default `1073741824` |
 
 Set `STEPANEL_INSTALL_MAIL=1` during installation to install Exim, Dovecot,
 and SpamAssassin.
+
+Set `STEPANEL_INSTALL_FTP=1` to install and enable vsftpd. The panel reports
+vsftpd in the service inventory. Local users are chrooted to their site root
+and passive ports default to `40100-40200`; configure FTPS and create
+least-privilege site users before allowing external access. Plain FTP should
+only be used on a trusted management network.
 
 Set `STEPANEL_INSTALL_NODE=1 STEPANEL_NODE_VERSIONS=20.18.0,22.14.0` to install
 Node versions through NVM. The panel can select an installed version per site
@@ -176,7 +201,7 @@ and credential mapping.
 
 ## Roadmap
 
-The next product milestones are first-run setup, site/domain lifecycle, PHP-FPM management, HTTPS automation, snapshot-backed rollback, scheduled backups, and multi-user roles. See the [roadmap](docs/ROADMAP.md) for the full plan.
+The next product milestones are first-run setup, site/domain lifecycle, PHP-FPM and database management, verified backups, and multi-user roles. See the [roadmap](docs/ROADMAP.md) for the full plan.
 
 ## License
 

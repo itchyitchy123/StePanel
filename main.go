@@ -29,6 +29,7 @@ func main() {
 	if err := os.MkdirAll(cfg.ImportRoot, 0750); err != nil {
 		log.Fatal(err)
 	}
+	_ = CleanupImportStages(cfg.ImportRoot, time.Duration(cfg.StageRetentionHours)*time.Hour)
 	auth, err := NewAuth(cfg.Production)
 	if err != nil {
 		log.Fatal(err)
@@ -46,6 +47,9 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			app.Jobs.Cleanup(24 * time.Hour)
+			if err := CleanupImportStages(app.Config.ImportRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
+				log.Printf("import stage cleanup: %v", err)
+			}
 		}
 	}()
 	mux := http.NewServeMux()
@@ -55,6 +59,7 @@ func main() {
 	mux.Handle("/", app.Auth.Require(http.HandlerFunc(app.dashboard)))
 	mux.HandleFunc("/api/health", app.health)
 	mux.Handle("/api/services", app.Auth.Require(http.HandlerFunc(app.services)))
+	mux.Handle("/api/ftp", app.Auth.Require(http.HandlerFunc(app.ftpStatus)))
 	mux.Handle("/api/security/audit", app.Auth.Require(http.HandlerFunc(app.securityAudit)))
 	mux.Handle("/api/security/scan", app.Auth.Require(http.HandlerFunc(app.malwareScan)))
 	mux.Handle("/api/certificates/issue", app.Auth.Require(http.HandlerFunc(app.issueCertificate)))
@@ -69,6 +74,8 @@ func main() {
 	mux.Handle("/api/apps/", app.Auth.Require(http.HandlerFunc(app.appAction)))
 	mux.Handle("/api/cpmove/inspect", app.Auth.Require(http.HandlerFunc(app.inspect)))
 	mux.Handle("/api/cpmove/import", app.Auth.Require(http.HandlerFunc(app.importBackup)))
+	mux.Handle("/api/wpress/preflight", app.Auth.Require(http.HandlerFunc(app.wpressPreflight)))
+	mux.Handle("/api/wpress/import", app.Auth.Require(http.HandlerFunc(app.wpressImport)))
 	mux.Handle("/api/jobs/", app.Auth.Require(http.HandlerFunc(app.jobStatus)))
 	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))
 	if os.Getenv("STEPANEL_METRICS_PUBLIC") != "1" {
@@ -159,6 +166,10 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.FormValue("confirm") != "IMPORT" {
 		http.Error(w, "type IMPORT to authorize restore", 400)
+		return
+	}
+	if free, err := availableBytes(a.Config.ImportRoot); err == nil && free < a.Config.MinFreeBytes {
+		http.Error(w, "insufficient free disk space for a restore", http.StatusInsufficientStorage)
 		return
 	}
 	file, header, err := r.FormFile("backup")

@@ -1,0 +1,138 @@
+openapi: 3.0.3
+info:
+  title: StePanel API
+  version: 0.1.0
+  description: Authenticated server operations, service inventory, and cPanel migration API. The service inventory includes optional vsftpd when installed.
+servers:
+  - url: http://127.0.0.1:8090
+security:
+  - sessionCookie: []
+paths:
+  /api/health:
+    get:
+      security: []
+      summary: Process health
+      responses:
+        '200': {description: Healthy process}
+  /api/services:
+    get:
+      summary: Service inventory
+      responses:
+        '200': {description: Service inventory}
+  /api/ftp:
+    get:
+      summary: FTP service setup status
+      responses:
+        '200': {description: vsftpd status and safe setup defaults}
+  /api/security/audit:
+    get:
+      summary: Security posture checks
+      responses:
+        '200': {description: Security checks}
+  /api/security/scan:
+    post:
+      summary: Scan a managed site for suspicious PHP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site]
+              properties:
+                site: {type: string}
+                quarantine: {type: boolean}
+      responses:
+        '200': {description: Scan results}
+  /api/certificates/issue:
+    post:
+      summary: Queue a Let’s Encrypt certificate request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain, email]
+              properties:
+                domain: {type: string, format: hostname}
+                email: {type: string, format: email}
+      responses:
+        '202': {description: Certificate job queued}
+  /api/cpmove/inspect:
+    post:
+      summary: Inspect a cPanel backup archive
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [backup]
+              properties:
+                backup: {type: string, format: binary}
+      responses:
+        '200': {description: Archive inventory}
+  /api/cpmove/import:
+    post:
+      summary: Queue a cPanel restore
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [backup, username, confirm]
+              properties:
+                backup: {type: string, format: binary}
+                username: {type: string}
+                confirm: {type: string, example: IMPORT}
+                restore_databases: {type: string}
+      responses:
+        '202': {description: Restore job queued}
+  /api/wpress/preflight:
+    get:
+      summary: Check WordPress restore dependencies
+      responses:
+        '200': {description: wpress-extract, WP-CLI, and database client availability}
+  /api/wpress/import:
+    post:
+      summary: Queue an All-in-One WP Migration restore
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [backup, site, db_name, db_user, db_password, confirm]
+              properties:
+                backup: {type: string, format: binary}
+                site: {type: string}
+                db_name: {type: string}
+                db_user: {type: string}
+                db_password: {type: string, format: password}
+                site_url: {type: string, format: uri}
+                table_prefix: {type: string, default: wp_}
+                overwrite: {type: string}
+                confirm: {type: string, example: WPRESTORE}
+      responses:
+        '202': {description: WordPress restore job queued}
+  /api/jobs/{id}:
+    get:
+      summary: Read a background job
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Job state}
+        '404': {description: Job not found}
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      responses:
+        '200': {description: Metrics output}
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: stepanel_session

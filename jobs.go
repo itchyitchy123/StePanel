@@ -11,11 +11,41 @@ type Job struct {
 	State       string             `json:"state"`
 	User        string             `json:"user"`
 	Result      *ImportResult      `json:"result,omitempty"`
+	WPress      *WPressResult      `json:"wpress,omitempty"`
 	Certificate *CertificateResult `json:"certificate,omitempty"`
 	Error       string             `json:"error,omitempty"`
 	StartedAt   time.Time          `json:"started_at"`
 	FinishedAt  *time.Time         `json:"finished_at,omitempty"`
 }
+
+func (j *Jobs) SubmitWPress(id, user string, work func() (WPressResult, error)) bool {
+	select {
+	case j.slots <- struct{}{}:
+	default:
+		return false
+	}
+	item := &Job{ID: id, Kind: "wordpress.restore", State: "running", User: user, StartedAt: time.Now().UTC()}
+	j.mu.Lock()
+	j.items[id] = item
+	j.mu.Unlock()
+	go func() {
+		defer func() { <-j.slots }()
+		result, err := work()
+		now := time.Now().UTC()
+		j.mu.Lock()
+		defer j.mu.Unlock()
+		item.FinishedAt = &now
+		if err != nil {
+			item.State = "failed"
+			item.Error = err.Error()
+		} else {
+			item.State = "completed"
+			item.WPress = &result
+		}
+	}()
+	return true
+}
+
 type Jobs struct {
 	mu            sync.RWMutex
 	items         map[string]*Job

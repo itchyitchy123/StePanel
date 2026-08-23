@@ -17,6 +17,12 @@ sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \\
 
 The installer requires an admin password, generates a session secret when one is not supplied, and starts in production mode. It supports `mysql` and `mariadb`. Use `default` for the distribution-provided version, or provide an exact version available from the configured package repositories. The installer verifies requested versions before changing the system and fails rather than silently selecting another version.
 
+FTP is opt-in. When enabled, vsftpd disables anonymous access, requires local
+users, chroots them to `/var/www/sites/$USER`, and enables a bounded passive
+port range. The installer does not create FTP accounts or certificates.
+Configure FTPS, firewall rules, and per-site users before exposing it beyond a
+trusted network.
+
 In an interactive terminal, the installer asks for the database engine and version. For automation, use:
 
 | Variable | Values | Meaning |
@@ -24,11 +30,15 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_DB_ENGINE` | `mysql`, `mariadb` | Database distribution |
 | `STEPANEL_DB_VERSION` | `default` or an exact package version | Requested repository version |
 | `STEPANEL_INSTALL_MAIL` | `0` or `1` | Install Exim, Dovecot, SpamAssassin, and enable mailbox staging |
+| `STEPANEL_INSTALL_FTP` | `0` or `1` | Install and enable vsftpd with local-user chrooting |
+| `STEPANEL_FTP_PASSIVE_MIN` / `STEPANEL_FTP_PASSIVE_MAX` | Port range | Passive FTP port range; defaults to `40100-40200` |
 | `STEPANEL_INSTALL_NODE` | `0` or `1` | Install NVM for the StePanel service account |
 | `STEPANEL_NODE_VERSIONS` | Comma-separated versions | Node versions to install through NVM |
 | `STEPANEL_APP_ROOT` | Directory | JSON manifests for managed Node apps |
 | `STEPANEL_INSTALL_SECURITY` | `0` or `1` | Install ClamAV and the PHP malware guard |
 | `STEPANEL_INSTALL_TLS` | `0` or `1` | Install Certbot and the Apache certificate integration |
+| `STEPANEL_STAGE_RETENTION_HOURS` | Positive hours | Retain completed restore staging directories for audit |
+| `STEPANEL_MIN_FREE_BYTES` | Bytes | Refuse new restores below this free-space threshold |
 
 It also enables the Apache proxy, proxy_http, and headers modules on Debian-family systems. Replace the example hostname in the generated virtual host before production use. The installer creates:
 

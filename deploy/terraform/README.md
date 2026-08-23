@@ -13,6 +13,7 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-The Kubernetes provider is deliberately used instead of provisioning a cloud
-account. That keeps the example safe to review and portable across managed or
+The example creates one replica and persistent claims for control-plane data
+and site files. The Kubernetes provider is deliberately used instead of
+provisioning a cloud account, keeping the example portable across managed or
 on-premises clusters.

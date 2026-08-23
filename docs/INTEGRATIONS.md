@@ -4,6 +4,20 @@ StePanel can install and expose two companion tools from the StePanel toolkit.
 Both are opt-in because they operate across the host and can change service
 configuration.
 
+## FTP service
+
+Install the optional vsftpd service with:
+
+```sh
+sudo STEPANEL_INSTALL_FTP=1 ./install.sh
+```
+
+StePanel configures local-user-only access, chrooting, site-root mapping, and
+a bounded passive port range. The dashboard and `/api/services` endpoint show
+`vsftpd` as an installed service. User creation, password rotation, FTPS
+certificates, firewall rules, and per-site authorization remain operator
+responsibilities; do not expose plain FTP to the public internet.
+
 ## ModSecurity and OWASP CRS
 
 ModSecurity is available as an opt-in Apache integration. It installs the

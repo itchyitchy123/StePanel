@@ -15,11 +15,10 @@
 - Apache virtual-host management
 - PHP-FPM pool and PHP-version management
 - Database and database-user lifecycle
-- HTTPS certificate automation
 
 ## 0.3 — Recovery and scale
 
-- Snapshot-backed restore rollback
+- Snapshot-backed restore rollback for files and databases
 - Scheduled and verified backups
 - Privileged restore helper
 - Multi-user roles and MFA/OIDC

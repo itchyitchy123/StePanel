@@ -9,6 +9,7 @@ kubectl -n stepanel create secret generic stepanel-secrets \
 kubectl apply -f deploy/kubernetes/stepanel.yaml
 ```
 
-The image, database connection, ingress, persistent storage, and network
-policy should be supplied by the environment. The sample intentionally does
-not embed credentials or a cloud-specific load balancer.
+The manifest creates two 10Gi persistent volume claims for control-plane data
+and site files. Adjust their size and storage class for the environment. It
+uses one replica because restore jobs are currently process-local. Add an
+ingress, TLS, database connection, and network policy before production use.

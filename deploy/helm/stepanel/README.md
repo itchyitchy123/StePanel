@@ -9,5 +9,6 @@ helm upgrade --install stepanel deploy/helm/stepanel \
 ```
 
 Create `stepanel-secrets` separately. Production installations should pin an
-image digest, configure a persistent import volume, and add an ingress with
-TLS and a network policy.
+image digest, select an appropriate persistent storage class, and add an
+ingress with TLS and a network policy. The chart defaults to one replica
+because restore jobs and managed site state are local to the control plane.

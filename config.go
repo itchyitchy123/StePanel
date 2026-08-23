@@ -1,17 +1,23 @@
 package main
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 type Config struct {
-	Listen, ImportRoot, WebRoot, MailRoot, NVMDir, ProxyRoot, AppRoot, MalwareRoot, AppCtl, Certbot, ApacheReload, AuditLog string
-	DBHost, DBUser, DBPassword                                                                                              string
-	Production                                                                                                              bool
-	MaxUpload                                                                                                               int64
-	MaxEntries                                                                                                              int
+	Listen, ImportRoot, WebRoot, MailRoot, NVMDir, ProxyRoot, AppRoot, MalwareRoot, AppCtl, Certbot, WPressExtract, WPCLI, ApacheReload, AuditLog string
+	DBHost, DBUser, DBPassword                                                                                                                    string
+	Production                                                                                                                                    bool
+	MaxUpload                                                                                                                                     int64
+	MaxEntries                                                                                                                                    int
+	StageRetentionHours                                                                                                                           int
+	MinFreeBytes                                                                                                                                  uint64
+	FTPPassiveMin, FTPPassiveMax                                                                                                                  int
 }
 
 func LoadConfig() Config {
-	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", Certbot: "/usr/local/sbin/stepanel-certbot", ApacheReload: "/usr/local/sbin/stepanel-apache-reload", AuditLog: "data/stepanel-audit.jsonl", MaxUpload: 20 << 30, MaxEntries: 1000000}
+	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", ApacheReload: "/usr/local/sbin/stepanel-apache-reload", AuditLog: "data/stepanel-audit.jsonl", MaxUpload: 20 << 30, MaxEntries: 1000000, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_LISTEN"); v != "" {
 		c.Listen = v
 	}
@@ -39,6 +45,12 @@ func LoadConfig() Config {
 	if v := os.Getenv("STEPANEL_CERTBOT"); v != "" {
 		c.Certbot = v
 	}
+	if v := os.Getenv("STEPANEL_WPRESS_EXTRACT"); v != "" {
+		c.WPressExtract = v
+	}
+	if v := os.Getenv("STEPANEL_WPCLI"); v != "" {
+		c.WPCLI = v
+	}
 	if v := os.Getenv("STEPANEL_MALWARE_ROOT"); v != "" {
 		c.MalwareRoot = v
 	}
@@ -52,5 +64,17 @@ func LoadConfig() Config {
 	c.DBUser = os.Getenv("STEPANEL_DB_USER")
 	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
 	c.Production = os.Getenv("STEPANEL_ENV") == "production"
+	if v, err := strconv.Atoi(os.Getenv("STEPANEL_STAGE_RETENTION_HOURS")); err == nil && v > 0 {
+		c.StageRetentionHours = v
+	}
+	if v, err := strconv.ParseUint(os.Getenv("STEPANEL_MIN_FREE_BYTES"), 10, 64); err == nil && v > 0 {
+		c.MinFreeBytes = v
+	}
+	if v, err := strconv.Atoi(os.Getenv("STEPANEL_FTP_PASSIVE_MIN")); err == nil && v >= 1024 && v <= 65534 {
+		c.FTPPassiveMin = v
+	}
+	if v, err := strconv.Atoi(os.Getenv("STEPANEL_FTP_PASSIVE_MAX")); err == nil && v > c.FTPPassiveMin && v <= 65535 {
+		c.FTPPassiveMax = v
+	}
 	return c
 }

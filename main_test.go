@@ -34,12 +34,18 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	app := &App{Config: Config{ImportRoot: root, WebRoot: root}, Auth: Auth{}, Jobs: NewJobs(), Metrics: NewMetrics()}
 	server := http.NewServeMux()
 	server.HandleFunc("/api/services", app.services)
+	server.HandleFunc("/api/ftp", app.ftpStatus)
 	server.HandleFunc("/api/security/audit", app.securityAudit)
 
 	services := httptest.NewRecorder()
 	server.ServeHTTP(services, httptest.NewRequest(http.MethodGet, "/api/services", nil))
-	if services.Code != http.StatusOK || !strings.Contains(services.Body.String(), `"services"`) {
+	if services.Code != http.StatusOK || !strings.Contains(services.Body.String(), `"services"`) || !strings.Contains(services.Body.String(), `"vsftpd"`) {
 		t.Fatalf("unexpected services response: %d %s", services.Code, services.Body.String())
+	}
+	ftp := httptest.NewRecorder()
+	server.ServeHTTP(ftp, httptest.NewRequest(http.MethodGet, "/api/ftp", nil))
+	if ftp.Code != http.StatusOK || !strings.Contains(ftp.Body.String(), `"local_user_chroot":true`) {
+		t.Fatalf("unexpected FTP response: %d %s", ftp.Code, ftp.Body.String())
 	}
 	audit := httptest.NewRecorder()
 	server.ServeHTTP(audit, httptest.NewRequest(http.MethodGet, "/api/security/audit", nil))

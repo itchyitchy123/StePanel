@@ -42,7 +42,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports: [{name: http, containerPort: 8080}]
           env:
-            - {name: STEPANEL_PRODUCTION, value: "true"}
+            - {name: STEPANEL_ENV, value: "production"}
             - {name: STEPANEL_LISTEN, value: ":8080"}
             - name: STEPANEL_ADMIN_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: admin-password}}
@@ -51,3 +51,41 @@ spec:
           readinessProbe: {httpGet: {path: /api/health, port: http}, periodSeconds: 10}
           livenessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 15, periodSeconds: 20}
           resources: {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - {name: stepanel-data, mountPath: /var/lib/ste-panel}
+            - {name: stepanel-sites, mountPath: /var/www/sites}
+          {{- end }}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: stepanel-data
+          persistentVolumeClaim: {claimName: {{ .Release.Name }}-stepanel-data}
+        - name: stepanel-sites
+          persistentVolumeClaim: {claimName: {{ .Release.Name }}-stepanel-sites}
+      {{- end }}
+{{- if .Values.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-stepanel-data
+spec:
+  accessModes:
+{{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+  resources: {requests: {storage: {{ .Values.persistence.size }}}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-stepanel-sites
+spec:
+  accessModes:
+{{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+  resources: {requests: {storage: {{ .Values.persistence.size }}}}
+{{- end }}

@@ -12,14 +12,20 @@ INSTALL_FAIL2BAN="${STEPANEL_INSTALL_FAIL2BAN:-0}"; FAIL2BAN_JAILS="${STEPANEL_F
 FPM_LENS_BINARY="${STEPANEL_FPM_LENS_BINARY:-}"
 INSTALL_MODSEC="${STEPANEL_INSTALL_MODSEC:-0}"; MODSEC_MODE="${STEPANEL_MODSEC_MODE:-DetectionOnly}"
 INSTALL_MAIL="${STEPANEL_INSTALL_MAIL:-0}"
+INSTALL_FTP="${STEPANEL_INSTALL_FTP:-0}"
+FTP_PASSIVE_MIN="${STEPANEL_FTP_PASSIVE_MIN:-40100}"
+FTP_PASSIVE_MAX="${STEPANEL_FTP_PASSIVE_MAX:-40200}"
 INSTALL_NODE="${STEPANEL_INSTALL_NODE:-0}"; NODE_VERSIONS="${STEPANEL_NODE_VERSIONS:-20.18.0}"
 INSTALL_SECURITY="${STEPANEL_INSTALL_SECURITY:-0}"
 INSTALL_TLS="${STEPANEL_INSTALL_TLS:-0}"
+WPRESS_EXTRACT="${STEPANEL_WPRESS_EXTRACT:-wpress-extract}"
+WPCLI="${STEPANEL_WPCLI:-wp}"
 if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then read -r -s -p "StePanel admin password: " ADMIN_PASSWORD; echo; fi
 if [[ -z "$ADMIN_PASSWORD" ]]; then echo "Set STEPANEL_ADMIN_PASSWORD or run the installer interactively." >&2; exit 1; fi
 if [[ -z "$SESSION_SECRET" ]]; then SESSION_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"; fi
 if [[ ! "$ADMIN_USERNAME" =~ ^[a-zA-Z0-9._-]{1,64}$ || "$ADMIN_USERNAME" == *$'\n'* || "$ADMIN_USERNAME" == *$'\r'* ]]; then echo "Invalid admin username." >&2; exit 1; fi
 if [[ "$ADMIN_PASSWORD" == *$'\n'* || "$ADMIN_PASSWORD" == *$'\r'* || "$SESSION_SECRET" == *$'\n'* || "$SESSION_SECRET" == *$'\r'* ]]; then echo "Credentials may not contain newlines." >&2; exit 1; fi
+if [[ "$WPRESS_EXTRACT" == *$'\n'* || "$WPRESS_EXTRACT" == *$'\r'* || "$WPCLI" == *$'\n'* || "$WPCLI" == *$'\r'* ]]; then echo "WordPress executable paths may not contain newlines." >&2; exit 1; fi
 
 source /etc/os-release
 WEB_GROUP="www-data"; if getent group apache >/dev/null 2>&1; then WEB_GROUP="apache"; fi
@@ -58,6 +64,8 @@ if [[ -n "$FPM_LENS_BINARY" && ! -x "$FPM_LENS_BINARY" ]]; then echo "STEPANEL_F
 if [[ "$INSTALL_MODSEC" != "0" && "$INSTALL_MODSEC" != "1" ]]; then echo "STEPANEL_INSTALL_MODSEC must be 0 or 1." >&2; exit 1; fi
 if [[ "$MODSEC_MODE" != "Off" && "$MODSEC_MODE" != "DetectionOnly" && "$MODSEC_MODE" != "On" ]]; then echo "STEPANEL_MODSEC_MODE must be Off, DetectionOnly, or On." >&2; exit 1; fi
 if [[ "$INSTALL_MAIL" != "0" && "$INSTALL_MAIL" != "1" ]]; then echo "STEPANEL_INSTALL_MAIL must be 0 or 1." >&2; exit 1; fi
+if [[ "$INSTALL_FTP" != "0" && "$INSTALL_FTP" != "1" ]]; then echo "STEPANEL_INSTALL_FTP must be 0 or 1." >&2; exit 1; fi
+if [[ ! "$FTP_PASSIVE_MIN" =~ ^[0-9]+$ || ! "$FTP_PASSIVE_MAX" =~ ^[0-9]+$ || "$FTP_PASSIVE_MIN" -lt 1024 || "$FTP_PASSIVE_MAX" -gt 65535 || "$FTP_PASSIVE_MIN" -ge "$FTP_PASSIVE_MAX" ]]; then echo "STEPANEL_FTP_PASSIVE_MIN/MAX must define a valid increasing port range." >&2; exit 1; fi
 if [[ "$INSTALL_NODE" != "0" && "$INSTALL_NODE" != "1" ]]; then echo "STEPANEL_INSTALL_NODE must be 0 or 1." >&2; exit 1; fi
 if [[ "$INSTALL_SECURITY" != "0" && "$INSTALL_SECURITY" != "1" ]]; then echo "STEPANEL_INSTALL_SECURITY must be 0 or 1." >&2; exit 1; fi
 if [[ "$INSTALL_TLS" != "0" && "$INSTALL_TLS" != "1" ]]; then echo "STEPANEL_INSTALL_TLS must be 0 or 1." >&2; exit 1; fi
@@ -78,7 +86,47 @@ install_mail_stack() {
   install -d -m 0750 "$DATA_DIR/mail"
 }
 
+install_ftp_stack() {
+  local config backup
+  if [[ "$PKG" == "apt" ]]; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get install -y vsftpd
+    config="/etc/vsftpd.conf"
+  else
+    dnf install -y vsftpd
+    config="/etc/vsftpd/vsftpd.conf"
+  fi
+  backup="${config}.bak.$(date -u +%Y%m%d%H%M%S)"
+  [[ -e "$config" ]] && cp -p "$config" "$backup"
+  install -d -m 0750 /etc/vsftpd
+  cat > "$config" <<EOF
+# Managed by StePanel. Review and enable FTPS before internet exposure.
+listen=YES
+listen_ipv6=NO
+anonymous_enable=NO
+local_enable=YES
+write_enable=YES
+local_umask=022
+chroot_local_user=YES
+allow_writeable_chroot=YES
+user_sub_token=\$USER
+local_root=/var/www/sites/\$USER
+pasv_min_port=$FTP_PASSIVE_MIN
+pasv_max_port=$FTP_PASSIVE_MAX
+use_localtime=YES
+xferlog_enable=YES
+log_ftp_protocol=YES
+EOF
+  if ! vsftpd -olisten=NO -olisten_ipv6=NO "$config" >/dev/null 2>&1; then
+    [[ -e "$backup" ]] && mv -f "$backup" "$config"
+    echo "vsftpd rejected its configuration; changes were rolled back." >&2
+    return 1
+  fi
+  systemctl enable vsftpd
+}
+
 if [[ "$INSTALL_MAIL" == "1" ]]; then install_mail_stack; fi
+if [[ "$INSTALL_FTP" == "1" ]]; then install_ftp_stack; fi
 
 configure_modsecurity() {
   local apache_conf modsec_conf audit_log crs_load backup apache_backup
@@ -142,10 +190,13 @@ install -m 0644 -D "$ROOT_DIR/web/static/app.css" "$APP_DIR/web/static/app.css"
 install -m 0644 -D "$ROOT_DIR/web/static/import.css" "$APP_DIR/web/static/import.css"
 install -m 0644 -D "$ROOT_DIR/web/static/deploy.js" "$APP_DIR/web/static/deploy.js"
 install -m 0644 -D "$ROOT_DIR/web/static/certificates.js" "$APP_DIR/web/static/certificates.js"
+install -m 0644 -D "$ROOT_DIR/web/static/wpress.js" "$APP_DIR/web/static/wpress.js"
 install -m 0644 -D "$ROOT_DIR/web/static/favicon.svg" "$APP_DIR/web/static/favicon.svg"
 if [[ "$PKG" == "apt" ]]; then install -m 0644 "$ROOT_DIR/deploy/apache/stepanel.conf" /etc/apache2/sites-available/stepanel.conf; a2enmod proxy proxy_http headers >/dev/null; a2ensite stepanel >/dev/null; fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$DATA_DIR"; chown "$APP_USER:$WEB_GROUP" /var/www/sites; chmod 2750 /var/www/sites
 printf 'STEPANEL_ENV=production\nSTEPANEL_LISTEN=127.0.0.1:8090\nSTEPANEL_ADMIN_USERNAME=%s\nSTEPANEL_ADMIN_PASSWORD=%s\nSTEPANEL_SESSION_SECRET=%s\nSTEPANEL_DB_ENGINE=%s\nSTEPANEL_DB_VERSION=%s\nSTEPANEL_IMPORT_ROOT=%s/imports\nSTEPANEL_WEB_ROOT=/var/www\nSTEPANEL_MAIL_ROOT=%s/mail\nSTEPANEL_NVM_DIR=%s/.nvm\nSTEPANEL_PROXY_ROOT=%s/proxy\nSTEPANEL_APP_ROOT=%s/apps\nSTEPANEL_APPCTL=/usr/local/sbin/stepanel-appctl\nSTEPANEL_APACHE_RELOAD=/usr/local/sbin/stepanel-apache-reload\nSTEPANEL_AUDIT_LOG=%s/audit.jsonl\n' "$ADMIN_USERNAME" "$ADMIN_PASSWORD" "$SESSION_SECRET" "$DB_ENGINE" "$DB_VERSION" "$DATA_DIR" "$DATA_DIR" "$APP_DIR" "$DATA_DIR" "$DATA_DIR" "$DATA_DIR" > "$ENV_FILE"
+printf 'STEPANEL_WPRESS_EXTRACT=%s\nSTEPANEL_WPCLI=%s\n' "$WPRESS_EXTRACT" "$WPCLI" >> "$ENV_FILE"
+if [[ "$INSTALL_FTP" == "1" ]]; then printf 'STEPANEL_FTP_PASSIVE_MIN=%s\nSTEPANEL_FTP_PASSIVE_MAX=%s\n' "$FTP_PASSIVE_MIN" "$FTP_PASSIVE_MAX" >> "$ENV_FILE"; fi
 chmod 0600 "$ENV_FILE"
 printf 'STEPANEL_MALWARE_ROOT=%s/quarantine\n' "$DATA_DIR" >> "$ENV_FILE"
 if [[ "$INSTALL_TLS" == "1" ]]; then printf 'STEPANEL_CERTBOT=/usr/local/sbin/stepanel-certbot\n' >> "$ENV_FILE"; fi
@@ -156,9 +207,11 @@ if [[ "$PKG" == "apt" ]]; then printf 'IncludeOptional %s/proxy/*.conf\n' "$DATA
 systemctl daemon-reload; systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" stepanel; systemctl reload "$APACHE_SERVICE" || true
 if [[ "$INSTALL_SECURITY" == "1" ]]; then systemctl enable --now stepanel-malware-guard; fi
 if [[ "$INSTALL_MAIL" == "1" ]]; then systemctl enable --now "$([[ "$PKG" == "apt" ]] && echo exim4 || echo exim)" dovecot "$MAIL_SPAM_SERVICE"; fi
+if [[ "$INSTALL_FTP" == "1" ]]; then systemctl enable --now vsftpd; fi
 if [[ "$INSTALL_TLS" == "1" ]]; then systemctl enable --now certbot.timer 2>/dev/null || true; fi
 if [[ "$INSTALL_FAIL2BAN" == "1" ]]; then
   bash "$APP_DIR/integrations/install-fail2ban.sh" --yes --jails "$FAIL2BAN_JAILS" --ignore-ip "$FAIL2BAN_IGNORE_IP"
 fi
 echo "StePanel installed with $DB_ENGINE ($DB_VERSION). Verify the database service with: systemctl status $DB_SERVICE"
 if [[ "$INSTALL_MAIL" == "1" ]]; then echo "Mail stack installed. Mailbox data is staged under $DATA_DIR/mail and requires domain mapping before activation."; fi
+if [[ "$INSTALL_FTP" == "1" ]]; then echo "FTP installed with local-user chroot and passive ports $FTP_PASSIVE_MIN-$FTP_PASSIVE_MAX. Configure FTPS before internet exposure."; fi
