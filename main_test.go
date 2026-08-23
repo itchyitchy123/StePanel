@@ -29,6 +29,25 @@ func TestHealthAndMetricsEndpoints(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedOperationalEndpoints(t *testing.T) {
+	root := t.TempDir()
+	app := &App{Config: Config{ImportRoot: root, WebRoot: root}, Auth: Auth{}, Jobs: NewJobs(), Metrics: NewMetrics()}
+	server := http.NewServeMux()
+	server.HandleFunc("/api/services", app.services)
+	server.HandleFunc("/api/security/audit", app.securityAudit)
+
+	services := httptest.NewRecorder()
+	server.ServeHTTP(services, httptest.NewRequest(http.MethodGet, "/api/services", nil))
+	if services.Code != http.StatusOK || !strings.Contains(services.Body.String(), `"services"`) {
+		t.Fatalf("unexpected services response: %d %s", services.Code, services.Body.String())
+	}
+	audit := httptest.NewRecorder()
+	server.ServeHTTP(audit, httptest.NewRequest(http.MethodGet, "/api/security/audit", nil))
+	if audit.Code != http.StatusOK || !strings.Contains(audit.Body.String(), `"checks"`) {
+		t.Fatalf("unexpected audit response: %d %s", audit.Code, audit.Body.String())
+	}
+}
+
 func TestAuthRequireProtectsAPI(t *testing.T) {
 	auth := Auth{Enabled: true, Username: "admin", Secret: "12345678901234567890123456789012"}
 	handler := auth.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))

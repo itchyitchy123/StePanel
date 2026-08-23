@@ -6,6 +6,7 @@
 - LAMP installation with MySQL/MariaDB selection
 - Safe asynchronous cpmove staging and restore
 - Health, metrics, audit events, and release automation
+- Live service inventory and authenticated security posture checks
 
 ## 0.2 — Hosting operations
 

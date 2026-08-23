@@ -36,7 +36,8 @@ func main() {
 	if cfg.Production && !auth.Enabled {
 		log.Fatal("authentication must be configured in production")
 	}
-	app := &App{Config: cfg, View: template.Must(template.ParseFiles("web/index.html")), Auth: auth, Jobs: NewJobs(), Metrics: NewMetrics()}
+	view := template.Must(template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).ParseFiles("web/index.html"))
+	app := &App{Config: cfg, View: view, Auth: auth, Jobs: NewJobs(), Metrics: NewMetrics()}
 	if !app.Auth.Enabled {
 		log.Println("warning: authentication is disabled; set STEPANEL_ADMIN_PASSWORD and STEPANEL_SESSION_SECRET")
 	}
@@ -53,6 +54,8 @@ func main() {
 	mux.HandleFunc("/logout", app.Auth.Logout)
 	mux.Handle("/", app.Auth.Require(http.HandlerFunc(app.dashboard)))
 	mux.HandleFunc("/api/health", app.health)
+	mux.Handle("/api/services", app.Auth.Require(http.HandlerFunc(app.services)))
+	mux.Handle("/api/security/audit", app.Auth.Require(http.HandlerFunc(app.securityAudit)))
 	mux.Handle("/api/cpmove/inspect", app.Auth.Require(http.HandlerFunc(app.inspect)))
 	mux.Handle("/api/cpmove/import", app.Auth.Require(http.HandlerFunc(app.importBackup)))
 	mux.Handle("/api/jobs/", app.Auth.Require(http.HandlerFunc(app.jobStatus)))
@@ -83,7 +86,7 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("stepanel_csrf"); err == nil {
 		csrf = cookie.Value
 	}
-	_ = a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled})
+	_ = a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Servers": ServiceSummaries(), "Security": a.SecurityChecks()})
 }
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": Version, "commit": Commit, "services": ServiceStatus(), "time": time.Now().UTC()})
@@ -91,6 +94,12 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	a.Metrics.Write(w)
+}
+func (a *App) services(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"services": ServiceSummaries(), "time": time.Now().UTC()})
+}
+func (a *App) securityAudit(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"checks": a.SecurityChecks(), "time": time.Now().UTC()})
 }
 func (a *App) inspect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

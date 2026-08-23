@@ -91,6 +91,9 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 - [Installation guide](docs/INSTALLATION.md)
 - [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
 - [Architecture and safety model](docs/ARCHITECTURE.md)
+- [Feature catalog](docs/FEATURES.md)
+- [Threat model](docs/THREAT_MODEL.md)
+- [Release procedure](docs/RELEASING.md)
 - [Operations runbook](docs/OPERATIONS.md)
 - [Product roadmap](docs/ROADMAP.md)
 - [Launch kit and repository metadata](docs/LAUNCH_KIT.md)
@@ -114,6 +117,8 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Version and service health |
+| `GET` | `/api/services` | Authenticated live Apache, PHP, database, Fail2Ban, and ModSecurity inventory |
+| `GET` | `/api/security/audit` | Authenticated configuration and security posture checks |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
 | `POST` | `/api/cpmove/import` | Start an authorized restore job |
 | `GET` | `/api/jobs/<id>` | Poll restore status |

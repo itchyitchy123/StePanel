@@ -26,6 +26,10 @@ StePanel HTTP server
 5. Website files are copied to a target-specific root.
 6. SQL restore is opt-in and uses account-prefixed database names.
 
-The current release does not provide authentication, authorization, rate limiting, or TLS. These are required before internet-facing production use.
-
-When configured, StePanel provides signed, expiring sessions, CSRF tokens for mutating forms, security response headers, and JSONL audit events. The current restore implementation runs inside the service account and writes only to the configured site root; a dedicated privileged helper remains the next hardening step for database/socket operations.
+When configured, StePanel provides administrator authentication with signed,
+expiring sessions, CSRF tokens for mutating forms, login rate limiting,
+security response headers, and JSONL audit events. TLS and a reverse proxy are
+still required before internet-facing production use. The current restore
+implementation runs inside the service account and writes only to the
+configured site root; a dedicated privileged helper remains the next
+hardening step for database/socket operations.
