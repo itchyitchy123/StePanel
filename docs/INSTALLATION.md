@@ -10,10 +10,21 @@ Build on a Go 1.22+ build host:
 
 ```sh
 go build -trimpath -ldflags='-s -w' -o stepanel .
-sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' ./install.sh
+sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \\
+  STEPANEL_DB_ENGINE=mariadb \\
+  STEPANEL_DB_VERSION=10.11 ./install.sh
 ```
 
-The installer requires an admin password, generates a session secret when one is not supplied, and starts in production mode. It also enables the Apache proxy, proxy_http, and headers modules on Debian-family systems. Replace the example hostname in the generated virtual host before production use. The installer creates:
+The installer requires an admin password, generates a session secret when one is not supplied, and starts in production mode. It supports `mysql` and `mariadb`. Use `default` for the distribution-provided version, or provide an exact version available from the configured package repositories. The installer verifies requested versions before changing the system and fails rather than silently selecting another version.
+
+In an interactive terminal, the installer asks for the database engine and version. For automation, use:
+
+| Variable | Values | Meaning |
+| --- | --- | --- |
+| `STEPANEL_DB_ENGINE` | `mysql`, `mariadb` | Database distribution |
+| `STEPANEL_DB_VERSION` | `default` or an exact package version | Requested repository version |
+
+It also enables the Apache proxy, proxy_http, and headers modules on Debian-family systems. Replace the example hostname in the generated virtual host before production use. The installer creates:
 
 | Path | Purpose |
 | --- | --- |
