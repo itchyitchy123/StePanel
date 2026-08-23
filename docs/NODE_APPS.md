@@ -21,3 +21,7 @@ installs `/usr/local/sbin/stepanel-apache-reload`, a root-owned helper that
 validates Apache configuration before reloading it. HTTPS certificates and
 application process supervision remain deployment responsibilities; use
 systemd, PM2, or another supervised process manager for the Node app itself.
+
+Managed proxies can be listed, backend-tested, and removed through the
+authenticated proxy API. A failed Apache reload restores the previous proxy
+configuration automatically.

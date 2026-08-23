@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 var nodeVersionPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
@@ -22,6 +23,11 @@ type proxyRequest struct {
 	Site    string `json:"site"`
 	Domain  string `json:"domain"`
 	Backend string `json:"backend"`
+}
+
+type proxyInfo struct {
+	Name   string `json:"name"`
+	Config string `json:"config"`
 }
 
 func (a *App) nodeVersions(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +108,8 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	name := input.Site + "-" + strings.ReplaceAll(strings.ToLower(input.Domain), ".", "_") + ".conf"
 	path := filepath.Join(a.Config.ProxyRoot, name)
+	previous, readErr := os.ReadFile(path)
+	existed := readErr == nil
 	content := fmt.Sprintf("<VirtualHost *:80>\n    ServerName %s\n    ProxyPreserveHost On\n    ProxyPass / %s/\n    ProxyPassReverse / %s/\n    RequestHeader set X-Forwarded-Proto \"http\"\n</VirtualHost>\n", input.Domain, backend, backend)
 	tmp, err := os.CreateTemp(a.Config.ProxyRoot, ".proxy-*.tmp")
 	if err != nil {
@@ -123,9 +131,82 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 	reloaded := false
 	if a.Config.ApacheReload != "" {
 		reloaded = exec.Command(a.Config.ApacheReload).Run() == nil
+		if !reloaded {
+			if existed {
+				_ = os.WriteFile(path, previous, 0644)
+			} else {
+				_ = os.Remove(path)
+			}
+		}
 	}
 	_ = Audit(a.Config.AuditLog, "proxy.deployed", input.Site, input.Domain+" -> "+backend)
 	writeJSON(w, http.StatusAccepted, map[string]any{"site": input.Site, "domain": input.Domain, "backend": backend, "config": path, "reloaded": reloaded})
+}
+
+func (a *App) proxyList(w http.ResponseWriter, r *http.Request) {
+	entries, _ := os.ReadDir(a.Config.ProxyRoot)
+	items := []proxyInfo{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+			continue
+		}
+		items = append(items, proxyInfo{Name: strings.TrimSuffix(entry.Name(), ".conf"), Config: filepath.Join(a.Config.ProxyRoot, entry.Name())})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	writeJSON(w, http.StatusOK, map[string]any{"proxies": items})
+}
+
+func (a *App) proxyTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	var input proxyRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	backend, err := localBackend(input.Backend)
+	if err != nil {
+		http.Error(w, err.Error(), 422)
+		return
+	}
+	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Get("http://" + backend)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"reachable": false, "backend": backend, "error": err.Error()})
+		return
+	}
+	defer response.Body.Close()
+	writeJSON(w, http.StatusOK, map[string]any{"reachable": true, "backend": backend, "status": response.StatusCode})
+}
+
+func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/api/proxy/")
+	if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".conf") {
+		http.Error(w, "invalid proxy", 422)
+		return
+	}
+	path := filepath.Join(a.Config.ProxyRoot, name)
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "proxy not found", 404)
+		} else {
+			http.Error(w, "unable to remove proxy", 500)
+		}
+		return
+	}
+	reloaded := a.Config.ApacheReload == "" || exec.Command(a.Config.ApacheReload).Run() == nil
+	if !reloaded {
+		http.Error(w, "proxy removed but Apache reload failed", 503)
+		return
+	}
+	_ = Audit(a.Config.AuditLog, "proxy.deleted", name, "managed proxy removed")
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "reloaded": true})
 }
 
 func localBackend(value string) (string, error) {

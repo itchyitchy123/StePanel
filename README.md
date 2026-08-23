@@ -125,6 +125,9 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | `GET` | `/api/node/versions` | List installed NVM Node versions |
 | `POST` | `/api/node/select` | Select an installed Node version for a managed site |
 | `POST` | `/api/proxy/deploy` | Generate and reload a validated Apache reverse proxy |
+| `GET` | `/api/proxy` | List managed reverse proxies |
+| `POST` | `/api/proxy/test` | Test a local/private application backend |
+| `DELETE` | `/api/proxy/<config>` | Remove a managed reverse proxy and reload Apache |
 | `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
 | `POST` | `/api/cpmove/import` | Start an authorized restore job |
