@@ -69,6 +69,7 @@ Set `STEPANEL_ADMIN_USERNAME`, `STEPANEL_ADMIN_PASSWORD`, and a long random `STE
 | `GET` | `/api/health` | Service discovery and liveness |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a multipart backup |
 | `POST` | `/api/cpmove/import` | Authorized restore of files and optional SQL |
+| `GET` | `/api/jobs/<id>` | Poll an asynchronous restore job |
 | `GET` | `/metrics` | Minimal Prometheus-compatible process metric |
 
 ## Security model

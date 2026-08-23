@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +20,7 @@ type App struct {
 	Config Config
 	View   *template.Template
 	Auth   Auth
+	Jobs   *Jobs
 }
 
 func main() {
@@ -32,10 +35,17 @@ func main() {
 	if cfg.Production && !auth.Enabled {
 		log.Fatal("authentication must be configured in production")
 	}
-	app := &App{Config: cfg, View: template.Must(template.ParseFiles("web/index.html")), Auth: auth}
+	app := &App{Config: cfg, View: template.Must(template.ParseFiles("web/index.html")), Auth: auth, Jobs: NewJobs()}
 	if !app.Auth.Enabled {
 		log.Println("warning: authentication is disabled; set STEPANEL_ADMIN_PASSWORD and STEPANEL_SESSION_SECRET")
 	}
+	go func() {
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			app.Jobs.Cleanup(24 * time.Hour)
+		}
+	}()
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	mux.HandleFunc("/login", app.Auth.Login)
@@ -44,8 +54,9 @@ func main() {
 	mux.HandleFunc("/api/health", app.health)
 	mux.Handle("/api/cpmove/inspect", app.Auth.Require(http.HandlerFunc(app.inspect)))
 	mux.Handle("/api/cpmove/import", app.Auth.Require(http.HandlerFunc(app.importBackup)))
+	mux.Handle("/api/jobs/", app.Auth.Require(http.HandlerFunc(app.jobStatus)))
 	mux.HandleFunc("/metrics", app.metrics)
-	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		log.Printf("StePanel listening on %s", cfg.Listen)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -132,18 +143,52 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "a valid account username is required", 400)
 		return
 	}
-	result, err := RestoreCPMove(a.Config, file, header, user, r.FormValue("restore_databases") == "on")
+	temp, err := os.CreateTemp(a.Config.ImportRoot, "upload-*.tar.gz")
 	if err != nil {
-		_ = Audit(a.Config.AuditLog, "cpmove.restore.failed", user, err.Error())
-		http.Error(w, err.Error(), 422)
+		http.Error(w, "could not stage upload", 500)
 		return
 	}
-	_ = Audit(a.Config.AuditLog, "cpmove.restore.completed", user, result.StagedAt)
-	if len(result.DatabaseErrors) > 0 {
-		writeJSON(w, http.StatusMultiStatus, result)
+	tempPath := temp.Name()
+	if _, err = io.Copy(temp, file); err != nil {
+		temp.Close()
+		http.Error(w, "could not stage upload", 500)
 		return
 	}
-	writeJSON(w, 200, result)
+	if err = temp.Close(); err != nil {
+		http.Error(w, "could not stage upload", 500)
+		return
+	}
+	databaseRestore := r.FormValue("restore_databases") == "on"
+	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + user
+	a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
+		defer os.Remove(tempPath)
+		staged, openErr := os.Open(tempPath)
+		if openErr != nil {
+			return ImportResult{}, openErr
+		}
+		defer staged.Close()
+		result, restoreErr := RestoreCPMove(a.Config, staged, header, user, databaseRestore)
+		if restoreErr != nil {
+			_ = Audit(a.Config.AuditLog, "cpmove.restore.failed", user, restoreErr.Error())
+		} else {
+			_ = Audit(a.Config.AuditLog, "cpmove.restore.completed", user, result.StagedAt)
+		}
+		return result, restoreErr
+	})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": filepath.Join("/api/jobs", jobID)})
+}
+func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	job, ok := a.Jobs.Get(id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
 }
 func logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
