@@ -14,6 +14,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - health endpoint and migration-center dashboard workflow.
 - initial project documentation, CI, and contributor policies.
 
+## [0.1.0] - 2026-08-22
+
+The first documented foundation release: authenticated dashboard, LAMP installer, database engine/version selection, cpmove staging and restore, health endpoints, and deployment tooling.
+
 ### Known limitations
 
 - Authentication, authorization, and TLS termination are not included yet.

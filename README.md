@@ -1,6 +1,6 @@
 # StePanel
 
-![CI](https://github.com/itchyitchy123/StePanel/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/itchyitchy123/StePanel/actions/workflows/ci.yml/badge.svg) ![Release](https://img.shields.io/github/v/release/itchyitchy123/StePanel?display_name=tag)
 
 StePanel is a focused server control plane for small hosting fleets. It installs a LAMP foundation, exposes a calm operational dashboard, and provides a guarded workflow for importing cPanel `cpmove` backups.
 
@@ -30,6 +30,18 @@ go run .
 
 Open <http://localhost:8080>. Local development defaults to `data/imports` and `data/www`, so root access is not required.
 
+### Container image
+
+The container packages the StePanel control plane only. It does not install Apache or MySQL/MariaDB inside the container; use the host installer for a complete LAMP server or connect the control plane to separately managed services.
+
+```sh
+docker build -t stepanel:local .
+docker run --rm -p 8080:8080 \
+  -e STEPANEL_ADMIN_PASSWORD='change-me' \
+  -e STEPANEL_SESSION_SECRET='use-at-least-32-random-characters' \
+  stepanel:local
+```
+
 ### Install on a server
 
 Build a release binary, copy the repository and binary to the target host, and run the installer as root:
@@ -50,6 +62,8 @@ The installer creates a `stepanel` service account, installs the LAMP packages, 
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
+- [Product roadmap](docs/ROADMAP.md)
+- [Release artifacts](https://github.com/itchyitchy123/StePanel/releases)
 
 ## Configuration
 

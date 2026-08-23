@@ -85,7 +85,7 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	_ = a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled})
 }
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "services": ServiceStatus(), "time": time.Now().UTC()})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": Version, "commit": Commit, "services": ServiceStatus(), "time": time.Now().UTC()})
 }
 func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")

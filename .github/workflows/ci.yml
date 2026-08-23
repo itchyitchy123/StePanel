@@ -27,3 +27,5 @@ jobs:
       - run: bash -n install.sh
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Build container
+        run: docker build --tag stepanel:ci .
