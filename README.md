@@ -20,7 +20,7 @@ It is designed for people who want a small, understandable hosting control plane
 
 | Area | Included today |
 | --- | --- |
-| Installation | Apache, PHP, MySQL/MariaDB, optional Exim/Dovecot, systemd, Debian/Ubuntu and RHEL-family systems |
+| Installation | Apache, PHP, MySQL/MariaDB, optional Exim/Dovecot/SpamAssassin, systemd, Debian/Ubuntu and RHEL-family systems |
 | Migration | cPanel `.tar.gz` inspection, safe staging, website, SQL, and staged mailbox restore |
 | Operations | Dashboard, health endpoint, metrics endpoint, audit log, asynchronous restore jobs |
 | Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |
@@ -142,7 +142,8 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | `STEPANEL_DB_PASSWORD` | Database password supplied through the process environment |
 | `STEPANEL_MAIL_ROOT` | Private root for staged cPanel mailbox data |
 
-Set `STEPANEL_INSTALL_MAIL=1` during installation to install Exim and Dovecot.
+Set `STEPANEL_INSTALL_MAIL=1` during installation to install Exim, Dovecot,
+and SpamAssassin.
 Mailbox contents are preserved in the private mail root and reported by the
 restore job; activation still requires destination domain, mailbox, DNS, TLS,
 and credential mapping.

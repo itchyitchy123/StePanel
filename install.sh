@@ -59,12 +59,15 @@ if [[ "$INSTALL_MAIL" != "0" && "$INSTALL_MAIL" != "1" ]]; then echo "STEPANEL_I
 install_mail_stack() {
   if [[ "$PKG" == "apt" ]]; then
     export DEBIAN_FRONTEND=noninteractive
-    apt-get install -y exim4 dovecot-core dovecot-imapd dovecot-pop3d
+    apt-get install -y exim4 dovecot-core dovecot-imapd dovecot-pop3d spamassassin
+    MAIL_SPAM_SERVICE="spamassassin"
     systemctl enable exim4 dovecot
   else
-    dnf install -y exim dovecot
+    dnf install -y exim dovecot spamassassin
+    MAIL_SPAM_SERVICE="spamd"
     systemctl enable exim dovecot
   fi
+  systemctl enable "$MAIL_SPAM_SERVICE"
   install -d -m 0750 "$DATA_DIR/mail"
 }
 
@@ -126,7 +129,7 @@ printf 'STEPANEL_ENV=production\nSTEPANEL_LISTEN=127.0.0.1:8090\nSTEPANEL_ADMIN_
 chmod 0600 "$ENV_FILE"
 install -m 0644 "$ROOT_DIR/deploy/stepanel.service" /etc/systemd/system/stepanel.service
 systemctl daemon-reload; systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" stepanel; systemctl reload "$APACHE_SERVICE" || true
-if [[ "$INSTALL_MAIL" == "1" ]]; then systemctl enable --now "$([[ "$PKG" == "apt" ]] && echo exim4 || echo exim)" dovecot; fi
+if [[ "$INSTALL_MAIL" == "1" ]]; then systemctl enable --now "$([[ "$PKG" == "apt" ]] && echo exim4 || echo exim)" dovecot "$MAIL_SPAM_SERVICE"; fi
 if [[ "$INSTALL_FAIL2BAN" == "1" ]]; then
   bash "$APP_DIR/integrations/install-fail2ban.sh" --yes --jails "$FAIL2BAN_JAILS" --ignore-ip "$FAIL2BAN_IGNORE_IP"
 fi

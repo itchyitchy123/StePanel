@@ -23,7 +23,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | --- | --- | --- |
 | `STEPANEL_DB_ENGINE` | `mysql`, `mariadb` | Database distribution |
 | `STEPANEL_DB_VERSION` | `default` or an exact package version | Requested repository version |
-| `STEPANEL_INSTALL_MAIL` | `0` or `1` | Install Exim/Dovecot and enable mailbox staging |
+| `STEPANEL_INSTALL_MAIL` | `0` or `1` | Install Exim, Dovecot, SpamAssassin, and enable mailbox staging |
 
 It also enables the Apache proxy, proxy_http, and headers modules on Debian-family systems. Replace the example hostname in the generated virtual host before production use. The installer creates:
 

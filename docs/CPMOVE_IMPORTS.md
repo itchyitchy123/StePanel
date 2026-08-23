@@ -16,8 +16,8 @@ Website files are copied to `/var/www/sites/<username>/public`. SQL files found 
 
 ## Mail restoration
 
-When `STEPANEL_INSTALL_MAIL=1` is used, the installer installs Exim and
-Dovecot and creates a private mail staging root. cPanel mailbox data found
+When `STEPANEL_INSTALL_MAIL=1` is used, the installer installs Exim, Dovecot,
+and SpamAssassin and creates a private mail staging root. cPanel mailbox data found
 under `homedir/mail` is preserved under:
 
 ```text
@@ -29,6 +29,10 @@ The restore result reports staged mailboxes. cPanel's Exim and Dovecot files
 are host-specific and are not copied into `/etc`; activating mail requires a
 domain/mailbox mapping step, credentials, DNS records, TLS, and transport
 policy on the destination.
+
+SpamAssassin is installed and its daemon is started for mail installations, but
+the destination administrator must still connect it to the chosen Exim
+transport and review scoring, relay, and training policy before accepting mail.
 
 ## Compatibility
 
