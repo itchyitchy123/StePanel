@@ -10,10 +10,10 @@ Build on a Go 1.22+ build host:
 
 ```sh
 go build -trimpath -ldflags='-s -w' -o stepanel .
-sudo ./install.sh
+sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' ./install.sh
 ```
 
-The installer also enables the Apache proxy, proxy_http, and headers modules on Debian-family systems. Replace the example hostname in the generated virtual host before production use. The installer creates:
+The installer requires an admin password, generates a session secret when one is not supplied, and starts in production mode. It also enables the Apache proxy, proxy_http, and headers modules on Debian-family systems. Replace the example hostname in the generated virtual host before production use. The installer creates:
 
 | Path | Purpose |
 | --- | --- |

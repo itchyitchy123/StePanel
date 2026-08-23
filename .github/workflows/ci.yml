@@ -20,7 +20,7 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
-      - run: gofmt -w *.go
+      - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test ./...
       - run: go build -trimpath -o stepanel .
