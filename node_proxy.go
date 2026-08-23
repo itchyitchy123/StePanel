@@ -1,0 +1,162 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+var nodeVersionPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
+var domainPattern = regexp.MustCompile(`^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))+$`)
+
+type proxyRequest struct {
+	Site    string `json:"site"`
+	Domain  string `json:"domain"`
+	Backend string `json:"backend"`
+}
+
+func (a *App) nodeVersions(w http.ResponseWriter, r *http.Request) {
+	entries, err := os.ReadDir(filepath.Join(a.Config.NVMDir, "versions", "node"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		http.Error(w, "unable to inspect NVM versions", 500)
+		return
+	}
+	versions := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() && nodeVersionPattern.MatchString(entry.Name()) {
+			versions = append(versions, entry.Name())
+		}
+	}
+	sort.Strings(versions)
+	writeJSON(w, http.StatusOK, map[string]any{"versions": versions})
+}
+
+func (a *App) selectNode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	var input struct{ Site, Version string }
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	if safeUser(input.Site) == "" || !nodeVersionPattern.MatchString(input.Version) {
+		http.Error(w, "invalid site or Node version", 422)
+		return
+	}
+	version := strings.TrimPrefix(input.Version, "v")
+	installed := filepath.Join(a.Config.NVMDir, "versions", "node", "v"+version)
+	if info, err := os.Stat(installed); err != nil || !info.IsDir() {
+		http.Error(w, "requested Node version is not installed", 422)
+		return
+	}
+	siteRoot := filepath.Join(a.Config.WebRoot, "sites", input.Site)
+	if err := ensureInside(a.Config.WebRoot, siteRoot); err != nil {
+		http.Error(w, err.Error(), 422)
+		return
+	}
+	if err := os.MkdirAll(siteRoot, 0750); err != nil {
+		http.Error(w, "unable to prepare site root", 500)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(siteRoot, ".nvmrc"), []byte("v"+version+"\n"), 0640); err != nil {
+		http.Error(w, "unable to select Node version", 500)
+		return
+	}
+	_ = Audit(a.Config.AuditLog, "node.version.selected", input.Site, "Node v"+version)
+	writeJSON(w, http.StatusOK, map[string]string{"site": input.Site, "version": "v" + version})
+}
+
+func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	var input proxyRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&input); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	if safeUser(input.Site) == "" || !domainPattern.MatchString(strings.ToLower(input.Domain)) {
+		http.Error(w, "invalid site or domain", 422)
+		return
+	}
+	backend, err := localBackend(input.Backend)
+	if err != nil {
+		http.Error(w, err.Error(), 422)
+		return
+	}
+	if err := os.MkdirAll(a.Config.ProxyRoot, 0750); err != nil {
+		http.Error(w, "unable to create proxy directory", 500)
+		return
+	}
+	name := input.Site + "-" + strings.ReplaceAll(strings.ToLower(input.Domain), ".", "_") + ".conf"
+	path := filepath.Join(a.Config.ProxyRoot, name)
+	content := fmt.Sprintf("<VirtualHost *:80>\n    ServerName %s\n    ProxyPreserveHost On\n    ProxyPass / %s/\n    ProxyPassReverse / %s/\n    RequestHeader set X-Forwarded-Proto \"http\"\n</VirtualHost>\n", input.Domain, backend, backend)
+	tmp, err := os.CreateTemp(a.Config.ProxyRoot, ".proxy-*.tmp")
+	if err != nil {
+		http.Error(w, "unable to stage proxy configuration", 500)
+		return
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err = tmp.Chmod(0644); err == nil {
+		_, err = tmp.WriteString(content)
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil || os.Rename(tmpName, path) != nil {
+		http.Error(w, "unable to write proxy configuration", 500)
+		return
+	}
+	reloaded := false
+	if a.Config.ApacheReload != "" {
+		reloaded = exec.Command(a.Config.ApacheReload).Run() == nil
+	}
+	_ = Audit(a.Config.AuditLog, "proxy.deployed", input.Site, input.Domain+" -> "+backend)
+	writeJSON(w, http.StatusAccepted, map[string]any{"site": input.Site, "domain": input.Domain, "backend": backend, "config": path, "reloaded": reloaded})
+}
+
+func localBackend(value string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || u.Scheme != "http" || u.User != nil || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" {
+		return "", errors.New("backend must be a plain http URL")
+	}
+	if u.Port() == "" {
+		return "", errors.New("backend must include a port")
+	}
+	if u.Hostname() == "localhost" {
+		return u.Host, nil
+	}
+	ip := net.ParseIP(u.Hostname())
+	if ip == nil || !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()) {
+		return "", errors.New("backend must target localhost or a private IP")
+	}
+	return u.Host, nil
+}
+
+func ensureInside(root, target string) error {
+	r, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	t, err := filepath.Abs(target)
+	if err != nil {
+		return err
+	}
+	if t != r && !strings.HasPrefix(t, r+string(os.PathSeparator)) {
+		return errors.New("path escapes configured root")
+	}
+	return nil
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
+if command -v apachectl >/dev/null 2>&1; then
+  apachectl -t
+  systemctl reload apache2 2>/dev/null || systemctl reload httpd
+elif command -v httpd >/dev/null 2>&1; then
+  httpd -t
+  systemctl reload httpd
+else
+  echo 'Apache was not found' >&2
+  exit 1
+fi

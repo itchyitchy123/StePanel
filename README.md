@@ -89,6 +89,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 ## Documentation
 
 - [Installation guide](docs/INSTALLATION.md)
+- [Node application deployment](docs/NODE_APPS.md)
 - [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
 - [Architecture and safety model](docs/ARCHITECTURE.md)
 - [Feature catalog](docs/FEATURES.md)
@@ -119,6 +120,9 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | `GET` | `/api/health` | Version and service health |
 | `GET` | `/api/services` | Authenticated live Apache, PHP, database, Fail2Ban, and ModSecurity inventory |
 | `GET` | `/api/security/audit` | Authenticated configuration and security posture checks |
+| `GET` | `/api/node/versions` | List installed NVM Node versions |
+| `POST` | `/api/node/select` | Select an installed Node version for a managed site |
+| `POST` | `/api/proxy/deploy` | Generate and reload a validated Apache reverse proxy |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
 | `POST` | `/api/cpmove/import` | Start an authorized restore job |
 | `GET` | `/api/jobs/<id>` | Poll restore status |
@@ -144,6 +148,10 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 
 Set `STEPANEL_INSTALL_MAIL=1` during installation to install Exim, Dovecot,
 and SpamAssassin.
+
+Set `STEPANEL_INSTALL_NODE=1 STEPANEL_NODE_VERSIONS=20.18.0,22.14.0` to install
+Node versions through NVM. The panel can select an installed version per site
+and generate a validated Apache reverse proxy for a local app backend.
 Mailbox contents are preserved in the private mail root and reported by the
 restore job; activation still requires destination domain, mailbox, DNS, TLS,
 and credential mapping.

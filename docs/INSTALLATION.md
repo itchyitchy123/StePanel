@@ -24,6 +24,8 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_DB_ENGINE` | `mysql`, `mariadb` | Database distribution |
 | `STEPANEL_DB_VERSION` | `default` or an exact package version | Requested repository version |
 | `STEPANEL_INSTALL_MAIL` | `0` or `1` | Install Exim, Dovecot, SpamAssassin, and enable mailbox staging |
+| `STEPANEL_INSTALL_NODE` | `0` or `1` | Install NVM for the StePanel service account |
+| `STEPANEL_NODE_VERSIONS` | Comma-separated versions | Node versions to install through NVM |
 
 It also enables the Apache proxy, proxy_http, and headers modules on Debian-family systems. Replace the example hostname in the generated virtual host before production use. The installer creates:
 
@@ -32,6 +34,7 @@ It also enables the Apache proxy, proxy_http, and headers modules on Debian-fami
 | `/opt/stepanel` | Binary and web assets |
 | `/var/lib/ste-panel/imports` | Private cpmove staging |
 | `/var/lib/ste-panel/mail` | Private staged mailbox data |
+| `/var/lib/ste-panel/proxy` | Managed Apache reverse-proxy snippets |
 | `/etc/ste-panel.env` | Runtime configuration |
 | `/etc/systemd/system/stepanel.service` | Service definition |
 
