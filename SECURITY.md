@@ -17,4 +17,8 @@ Please allow time for investigation and a coordinated fix before public disclosu
 
 ## Deployment requirements
 
-StePanel must run behind HTTPS and an authenticated reverse proxy until native authentication is implemented. Do not expose port 8080/8090 directly to the internet. Restrict backup staging permissions and use snapshots before restoring into a live site.
+StePanel provides administrator authentication, but production deployments
+must still run behind HTTPS and a reverse proxy. Do not expose port 8080/8090
+directly to the internet. Restrict backup staging permissions and use
+snapshots before restoring into a live site. MFA/OIDC, role separation, and a
+privileged restore helper remain roadmap items.

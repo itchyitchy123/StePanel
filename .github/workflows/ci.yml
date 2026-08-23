@@ -22,10 +22,40 @@ jobs:
           cache: true
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test ./... -coverprofile=coverage.out -covermode=atomic
+      - uses: actions/upload-artifact@v4
+        if: matrix.go-version == '1.23.x'
+        with:
+          name: go-coverage
+          path: coverage.out
       - run: go build -trimpath -o stepanel .
       - run: bash -n install.sh
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: Build container
         run: docker build --tag stepanel:ci .
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: Lint Helm chart
+        run: helm lint deploy/helm/stepanel
+      - name: Render Helm chart
+        run: helm template stepanel deploy/helm/stepanel >/tmp/stepanel-rendered.yaml
+      - name: Validate Kubernetes manifests
+        run: docker run --rm -v "$PWD:/work" ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary /work/deploy/kubernetes/stepanel.yaml
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - name: Validate Terraform
+        working-directory: deploy/terraform
+        run: terraform fmt -check -recursive && terraform init -backend=false && terraform validate
+      - name: Scan container
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: stepanel:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH

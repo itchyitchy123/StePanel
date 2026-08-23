@@ -54,11 +54,21 @@ resource "kubernetes_deployment" "stepanel" {
           }
           env {
             name = "STEPANEL_ADMIN_PASSWORD"
-            value_from { secret_key_ref { name = "stepanel-secrets", key = "admin-password" } }
+            value_from {
+              secret_key_ref {
+                name = "stepanel-secrets"
+                key  = "admin-password"
+              }
+            }
           }
           env {
             name = "STEPANEL_SESSION_SECRET"
-            value_from { secret_key_ref { name = "stepanel-secrets", key = "session-secret" } }
+            value_from {
+              secret_key_ref {
+                name = "stepanel-secrets"
+                key  = "session-secret"
+              }
+            }
           }
           readiness_probe {
             http_get {

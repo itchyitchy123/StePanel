@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -28,6 +30,16 @@ jobs:
               -o "dist/stepanel-${VERSION}-${target%/*}-${target#*/}" .
           done
           sha256sum dist/* > dist/SHA256SUMS
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.17.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/SBOM.spdx.json
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'dist/*'
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
