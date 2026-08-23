@@ -30,6 +30,10 @@ It is designed for people who want a small, understandable hosting control plane
 
 ## See it quickly
 
+![StePanel dashboard preview](docs/assets/dashboard-preview.svg)
+
+See the [product preview](docs/SCREENSHOTS.md) for the current dashboard direction.
+
 ### Local development
 
 Requirements: Go 1.22+.

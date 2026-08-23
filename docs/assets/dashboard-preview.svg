@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" role="img" aria-labelledby="title desc">
+  <title id="title">StePanel dashboard preview</title>
+  <desc id="desc">A dark green and lime operations dashboard showing fleet health, resources, activity, and migration center.</desc>
+  <rect width="1400" height="820" rx="20" fill="#f5f7f2"/>
+  <rect x="1" y="1" width="1398" height="818" rx="20" fill="none" stroke="#dfe6df"/>
+  <rect width="1400" height="72" fill="#ffffff"/>
+  <path d="M0 72h1400" stroke="#dfe6df"/>
+  <rect x="48" y="22" width="28" height="28" rx="9" fill="#192522"/>
+  <path d="M66 27H57c-4 0-6 2-6 5 0 3 2 4 5 5l6 2c1 .3 2 .8 2 2 0 1-1 2-3 2H52v4h9c4 0 7-2 7-6 0-3-2-4-5-5l-6-2c-1-.3-2-.7-2-1.5 0-1 1-2 3-2h8z" fill="#c9f36b"/>
+  <text x="88" y="42" fill="#192522" font-family="Arial,sans-serif" font-size="18" font-weight="700">StePanel</text>
+  <circle cx="1170" cy="36" r="4" fill="#8dc64a"/><text x="1184" y="41" fill="#78857f" font-family="Arial,sans-serif" font-size="12">Control plane online</text>
+  <circle cx="1340" cy="36" r="16" fill="#d9ded8"/><text x="1330" y="40" fill="#192522" font-family="Arial,sans-serif" font-size="10" font-weight="700">ST</text>
+  <text x="58" y="130" fill="#78857f" font-family="monospace" font-size="11" letter-spacing="2">WORKSPACE / OVERVIEW</text>
+  <text x="58" y="175" fill="#192522" font-family="Arial,sans-serif" font-size="40" font-weight="700">Good evening, Stephen.</text>
+  <text x="58" y="205" fill="#78857f" font-family="Arial,sans-serif" font-size="15">A calm view of the systems that keep your work moving.</text>
+  <rect x="1110" y="155" width="220" height="48" rx="5" fill="#192522"/><text x="1140" y="185" fill="#ffffff" font-family="Arial,sans-serif" font-size="13" font-weight="700">+ Provision resource</text>
+  <g transform="translate(58 250)"><rect width="1284" height="130" fill="#ffffff" stroke="#dfe6df"/><path d="M321 0v130M642 0v130M963 0v130" stroke="#dfe6df"/>
+    <text x="24" y="28" fill="#78857f" font-family="monospace" font-size="11">FLEET HEALTH</text><text x="24" y="75" fill="#192522" font-family="Arial,sans-serif" font-size="30" font-weight="700">96.4%</text><text x="24" y="101" fill="#688e29" font-family="Arial,sans-serif" font-size="11">↑ 2.1% this week</text>
+    <text x="345" y="28" fill="#78857f" font-family="monospace" font-size="11">ACTIVE NODES</text><text x="345" y="75" fill="#192522" font-family="Arial,sans-serif" font-size="30" font-weight="700">24 <tspan fill="#78857f" font-size="14">/ 26</tspan></text><text x="345" y="101" fill="#78857f" font-family="Arial,sans-serif" font-size="11">2 in maintenance</text>
+    <text x="666" y="28" fill="#78857f" font-family="monospace" font-size="11">MONTHLY SPEND</text><text x="666" y="75" fill="#192522" font-family="Arial,sans-serif" font-size="30" font-weight="700">€184.20</text><text x="666" y="101" fill="#78857f" font-family="Arial,sans-serif" font-size="11">€42.80 below budget</text>
+    <text x="987" y="28" fill="#78857f" font-family="monospace" font-size="11">OPEN ALERTS</text><text x="987" y="75" fill="#192522" font-family="Arial,sans-serif" font-size="30" font-weight="700">03</text><text x="987" y="101" fill="#b67c20" font-family="Arial,sans-serif" font-size="11">1 needs attention</text>
+  </g>
+  <text x="58" y="430" fill="#78857f" font-family="monospace" font-size="11" letter-spacing="2">YOUR INFRASTRUCTURE</text><text x="58" y="462" fill="#192522" font-family="Arial,sans-serif" font-size="24" font-weight="700">Resources</text>
+  <rect x="58" y="485" width="1284" height="44" fill="#f5f7f2"/><text x="78" y="512" fill="#78857f" font-family="monospace" font-size="10">RESOURCE</text><text x="410" y="512" fill="#78857f" font-family="monospace" font-size="10">LOCATION</text><text x="720" y="512" fill="#78857f" font-family="monospace" font-size="10">STATE</text><text x="990" y="512" fill="#78857f" font-family="monospace" font-size="10">LOAD</text>
+  <g font-family="Arial,sans-serif" font-size="12"><rect x="58" y="529" width="1284" height="62" fill="#ffffff" stroke="#dfe6df"/><text x="78" y="566" fill="#192522" font-weight="700">⌁  edge-north-01</text><text x="410" y="566" fill="#78857f">Helsinki · FI</text><circle cx="720" cy="562" r="4" fill="#75b73a"/><text x="732" y="566" fill="#192522">Operational</text><text x="990" y="566" fill="#192522">18%</text>
+  <rect x="58" y="591" width="1284" height="62" fill="#ffffff" stroke="#dfe6df"/><text x="78" y="628" fill="#192522" font-weight="700">⌁  vault-core-02</text><text x="410" y="628" fill="#78857f">Amsterdam · NL</text><circle cx="720" cy="624" r="4" fill="#75b73a"/><text x="732" y="628" fill="#192522">Operational</text><text x="990" y="628" fill="#192522">31%</text></g>
+  <rect x="58" y="690" width="1284" height="76" rx="4" fill="#e9efdf" stroke="#d5e0c5"/><text x="82" y="720" fill="#78857f" font-family="monospace" font-size="10" letter-spacing="1">MIGRATION CENTER</text><text x="82" y="746" fill="#192522" font-family="Arial,sans-serif" font-size="18" font-weight="700">Import a cpmove backup</text><text x="1110" y="742" fill="#192522" font-family="Arial,sans-serif" font-size="12" font-weight="700">Review &amp; restore  →</text>
+</svg>
