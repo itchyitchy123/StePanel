@@ -21,8 +21,10 @@ Before issuing a certificate:
 - Use a dedicated hostname; wildcard certificates are not supported here.
 
 The authenticated `POST /api/certificates/issue` endpoint accepts a domain and
-email address, validates both values, invokes Certbot with non-interactive
-terms acceptance and HTTP-to-HTTPS redirect, and records an audit event.
+email address, validates both values, queues a bounded certificate job, invokes
+Certbot with non-interactive terms acceptance and HTTP-to-HTTPS redirect, and
+records an audit event. Poll `/api/jobs/<job_id>` for completion. Only one
+certificate request for a given domain can run at a time.
 
 Issuance is deliberately explicit because DNS, firewall, Apache, and rate-limit
 failures require operator review. Renewal is handled by the host’s Certbot

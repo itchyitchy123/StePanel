@@ -70,7 +70,11 @@ func main() {
 	mux.Handle("/api/cpmove/inspect", app.Auth.Require(http.HandlerFunc(app.inspect)))
 	mux.Handle("/api/cpmove/import", app.Auth.Require(http.HandlerFunc(app.importBackup)))
 	mux.Handle("/api/jobs/", app.Auth.Require(http.HandlerFunc(app.jobStatus)))
-	mux.HandleFunc("/metrics", app.metrics)
+	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))
+	if os.Getenv("STEPANEL_METRICS_PUBLIC") != "1" {
+		metricsHandler = app.Auth.Require(metricsHandler)
+	}
+	mux.Handle("/metrics", metricsHandler)
 	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux, app.Metrics), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		log.Printf("StePanel listening on %s", cfg.Listen)
@@ -100,7 +104,11 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	_ = a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Servers": ServiceSummaries(), "Security": a.SecurityChecks()})
 }
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": Version, "commit": Commit, "services": ServiceStatus(), "time": time.Now().UTC()})
+	response := map[string]any{"ok": true, "version": Version, "commit": Commit, "time": time.Now().UTC()}
+	if !a.Auth.Enabled || a.Auth.validSession(r) {
+		response["services"] = ServiceStatus()
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -182,7 +190,7 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	databaseRestore := r.FormValue("restore_databases") == "on"
 	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + user
 	a.Metrics.RestoreStarted()
-	a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
+	if !a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
 		var restoreErr error
 		defer func() { a.Metrics.RestoreFinished(restoreErr) }()
 		defer os.Remove(tempPath)
@@ -199,7 +207,12 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 			_ = Audit(a.Config.AuditLog, "cpmove.restore.completed", user, result.StagedAt)
 		}
 		return result, restoreErr
-	})
+	}) {
+		_ = os.Remove(tempPath)
+		a.Metrics.RestoreFinished(errors.New("restore queue is full"))
+		http.Error(w, "too many long-running jobs", http.StatusTooManyRequests)
+		return
+	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": filepath.Join("/api/jobs", jobID)})
 }
 func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {

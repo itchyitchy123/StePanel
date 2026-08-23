@@ -26,7 +26,7 @@ metadata:
   labels:
     app.kubernetes.io/name: stepanel
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: stepanel
@@ -47,8 +47,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: STEPANEL_PRODUCTION
-              value: "true"
+            - name: STEPANEL_ENV
+              value: "production"
             - name: STEPANEL_LISTEN
               value: ":8080"
             - name: STEPANEL_ADMIN_PASSWORD

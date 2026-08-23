@@ -20,7 +20,6 @@ longer-term hosting-panel roadmap.
 
 - Site and domain lifecycle management.
 - PHP-FPM pools and per-site PHP version selection.
-- HTTPS certificate automation.
 - Verified scheduled backups and snapshot-backed rollback.
 - Role-based access, MFA/OIDC, and a restricted privileged restore helper.
 

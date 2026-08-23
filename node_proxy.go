@@ -192,16 +192,18 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := filepath.Join(a.Config.ProxyRoot, name)
+	previous, readErr := os.ReadFile(path)
+	if readErr != nil {
+		http.Error(w, "proxy not found", http.StatusNotFound)
+		return
+	}
 	if err := os.Remove(path); err != nil {
-		if os.IsNotExist(err) {
-			http.Error(w, "proxy not found", 404)
-		} else {
-			http.Error(w, "unable to remove proxy", 500)
-		}
+		http.Error(w, "unable to remove proxy", 500)
 		return
 	}
 	reloaded := a.Config.ApacheReload == "" || exec.Command(a.Config.ApacheReload).Run() == nil
 	if !reloaded {
+		_ = os.WriteFile(path, previous, 0644)
 		http.Error(w, "proxy removed but Apache reload failed", 503)
 		return
 	}

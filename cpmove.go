@@ -140,6 +140,7 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 	}
 	home := filepath.Join(cfg.WebRoot, "sites", user, "public")
 	backup := filepath.Join(stage, "site-before")
+	movedExisting := false
 	if existing, statErr := os.Lstat(home); statErr == nil {
 		if existing.Mode()&os.ModeSymlink != 0 {
 			return ImportResult{}, errors.New("destination site is a symlink")
@@ -147,10 +148,19 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 		if err = os.Rename(home, backup); err != nil {
 			return ImportResult{}, fmt.Errorf("snapshot existing site: %w", err)
 		}
+		movedExisting = true
 	}
-	if err = os.MkdirAll(home, 0750); err != nil {
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
 		_ = os.RemoveAll(home)
-		_ = os.Rename(backup, home)
+		if movedExisting {
+			_ = os.Rename(backup, home)
+		}
+	}()
+	if err = os.MkdirAll(home, 0750); err != nil {
 		return ImportResult{}, err
 	}
 	source := firstExisting(filepath.Join(stage, "homedir", "public_html"), filepath.Join(stage, "homedir", user, "public_html"))
@@ -161,8 +171,6 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 			return ImportResult{}, fmt.Errorf("restore blocked: malware scan detected %d suspicious PHP file(s)", len(findings))
 		}
 		if err = copyTree(source, home); err != nil {
-			_ = os.RemoveAll(home)
-			_ = os.Rename(backup, home)
 			return ImportResult{}, err
 		}
 	}
@@ -177,6 +185,7 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 	if len(result.MailErrors) > 0 {
 		return result, fmt.Errorf("mail restore completed with %d error(s)", len(result.MailErrors))
 	}
+	committed = true
 	return result, nil
 }
 

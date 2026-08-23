@@ -129,7 +129,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | `GET` | `/api/proxy` | List managed reverse proxies |
 | `POST` | `/api/proxy/test` | Test a local/private application backend |
 | `DELETE` | `/api/proxy/<config>` | Remove a managed reverse proxy and reload Apache |
-| `POST` | `/api/certificates/issue` | Request a validated Let’s Encrypt certificate |
+| `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
 | `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
@@ -142,6 +142,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | Variable | Purpose |
 | --- | --- |
 | `STEPANEL_LISTEN` | HTTP listen address |
+| `STEPANEL_ENV` | Set to `production` to enforce production authentication requirements |
 | `STEPANEL_ADMIN_USERNAME` | Administrator username |
 | `STEPANEL_ADMIN_PASSWORD` | Administrator password |
 | `STEPANEL_SESSION_SECRET` | Persistent session-signing secret, minimum 32 characters |
@@ -154,6 +155,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | `STEPANEL_DB_USER` | Database user used for SQL imports |
 | `STEPANEL_DB_PASSWORD` | Database password supplied through the process environment |
 | `STEPANEL_MAIL_ROOT` | Private root for staged cPanel mailbox data |
+| `STEPANEL_METRICS_PUBLIC` | Set to `1` only when Prometheus metrics must be unauthenticated |
 
 Set `STEPANEL_INSTALL_MAIL=1` during installation to install Exim, Dovecot,
 and SpamAssassin.
