@@ -98,6 +98,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 - [Observability bundle](observability/README.md)
 - [Deployment examples](deploy/)
 - [Disposable end-to-end lab](deploy/lab/README.md)
+- [FPM Lens and Fail2ban integrations](docs/INTEGRATIONS.md)
 - [GitHub security hardening](docs/GITHUB_HARDENING.md)
 - [Contributing](CONTRIBUTING.md)
 - [Support](SUPPORT.md)

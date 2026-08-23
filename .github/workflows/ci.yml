@@ -30,6 +30,7 @@ jobs:
           path: coverage.out
       - run: go build -trimpath -o stepanel .
       - run: bash -n install.sh
+      - run: bash -n deploy/integrations/install-fail2ban.sh
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: Build container
