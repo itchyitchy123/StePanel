@@ -21,6 +21,7 @@ import (
 type Auth struct {
 	Username, PasswordHash, Secret string
 	Enabled, SecureCookies         bool
+	loginLimiter                   *loginLimiter
 }
 
 func NewAuth(secureCookies bool) (Auth, error) {
@@ -47,7 +48,7 @@ func NewAuth(secureCookies bool) (Auth, error) {
 	if len(secret) < 32 {
 		return Auth{}, errors.New("STEPANEL_SESSION_SECRET must be at least 32 characters")
 	}
-	return Auth{Username: username, PasswordHash: hash, Secret: secret, Enabled: true, SecureCookies: secureCookies}, nil
+	return Auth{Username: username, PasswordHash: hash, Secret: secret, Enabled: true, SecureCookies: secureCookies, loginLimiter: newLoginLimiter()}, nil
 }
 
 func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
@@ -64,11 +65,18 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if a.loginLimiter != nil && !a.loginLimiter.Allow(clientIP(r)) {
+		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
+		return
+	}
 	if r.FormValue("username") != a.Username || bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(r.FormValue("password"))) != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(loginPage("Invalid credentials")))
 		return
+	}
+	if a.loginLimiter != nil {
+		a.loginLimiter.Reset(clientIP(r))
 	}
 	expiry := time.Now().Add(12 * time.Hour).Unix()
 	payload := a.Username + "|" + strconv.FormatInt(expiry, 10)

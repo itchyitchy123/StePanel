@@ -1,0 +1,53 @@
+services:
+  stepanel:
+    build:
+      context: ../..
+    environment:
+      STEPANEL_ENV: lab
+      STEPANEL_LISTEN: :8080
+      STEPANEL_DB_HOST: mysql
+      STEPANEL_DB_USER: root
+      STEPANEL_DB_PASSWORD: lab-root-password
+      STEPANEL_IMPORT_ROOT: /var/lib/ste-panel/imports
+      STEPANEL_WEB_ROOT: /var/www
+    ports:
+      - "8080:8080"
+    volumes:
+      - imports:/var/lib/ste-panel/imports
+      - sites:/var/www/sites
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: lab-root-password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-plab-root-password"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - stepanel
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  imports:
+  sites:
+  mysql-data:

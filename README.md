@@ -97,6 +97,8 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 - [Demo walkthrough](docs/DEMO.md)
 - [Observability bundle](observability/README.md)
 - [Deployment examples](deploy/)
+- [Disposable end-to-end lab](deploy/lab/README.md)
+- [GitHub security hardening](docs/GITHUB_HARDENING.md)
 - [Contributing](CONTRIBUTING.md)
 - [Support](SUPPORT.md)
 - [Security policy](SECURITY.md)
@@ -126,6 +128,9 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 | `STEPANEL_IMPORT_ROOT` | Private backup staging directory |
 | `STEPANEL_WEB_ROOT` | Site destination root |
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |
+| `STEPANEL_DB_HOST` | MySQL/MariaDB host used for SQL imports |
+| `STEPANEL_DB_USER` | Database user used for SQL imports |
+| `STEPANEL_DB_PASSWORD` | Database password supplied through the process environment |
 
 ## Roadmap
 

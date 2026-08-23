@@ -57,7 +57,7 @@ func main() {
 	mux.Handle("/api/cpmove/import", app.Auth.Require(http.HandlerFunc(app.importBackup)))
 	mux.Handle("/api/jobs/", app.Auth.Require(http.HandlerFunc(app.jobStatus)))
 	mux.HandleFunc("/metrics", app.metrics)
-	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux, app.Metrics), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		log.Printf("StePanel listening on %s", cfg.Listen)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -195,15 +195,42 @@ func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, job)
 }
-func logging(next http.Handler) http.Handler {
+func logging(next http.Handler, metrics *Metrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
+		wrapped := &statusWriter{ResponseWriter: w}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "same-origin")
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(started))
+		next.ServeHTTP(wrapped, r)
+		if metrics != nil {
+			metrics.ObserveHTTP(wrapped.status, time.Since(started))
+		}
+		logJSON(r, wrapped.status, time.Since(started))
 	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+func (w *statusWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func logJSON(r *http.Request, status int, duration time.Duration) {
+	if status == 0 {
+		status = http.StatusOK
+	}
+	log.Printf(`{"level":"info","method":%q,"path":%q,"status":%d,"duration_ms":%.3f}`, r.Method, r.URL.Path, status, float64(duration.Microseconds())/1000)
 }
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")

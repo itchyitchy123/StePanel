@@ -34,6 +34,10 @@ type ImportResult struct {
 }
 
 func InspectCPMove(file multipart.File, header *multipart.FileHeader) (CPMoveInfo, error) {
+	return inspectCPMove(file, header, 1000000)
+}
+
+func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries int) (CPMoveInfo, error) {
 	if header.Size > 20<<30 {
 		return CPMoveInfo{}, errors.New("backup exceeds the 20 GiB upload limit")
 	}
@@ -60,7 +64,7 @@ func InspectCPMove(file multipart.File, header *multipart.FileHeader) (CPMoveInf
 			return info, fmt.Errorf("unsafe archive path: %s", h.Name)
 		}
 		info.Entries++
-		if info.Entries > 1000000 {
+		if maxEntries > 0 && info.Entries > maxEntries {
 			return info, errors.New("archive contains too many entries")
 		}
 		name := strings.Trim(h.Name, "/")
@@ -93,7 +97,7 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return ImportResult{}, err
 	}
-	if _, err := InspectCPMove(file, header); err != nil {
+	if _, err := inspectCPMove(file, header, cfg.MaxEntries); err != nil {
 		return ImportResult{}, err
 	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
@@ -118,17 +122,33 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 		return ImportResult{}, err
 	}
 	home := filepath.Join(cfg.WebRoot, "sites", user, "public")
+	backup := filepath.Join(stage, "site-before")
+	if existing, statErr := os.Lstat(home); statErr == nil {
+		if existing.Mode()&os.ModeSymlink != 0 {
+			return ImportResult{}, errors.New("destination site is a symlink")
+		}
+		if err = os.Rename(home, backup); err != nil {
+			return ImportResult{}, fmt.Errorf("snapshot existing site: %w", err)
+		}
+	}
 	if err = os.MkdirAll(home, 0750); err != nil {
+		_ = os.RemoveAll(home)
+		_ = os.Rename(backup, home)
 		return ImportResult{}, err
 	}
 	if source := firstExisting(filepath.Join(stage, "homedir", "public_html"), filepath.Join(stage, "homedir", user, "public_html")); source != "" {
 		if err = copyTree(source, home); err != nil {
+			_ = os.RemoveAll(home)
+			_ = os.Rename(backup, home)
 			return ImportResult{}, err
 		}
 	}
 	result := ImportResult{User: user, Home: home, FilesRestored: firstExisting(filepath.Join(stage, "homedir", "public_html"), filepath.Join(stage, "homedir", user, "public_html")) != "", StagedAt: stage}
 	if databases {
-		result.DatabasesRestored, result.DatabaseErrors = restoreSQL(stage, user)
+		result.DatabasesRestored, result.DatabaseErrors = restoreSQL(cfg, stage, user)
+		if len(result.DatabaseErrors) > 0 {
+			return result, fmt.Errorf("database restore completed with %d error(s)", len(result.DatabaseErrors))
+		}
 	}
 	return result, nil
 }
@@ -191,7 +211,7 @@ func extractArchive(archive, destination string) error {
 		total += written
 	}
 }
-func restoreSQL(stage, user string) ([]string, []string) {
+func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
 	matches, _ := filepath.Glob(filepath.Join(stage, "mysql", "*.sql"))
 	restored, failures := []string{}, []string{}
 	for _, dump := range matches {
@@ -206,7 +226,12 @@ func restoreSQL(stage, user string) ([]string, []string) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		cmd := exec.CommandContext(ctx, "mysql", "--batch", "--execute", "CREATE DATABASE IF NOT EXISTS `"+name+"`")
+		args := mysqlArgs(cfg)
+		args = append(args, "--batch", "--execute", "CREATE DATABASE IF NOT EXISTS `"+name+"`")
+		cmd := exec.CommandContext(ctx, "mysql", args...)
+		if cfg.DBPassword != "" {
+			cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
+		}
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			failures = append(failures, name+": create failed: "+strings.TrimSpace(string(output)))
@@ -219,7 +244,12 @@ func restoreSQL(stage, user string) ([]string, []string) {
 			cancel()
 			continue
 		}
-		cmd = exec.CommandContext(ctx, "mysql", name)
+		args = mysqlArgs(cfg)
+		args = append(args, name)
+		cmd = exec.CommandContext(ctx, "mysql", args...)
+		if cfg.DBPassword != "" {
+			cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
+		}
 		cmd.Stdin = input
 		output, err = cmd.CombinedOutput()
 		input.Close()
@@ -231,6 +261,17 @@ func restoreSQL(stage, user string) ([]string, []string) {
 		restored = append(restored, name)
 	}
 	return restored, failures
+}
+
+func mysqlArgs(cfg Config) []string {
+	args := []string{}
+	if cfg.DBHost != "" {
+		args = append(args, "--host", cfg.DBHost)
+	}
+	if cfg.DBUser != "" {
+		args = append(args, "--user", cfg.DBUser)
+	}
+	return args
 }
 func copyTree(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {

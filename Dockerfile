@@ -6,7 +6,10 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.Commit=docker -X main.BuildDate=container" -o /out/stepanel .
 
 FROM debian:bookworm-slim
-RUN useradd --system --home-dir /opt/stepanel --shell /usr/sbin/nologin stepanel \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates mariadb-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --home-dir /opt/stepanel --shell /usr/sbin/nologin stepanel \
     && mkdir -p /opt/stepanel/web/static /var/lib/ste-panel/imports /var/www/sites \
     && chown -R stepanel:stepanel /opt/stepanel /var/lib/ste-panel /var/www/sites
 COPY --from=build /out/stepanel /opt/stepanel/stepanel

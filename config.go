@@ -4,6 +4,7 @@ import "os"
 
 type Config struct {
 	Listen, ImportRoot, WebRoot, AuditLog string
+	DBHost, DBUser, DBPassword            string
 	Production                            bool
 	MaxUpload                             int64
 	MaxEntries                            int
@@ -23,6 +24,9 @@ func LoadConfig() Config {
 	if v := os.Getenv("STEPANEL_AUDIT_LOG"); v != "" {
 		c.AuditLog = v
 	}
+	c.DBHost = os.Getenv("STEPANEL_DB_HOST")
+	c.DBUser = os.Getenv("STEPANEL_DB_USER")
+	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
 	c.Production = os.Getenv("STEPANEL_ENV") == "production"
 	return c
 }
