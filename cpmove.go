@@ -25,7 +25,8 @@ type CPMoveInfo struct {
 	Databases []string `json:"databases"`
 }
 type ImportResult struct {
-	User, Home        string   `json:"user"`
+	User              string   `json:"user"`
+	Home              string   `json:"home"`
 	FilesRestored     bool     `json:"files_restored"`
 	DatabasesRestored []string `json:"databases_restored"`
 	DatabaseErrors    []string `json:"database_errors,omitempty"`
