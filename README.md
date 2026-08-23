@@ -90,6 +90,7 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 
 - [Installation guide](docs/INSTALLATION.md)
 - [Node application deployment](docs/NODE_APPS.md)
+- [Node application lifecycle](docs/APP_LIFECYCLE.md)
 - [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
 - [Architecture and safety model](docs/ARCHITECTURE.md)
 - [Feature catalog](docs/FEATURES.md)
@@ -152,6 +153,8 @@ and SpamAssassin.
 Set `STEPANEL_INSTALL_NODE=1 STEPANEL_NODE_VERSIONS=20.18.0,22.14.0` to install
 Node versions through NVM. The panel can select an installed version per site
 and generate a validated Apache reverse proxy for a local app backend.
+Managed apps are supervised by per-site systemd units and can be started,
+stopped, or restarted through the authenticated API.
 Mailbox contents are preserved in the private mail root and reported by the
 restore job; activation still requires destination domain, mailbox, DNS, TLS,
 and credential mapping.

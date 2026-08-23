@@ -115,7 +115,7 @@ configure_modsecurity() {
 
 if [[ "$INSTALL_MODSEC" == "1" ]]; then configure_modsecurity; fi
 
-install -d -m 0750 "$APP_DIR" "$DATA_DIR/imports" "$DATA_DIR/mail" /var/www/sites
+install -d -m 0750 "$APP_DIR" "$DATA_DIR/imports" "$DATA_DIR/mail" "$DATA_DIR/apps" /var/www/sites
 install -d -m 0755 "$DATA_DIR/proxy"
 install -d -m 0755 "$APP_DIR/integrations"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
@@ -123,6 +123,7 @@ usermod -a -G "$WEB_GROUP" "$APP_USER"
 if [[ "$INSTALL_NODE" == "1" ]]; then bash "$ROOT_DIR/deploy/integrations/install-node-nvm.sh" "$APP_USER" "$APP_DIR/.nvm" "$NODE_VERSIONS"; fi
 install -m 0755 "$ROOT_DIR/stepanel" "$APP_DIR/stepanel"
 install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/integrations/install-fail2ban.sh"
+install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
 if [[ -n "$FPM_LENS_BINARY" ]]; then install -m 0755 "$FPM_LENS_BINARY" /usr/local/bin/fpm-lens; fi
 install -m 0644 -D "$ROOT_DIR/web/index.html" "$APP_DIR/web/index.html"
 install -m 0644 -D "$ROOT_DIR/web/static/app.css" "$APP_DIR/web/static/app.css"
@@ -131,7 +132,7 @@ install -m 0644 -D "$ROOT_DIR/web/static/deploy.js" "$APP_DIR/web/static/deploy.
 install -m 0644 -D "$ROOT_DIR/web/static/favicon.svg" "$APP_DIR/web/static/favicon.svg"
 if [[ "$PKG" == "apt" ]]; then install -m 0644 "$ROOT_DIR/deploy/apache/stepanel.conf" /etc/apache2/sites-available/stepanel.conf; a2enmod proxy proxy_http headers >/dev/null; a2ensite stepanel >/dev/null; fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$DATA_DIR"; chown "$APP_USER:$WEB_GROUP" /var/www/sites; chmod 2750 /var/www/sites
-printf 'STEPANEL_ENV=production\nSTEPANEL_LISTEN=127.0.0.1:8090\nSTEPANEL_ADMIN_USERNAME=%s\nSTEPANEL_ADMIN_PASSWORD=%s\nSTEPANEL_SESSION_SECRET=%s\nSTEPANEL_DB_ENGINE=%s\nSTEPANEL_DB_VERSION=%s\nSTEPANEL_IMPORT_ROOT=%s/imports\nSTEPANEL_WEB_ROOT=/var/www\nSTEPANEL_MAIL_ROOT=%s/mail\nSTEPANEL_NVM_DIR=%s/.nvm\nSTEPANEL_PROXY_ROOT=%s/proxy\nSTEPANEL_APACHE_RELOAD=/usr/local/sbin/stepanel-apache-reload\nSTEPANEL_AUDIT_LOG=%s/audit.jsonl\n' "$ADMIN_USERNAME" "$ADMIN_PASSWORD" "$SESSION_SECRET" "$DB_ENGINE" "$DB_VERSION" "$DATA_DIR" "$DATA_DIR" "$APP_DIR" "$DATA_DIR" "$DATA_DIR" > "$ENV_FILE"
+printf 'STEPANEL_ENV=production\nSTEPANEL_LISTEN=127.0.0.1:8090\nSTEPANEL_ADMIN_USERNAME=%s\nSTEPANEL_ADMIN_PASSWORD=%s\nSTEPANEL_SESSION_SECRET=%s\nSTEPANEL_DB_ENGINE=%s\nSTEPANEL_DB_VERSION=%s\nSTEPANEL_IMPORT_ROOT=%s/imports\nSTEPANEL_WEB_ROOT=/var/www\nSTEPANEL_MAIL_ROOT=%s/mail\nSTEPANEL_NVM_DIR=%s/.nvm\nSTEPANEL_PROXY_ROOT=%s/proxy\nSTEPANEL_APP_ROOT=%s/apps\nSTEPANEL_APPCTL=/usr/local/sbin/stepanel-appctl\nSTEPANEL_APACHE_RELOAD=/usr/local/sbin/stepanel-apache-reload\nSTEPANEL_AUDIT_LOG=%s/audit.jsonl\n' "$ADMIN_USERNAME" "$ADMIN_PASSWORD" "$SESSION_SECRET" "$DB_ENGINE" "$DB_VERSION" "$DATA_DIR" "$DATA_DIR" "$APP_DIR" "$DATA_DIR" "$DATA_DIR" "$DATA_DIR" > "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 install -m 0644 "$ROOT_DIR/deploy/stepanel.service" /etc/systemd/system/stepanel.service
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-apache-reload" /usr/local/sbin/stepanel-apache-reload

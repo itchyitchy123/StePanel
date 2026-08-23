@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
+action=${1:-}; site=${2:-}
+[[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
+unit="stepanel-app-${site}.service"
+case "$action" in
+  apply)
+    version=${3:?missing Node version}; root=${4:?missing root}; port=${5:?missing port}
+    [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $port =~ ^[0-9]+$ ]] || { echo 'invalid app parameters' >&2; exit 1; }
+    [[ $root == /var/www/sites/*/public ]] || { echo 'invalid app root' >&2; exit 1; }
+    cat > "/etc/systemd/system/$unit" <<EOF
+[Unit]
+Description=StePanel Node app $site
+After=network-online.target
+
+[Service]
+User=stepanel
+Group=stepanel
+WorkingDirectory=$root
+Environment=PORT=$port NODE_ENV=production
+ExecStart=/bin/bash -lc 'export NVM_DIR=/opt/stepanel/.nvm; . "\$NVM_DIR/nvm.sh"; nvm use $version >/dev/null; exec npm start'
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=$root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload; systemctl enable --now "$unit" ;;
+  start|stop|restart) systemctl "$action" "$unit" ;;
+  *) echo 'usage: stepanel-appctl apply|start|stop|restart SITE ...' >&2; exit 64 ;;
+esac
