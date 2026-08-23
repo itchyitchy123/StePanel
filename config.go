@@ -3,15 +3,15 @@ package main
 import "os"
 
 type Config struct {
-	Listen, ImportRoot, WebRoot, MailRoot, NVMDir, ProxyRoot, AppRoot, MalwareRoot, AppCtl, ApacheReload, AuditLog string
-	DBHost, DBUser, DBPassword                                                                                     string
-	Production                                                                                                     bool
-	MaxUpload                                                                                                      int64
-	MaxEntries                                                                                                     int
+	Listen, ImportRoot, WebRoot, MailRoot, NVMDir, ProxyRoot, AppRoot, MalwareRoot, AppCtl, Certbot, ApacheReload, AuditLog string
+	DBHost, DBUser, DBPassword                                                                                              string
+	Production                                                                                                              bool
+	MaxUpload                                                                                                               int64
+	MaxEntries                                                                                                              int
 }
 
 func LoadConfig() Config {
-	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ApacheReload: "/usr/local/sbin/stepanel-apache-reload", AuditLog: "data/stepanel-audit.jsonl", MaxUpload: 20 << 30, MaxEntries: 1000000}
+	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", Certbot: "/usr/local/sbin/stepanel-certbot", ApacheReload: "/usr/local/sbin/stepanel-apache-reload", AuditLog: "data/stepanel-audit.jsonl", MaxUpload: 20 << 30, MaxEntries: 1000000}
 	if v := os.Getenv("STEPANEL_LISTEN"); v != "" {
 		c.Listen = v
 	}
@@ -35,6 +35,9 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("STEPANEL_APPCTL"); v != "" {
 		c.AppCtl = v
+	}
+	if v := os.Getenv("STEPANEL_CERTBOT"); v != "" {
+		c.Certbot = v
 	}
 	if v := os.Getenv("STEPANEL_MALWARE_ROOT"); v != "" {
 		c.MalwareRoot = v

@@ -37,6 +37,7 @@ jobs:
       - run: go build -trimpath -o stepanel .
       - run: bash -n install.sh
       - run: bash -n deploy/integrations/install-fail2ban.sh
+      - run: bash -n deploy/integrations/install-node-nvm.sh deploy/integrations/stepanel-apache-reload deploy/integrations/stepanel-appctl deploy/integrations/stepanel-certbot deploy/integrations/stepanel-malware-guard
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: Build container

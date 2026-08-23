@@ -13,6 +13,19 @@ Required deployment fields are:
 - optional domain for the proxy configuration
 
 The application must already exist in the site's `public` directory and must
-provide a working `npm start` script. Upload/build pipelines, environment
-secret storage, HTTPS certificates, and atomic release rollback remain separate
-deployment steps.
+provide a working `npm start` script. Upload/build pipelines and environment
+secret storage remain separate deployment steps.
+
+## Rollback
+
+When a deployment replaces an existing manifest, StePanel saves the prior
+release as `<site>.json.bak`. An authenticated operator can roll it back with:
+
+```sh
+curl -X POST https://panel.example.test/api/apps/example/rollback \
+  -H 'X-CSRF-Token: <session token>'
+```
+
+The root-owned app helper applies the previous Node version, root, and port
+before the manifest is switched. Rollback changes the process definition; it
+does not restore application files, database data, or secrets.

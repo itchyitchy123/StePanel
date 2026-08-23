@@ -18,9 +18,10 @@ the proxy endpoint from becoming an SSRF or open-proxy primitive.
 
 The installer enables Apache proxy modules, includes managed snippets, and
 installs `/usr/local/sbin/stepanel-apache-reload`, a root-owned helper that
-validates Apache configuration before reloading it. HTTPS certificates and
-application process supervision remain deployment responsibilities; use
-systemd, PM2, or another supervised process manager for the Node app itself.
+validates Apache configuration before reloading it. Optional HTTPS issuance is
+described in `docs/CERTIFICATES.md`. Application process supervision is
+provided by the managed systemd unit; use the rollback endpoint when a release
+needs to be reverted.
 
 Managed proxies can be listed, backend-tested, and removed through the
 authenticated proxy API. A failed Apache reload restores the previous proxy
