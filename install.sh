@@ -10,6 +10,7 @@ ADMIN_USERNAME="${STEPANEL_ADMIN_USERNAME:-admin}"; ADMIN_PASSWORD="${STEPANEL_A
 DB_ENGINE="${STEPANEL_DB_ENGINE:-}"; DB_VERSION="${STEPANEL_DB_VERSION:-default}"
 INSTALL_FAIL2BAN="${STEPANEL_INSTALL_FAIL2BAN:-0}"; FAIL2BAN_JAILS="${STEPANEL_FAIL2BAN_JAILS:-auto}"; FAIL2BAN_IGNORE_IP="${STEPANEL_FAIL2BAN_IGNORE_IP:-}"
 FPM_LENS_BINARY="${STEPANEL_FPM_LENS_BINARY:-}"
+INSTALL_MODSEC="${STEPANEL_INSTALL_MODSEC:-0}"; MODSEC_MODE="${STEPANEL_MODSEC_MODE:-DetectionOnly}"
 if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then read -r -s -p "StePanel admin password: " ADMIN_PASSWORD; echo; fi
 if [[ -z "$ADMIN_PASSWORD" ]]; then echo "Set STEPANEL_ADMIN_PASSWORD or run the installer interactively." >&2; exit 1; fi
 if [[ -z "$SESSION_SECRET" ]]; then SESSION_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"; fi
@@ -50,6 +51,47 @@ if [[ "$INSTALL_FAIL2BAN" == "1" && -z "$FAIL2BAN_IGNORE_IP" && -t 0 ]]; then re
 if [[ "$INSTALL_FAIL2BAN" == "1" && -z "$FAIL2BAN_IGNORE_IP" ]]; then echo "Set STEPANEL_FAIL2BAN_IGNORE_IP before enabling Fail2ban; refusing an unattended lockout risk." >&2; exit 1; fi
 if [[ "$FAIL2BAN_IGNORE_IP" == *$'\n'* || "$FAIL2BAN_IGNORE_IP" == *$'\r'* ]]; then echo "STEPANEL_FAIL2BAN_IGNORE_IP may not contain newlines." >&2; exit 1; fi
 if [[ -n "$FPM_LENS_BINARY" && ! -x "$FPM_LENS_BINARY" ]]; then echo "STEPANEL_FPM_LENS_BINARY must point to an executable fpm-lens binary." >&2; exit 1; fi
+if [[ "$INSTALL_MODSEC" != "0" && "$INSTALL_MODSEC" != "1" ]]; then echo "STEPANEL_INSTALL_MODSEC must be 0 or 1." >&2; exit 1; fi
+if [[ "$MODSEC_MODE" != "Off" && "$MODSEC_MODE" != "DetectionOnly" && "$MODSEC_MODE" != "On" ]]; then echo "STEPANEL_MODSEC_MODE must be Off, DetectionOnly, or On." >&2; exit 1; fi
+
+configure_modsecurity() {
+  local apache_conf modsec_conf audit_log crs_load backup apache_backup
+  if [[ "$PKG" == "apt" ]]; then
+    apt-get install -y libapache2-mod-security2 modsecurity-crs
+    a2enmod security2 >/dev/null
+    apache_conf="/etc/apache2/conf-available/stepanel-modsecurity.conf"
+    modsec_conf="/etc/modsecurity/stepanel.conf"
+    audit_log="/var/log/apache2/modsec_audit.log"
+  else
+    dnf install -y mod_security mod_security_crs
+    apache_conf="/etc/httpd/conf.d/stepanel-modsecurity.conf"
+    modsec_conf="/etc/modsecurity.d/stepanel.conf"
+    audit_log="/var/log/httpd/modsec_audit.log"
+  fi
+  install -d -m 0750 "$(dirname "$modsec_conf")"
+  backup="${modsec_conf}.bak.$(date -u +%Y%m%d%H%M%S)"
+  apache_backup="${apache_conf}.bak.$(date -u +%Y%m%d%H%M%S)"
+  if [[ -e "$apache_conf" ]]; then cp -p "$apache_conf" "$apache_backup"; fi
+  if [[ -e "$modsec_conf" ]]; then cp -p "$modsec_conf" "$backup"; fi
+  printf 'SecRuleEngine %s\nSecAuditEngine RelevantOnly\nSecAuditLogType Serial\nSecAuditLog %s\nSecRequestBodyAccess On\nSecResponseBodyAccess Off\n' "$MODSEC_MODE" "$audit_log" > "$modsec_conf"
+  crs_load=""
+  for candidate in /usr/share/modsecurity-crs/owasp-crs.load /etc/modsecurity/owasp-crs.load /etc/modsecurity.d/owasp-crs.load; do
+    if [[ -f "$candidate" ]]; then crs_load="$candidate"; break; fi
+  done
+  if [[ -n "$crs_load" ]]; then printf 'IncludeOptional %s\n' "$crs_load" >> "$modsec_conf"; fi
+  printf 'IncludeOptional %s\n' "$modsec_conf" > "$apache_conf"
+  [[ "$PKG" == "apt" ]] && a2enconf stepanel-modsecurity >/dev/null 2>&1 || true
+  if ! apachectl -t >/dev/null 2>&1 && ! httpd -t >/dev/null 2>&1; then
+    [[ -e "$backup" ]] && mv -f "$backup" "$modsec_conf" || rm -f "$modsec_conf"
+    [[ -e "$apache_backup" ]] && mv -f "$apache_backup" "$apache_conf" || rm -f "$apache_conf"
+    [[ "$PKG" == "apt" ]] && a2disconf stepanel-modsecurity >/dev/null 2>&1 || true
+    echo "Apache rejected the ModSecurity configuration; changes were rolled back." >&2
+    return 1
+  fi
+  echo "ModSecurity configured in $MODSEC_MODE mode${crs_load:+ with OWASP CRS}."
+}
+
+if [[ "$INSTALL_MODSEC" == "1" ]]; then configure_modsecurity; fi
 
 install -d -m 0750 "$APP_DIR" "$DATA_DIR/imports" /var/www/sites
 install -d -m 0755 "$APP_DIR/integrations"

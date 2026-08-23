@@ -26,6 +26,9 @@ It is designed for people who want a small, understandable hosting control plane
 | Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |
 | Delivery | Dockerfile, ARM64/AMD64 release workflow, checksums, CI, vulnerability scanning |
 
+ModSecurity with optional OWASP CRS is available through the installer in
+safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
+
 > **Status:** StePanel is in early development. It is not yet a complete multi-tenant hosting platform. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
 
 ## See it quickly

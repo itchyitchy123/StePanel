@@ -4,6 +4,27 @@ StePanel can install and expose two companion tools from the StePanel toolkit.
 Both are opt-in because they operate across the host and can change service
 configuration.
 
+## ModSecurity and OWASP CRS
+
+ModSecurity is available as an opt-in Apache integration. It installs the
+distribution packages, enables the Apache connector, loads OWASP CRS when the
+distribution provides it, writes a managed audit log, and validates Apache
+before accepting the configuration.
+
+The safe default is `DetectionOnly`; switch to blocking only after reviewing
+the audit log and tuning false positives:
+
+```sh
+sudo STEPANEL_INSTALL_MODSEC=1 \
+  STEPANEL_MODSEC_MODE=DetectionOnly \
+  ./install.sh
+```
+
+Supported modes are `Off`, `DetectionOnly`, and `On`. A failed Apache config
+test rolls back the managed ModSecurity configuration. The panel reports an
+enabled ModSecurity Apache module in health data; per-site rule and audit
+management remains a product milestone.
+
 ## Fail2ban hardening
 
 Enable it during installation only after declaring the trusted management
