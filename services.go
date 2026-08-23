@@ -19,7 +19,7 @@ type ServiceSummary struct {
 
 func ServiceStatus() map[string]string {
 	result := map[string]string{}
-	for _, service := range []string{"apache2", "httpd", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens"} {
+	for _, service := range []string{"apache2", "httpd", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot"} {
 		if _, err := exec.LookPath(service); err == nil {
 			result[service] = "installed"
 		}
@@ -54,7 +54,7 @@ func ServiceSummaries() []ServiceSummary {
 			}
 		}
 	}
-	services := []string{"apache2", "mysql", "php-fpm", "fail2ban", "modsecurity"}
+	services := []string{"apache2", "mysql", "php-fpm", "fail2ban", "modsecurity", "exim", "dovecot"}
 	result := make([]ServiceSummary, 0, len(services))
 	for _, name := range services {
 		state := status[name]
@@ -63,6 +63,9 @@ func ServiceSummaries() []ServiceSummary {
 		}
 		if name == "mysql" && state == "" {
 			state = status["mariadb"]
+		}
+		if name == "exim" && state == "" {
+			state = status["exim4"]
 		}
 		if state == "" {
 			state = "missing"

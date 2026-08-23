@@ -14,6 +14,25 @@ StePanel accepts gzip-compressed tar archives produced by cPanel, commonly named
 
 Website files are copied to `/var/www/sites/<username>/public`. SQL files found under the archive's `mysql` directory are restored to databases named `<username>_<database>`. Existing files at the destination can be overwritten.
 
+## Mail restoration
+
+When `STEPANEL_INSTALL_MAIL=1` is used, the installer installs Exim and
+Dovecot and creates a private mail staging root. cPanel mailbox data found
+under `homedir/mail` is preserved under:
+
+```text
+/var/lib/ste-panel/mail/<account>/mail/
+/var/lib/ste-panel/mail/<account>/etc/
+```
+
+The restore result reports staged mailboxes. cPanel's Exim and Dovecot files
+are host-specific and are not copied into `/etc`; activating mail requires a
+domain/mailbox mapping step, credentials, DNS records, TLS, and transport
+policy on the destination.
+
 ## Compatibility
 
-The importer is intentionally conservative. It currently handles regular files and directories inside `.tar.gz` archives. Symlinks, device nodes, unusual cPanel metadata, mailboxes, DNS zones, and account-level quotas are not restored automatically.
+The importer is intentionally conservative. It currently handles regular files
+and directories inside `.tar.gz` archives, website files, SQL dumps, and staged
+mailbox data. Symlinks, device nodes, unusual cPanel metadata, DNS zones, and
+account-level quotas are not restored automatically.

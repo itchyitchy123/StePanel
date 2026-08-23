@@ -22,6 +22,8 @@ type CPMoveInfo struct {
 	User      string   `json:"detected_user"`
 	HasHome   bool     `json:"has_home"`
 	HasMySQL  bool     `json:"has_mysql"`
+	HasMail   bool     `json:"has_mail"`
+	Mailboxes []string `json:"mailboxes,omitempty"`
 	Databases []string `json:"databases"`
 }
 type ImportResult struct {
@@ -30,6 +32,9 @@ type ImportResult struct {
 	FilesRestored     bool     `json:"files_restored"`
 	DatabasesRestored []string `json:"databases_restored"`
 	DatabaseErrors    []string `json:"database_errors,omitempty"`
+	MailStaged        bool     `json:"mail_staged"`
+	MailboxesStaged   []string `json:"mailboxes_staged,omitempty"`
+	MailErrors        []string `json:"mail_errors,omitempty"`
 	StagedAt          string   `json:"staged_at"`
 }
 
@@ -52,6 +57,7 @@ func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries
 	tr := tar.NewReader(gz)
 	info := CPMoveInfo{Archive: header.Filename}
 	seen := map[string]bool{}
+	seenMail := map[string]bool{}
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -82,11 +88,22 @@ func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries
 				}
 			}
 		}
+		if strings.HasPrefix(name, "homedir/mail/") {
+			info.HasMail = true
+			if len(parts) >= 4 {
+				mailbox := parts[2] + "/" + parts[3]
+				if !seenMail[mailbox] {
+					info.Mailboxes = append(info.Mailboxes, mailbox)
+					seenMail[mailbox] = true
+				}
+			}
+		}
 		if info.User == "" && strings.HasPrefix(name, "homedir/") && len(parts) > 1 {
 			info.User = parts[1]
 		}
 	}
 	sort.Strings(info.Databases)
+	sort.Strings(info.Mailboxes)
 	if info.Entries == 0 {
 		return info, errors.New("backup archive is empty")
 	}
@@ -150,7 +167,50 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 			return result, fmt.Errorf("database restore completed with %d error(s)", len(result.DatabaseErrors))
 		}
 	}
+	result.MailStaged, result.MailboxesStaged, result.MailErrors = restoreMail(cfg, stage, user)
+	if len(result.MailErrors) > 0 {
+		return result, fmt.Errorf("mail restore completed with %d error(s)", len(result.MailErrors))
+	}
 	return result, nil
+}
+
+// restoreMail preserves cPanel mailbox data and account mail metadata under a
+// private StePanel root. Host-specific Exim/Dovecot configuration is not
+// copied into /etc because it can break the destination mail server.
+func restoreMail(cfg Config, stage, user string) (bool, []string, []string) {
+	sourceMail := filepath.Join(stage, "homedir", "mail")
+	sourceEtc := filepath.Join(stage, "homedir", "etc")
+	if _, err := os.Stat(sourceMail); err != nil {
+		return false, nil, nil
+	}
+	if cfg.MailRoot == "" {
+		return false, nil, []string{"mail root is not configured; set STEPANEL_MAIL_ROOT"}
+	}
+	root := filepath.Join(cfg.MailRoot, user)
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return false, nil, []string{"create mail root: " + err.Error()}
+	}
+	if err := copyTree(sourceMail, filepath.Join(root, "mail")); err != nil {
+		return false, nil, []string{"copy mailbox data: " + err.Error()}
+	}
+	if _, err := os.Stat(sourceEtc); err == nil {
+		if err := copyTree(sourceEtc, filepath.Join(root, "etc")); err != nil {
+			return false, nil, []string{"copy mail metadata: " + err.Error()}
+		}
+	}
+	mailboxes := []string{}
+	mailRoot := filepath.Join(root, "mail")
+	_ = filepath.Walk(mailRoot, func(path string, info os.FileInfo, err error) error {
+		if err == nil && info.IsDir() && path != mailRoot {
+			rel, relErr := filepath.Rel(mailRoot, path)
+			if relErr == nil && strings.Count(filepath.ToSlash(rel), "/") == 1 {
+				mailboxes = append(mailboxes, filepath.ToSlash(rel))
+			}
+		}
+		return nil
+	})
+	sort.Strings(mailboxes)
+	return true, mailboxes, nil
 }
 
 func extractArchive(archive, destination string) error {
