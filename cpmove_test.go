@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"io"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -60,6 +61,93 @@ func TestRestoreMailStagesMailboxData(t *testing.T) {
 	}
 }
 
+func TestInspectCPMoveHandlesTopLevelCPanelRoot(t *testing.T) {
+	archive := makeTarGz(t, map[string]string{
+		"cpmove-account/homedir/public_html/index.php":              "ok",
+		"cpmove-account/homedir/mail/example.com/alice/cur/message": "mail",
+		"cpmove-account/mysql/account_blog.sql":                     "create table posts(id int);",
+	})
+	file, header := openMultipartArchive(t, archive, "cpmove-account.tar.gz")
+	defer file.Close()
+	info, err := InspectCPMove(file, header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.User != "account" || !info.HasHome || !info.HasMySQL || !info.HasMail {
+		t.Fatalf("unexpected inspection result: %+v", info)
+	}
+	if len(info.Databases) != 1 || info.Databases[0] != "account_blog" {
+		t.Fatalf("databases = %v, want [account_blog]", info.Databases)
+	}
+	if len(info.Mailboxes) != 1 || info.Mailboxes[0] != "example.com/alice" {
+		t.Fatalf("mailboxes = %v, want [example.com/alice]", info.Mailboxes)
+	}
+}
+
+func TestRestoreCPMoveHandlesTopLevelCPanelRoot(t *testing.T) {
+	root := t.TempDir()
+	archive := makeTarGz(t, map[string]string{
+		"cpmove-account/homedir/public_html/index.html": "restored",
+	})
+	file, header := openMultipartArchive(t, archive, "cpmove-account.tar.gz")
+	defer file.Close()
+	result, err := RestoreCPMove(Config{ImportRoot: filepath.Join(root, "imports"), WebRoot: root, MailRoot: filepath.Join(root, "mail"), MaxEntries: 1000}, file, header, "account", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.FilesRestored {
+		t.Fatal("FilesRestored = false, want true")
+	}
+	body, err := os.ReadFile(filepath.Join(root, "sites", "account", "public", "index.html"))
+	if err != nil || string(body) != "restored" {
+		t.Fatalf("restored file = %q, %v", body, err)
+	}
+}
+
+func TestSQLDumpsFindsNestedCPanelDumps(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{"mysql/account_blog.sql", "mysql/nested/account_shop.sql"} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("-- dump"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	matches := sqlDumps(filepath.Join(root, "mysql"))
+	if len(matches) != 2 {
+		t.Fatalf("sqlDumps found %d files, want 2: %v", len(matches), matches)
+	}
+	if got := databaseName("account", "account_blog"); got != "account_blog" {
+		t.Fatalf("databaseName duplicated user prefix: %q", got)
+	}
+}
+
+func TestUserFromArchiveName(t *testing.T) {
+	cases := map[string]string{
+		"cpmove-account.tar.gz":                    "account",
+		"backup-8.26.2026_09-15-00_account.tar.gz": "account",
+		"backup-account.tar.gz":                    "",
+	}
+	for name, want := range cases {
+		if got := userFromArchiveName(name); got != want {
+			t.Fatalf("userFromArchiveName(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestExtractArchiveRejectsStagedUploadOverwrite(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "backup.tar.gz")
+	if err := writeTarGz(archive, map[string]string{"backup.tar.gz": "overwrite"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := extractArchive(archive, root); err == nil || !strings.Contains(err.Error(), "conflicts with staged upload") {
+		t.Fatalf("extractArchive error = %v, want staged upload conflict", err)
+	}
+}
+
 func TestRestoreFailureRestoresExistingSite(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "sites", "account", "public")
@@ -110,3 +198,69 @@ func TestRestoreFailureRestoresExistingSite(t *testing.T) {
 		t.Fatalf("existing site was not restored: %q, %v", marker, err)
 	}
 }
+
+func makeTarGz(t *testing.T, entries map[string]string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "backup.tar.gz")
+	if err := writeTarGz(path, entries); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeTarGz(path string, entries map[string]string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	gz := gzip.NewWriter(file)
+	tarWriter := tar.NewWriter(gz)
+	for name, content := range entries {
+		body := []byte(content)
+		if err := tarWriter.WriteHeader(&tar.Header{Name: name, Mode: 0600, Size: int64(len(body))}); err != nil {
+			_ = file.Close()
+			return err
+		}
+		if _, err := tarWriter.Write(body); err != nil {
+			_ = file.Close()
+			return err
+		}
+	}
+	if err := tarWriter.Close(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := gz.Close(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+func openMultipartArchive(t *testing.T, path, name string) (multipart.File, *multipart.FileHeader) {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	return multipartFile{File: file}, &multipart.FileHeader{Filename: name, Size: info.Size()}
+}
+
+type multipartFile struct {
+	*os.File
+}
+
+func (f multipartFile) ReadAt(p []byte, off int64) (int, error) {
+	return f.File.ReadAt(p, off)
+}
+
+func (f multipartFile) Seek(offset int64, whence int) (int64, error) {
+	return f.File.Seek(offset, whence)
+}
+
+var _ io.ReaderAt = multipartFile{}

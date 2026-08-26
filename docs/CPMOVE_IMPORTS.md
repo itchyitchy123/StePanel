@@ -6,13 +6,20 @@ StePanel accepts gzip-compressed tar archives produced by cPanel, commonly named
 
 1. Take a filesystem and database snapshot of the destination.
 2. Upload the archive through an authenticated HTTPS connection.
-3. Confirm the detected archive contents and destination username.
-4. Poll the returned job status until it is `completed` or `failed`.
+3. Let the migration card inspect the archive, then confirm the detected
+   website files, database dumps, mailbox count, and destination username.
+4. Start the import and watch the job status until it is `completed` or
+   `failed`.
 5. Restore website files first and verify permissions and application configuration.
 6. Restore SQL only when the database dump is trusted and compatible.
 7. Review the staged archive and application logs before removing it.
 
-Website files are copied to `/var/www/sites/<username>/public`. SQL files found under the archive's `mysql` directory are restored to databases named `<username>_<database>`. Existing files at the destination can be overwritten.
+Website files are copied to `/var/www/sites/<username>/public`. SQL files found
+under the archive's `mysql` directory, including nested dump directories, are
+restored to databases named `<username>_<database>`. If the dump name already
+starts with the selected account prefix, StePanel preserves that database name
+instead of duplicating the prefix. Existing files at the destination can be
+overwritten.
 
 ## Mail restoration
 
@@ -36,7 +43,9 @@ transport and review scoring, relay, and training policy before accepting mail.
 
 ## Compatibility
 
-The importer is intentionally conservative. It currently handles regular files
-and directories inside `.tar.gz` archives, website files, SQL dumps, and staged
-mailbox data. Symlinks, device nodes, unusual cPanel metadata, DNS zones, and
-account-level quotas are not restored automatically.
+The importer is intentionally conservative. It handles regular files and
+directories inside `.tar.gz` archives, with or without a top-level
+`cpmove-<account>/` or cPanel full-backup directory. Website files, SQL dumps,
+and staged mailbox data are restored or preserved. Symlinks, device nodes,
+unusual cPanel metadata, DNS zones, and account-level quotas are not restored
+automatically.

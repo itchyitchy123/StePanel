@@ -26,6 +26,12 @@ type CPMoveInfo struct {
 	Mailboxes []string `json:"mailboxes,omitempty"`
 	Databases []string `json:"databases"`
 }
+
+type cpmovePathInfo struct {
+	Path string
+	User string
+}
+
 type ImportResult struct {
 	User              string   `json:"user"`
 	Home              string   `json:"home"`
@@ -55,7 +61,7 @@ func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
-	info := CPMoveInfo{Archive: header.Filename}
+	info := CPMoveInfo{Archive: header.Filename, User: userFromArchiveName(header.Filename)}
 	seen := map[string]bool{}
 	seenMail := map[string]bool{}
 	for {
@@ -73,12 +79,16 @@ func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries
 		if maxEntries > 0 && info.Entries > maxEntries {
 			return info, errors.New("archive contains too many entries")
 		}
-		name := strings.Trim(h.Name, "/")
+		entry := normalizeCPMovePath(h.Name)
+		name := entry.Path
+		if info.User == "" && entry.User != "" {
+			info.User = entry.User
+		}
 		parts := strings.Split(name, "/")
 		if len(parts) > 1 && parts[0] == "homedir" {
 			info.HasHome = true
 		}
-		if strings.HasPrefix(name, "mysql/") || strings.Contains(name, "/mysql/") {
+		if strings.HasPrefix(name, "mysql/") {
 			info.HasMySQL = true
 			if strings.HasSuffix(name, ".sql") {
 				db := strings.TrimSuffix(filepath.Base(name), ".sql")
@@ -97,9 +107,6 @@ func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries
 					seenMail[mailbox] = true
 				}
 			}
-		}
-		if info.User == "" && strings.HasPrefix(name, "homedir/") && len(parts) > 1 {
-			info.User = parts[1]
 		}
 	}
 	sort.Strings(info.Databases)
@@ -138,6 +145,10 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 	if err = extractArchive(archive, stage); err != nil {
 		return ImportResult{}, err
 	}
+	root, err := cpmoveRoot(stage)
+	if err != nil {
+		return ImportResult{}, err
+	}
 	home := filepath.Join(cfg.WebRoot, "sites", user, "public")
 	backup := filepath.Join(stage, "site-before")
 	movedExisting := false
@@ -163,7 +174,7 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 	if err = os.MkdirAll(home, 0750); err != nil {
 		return ImportResult{}, err
 	}
-	source := firstExisting(filepath.Join(stage, "homedir", "public_html"), filepath.Join(stage, "homedir", user, "public_html"))
+	source := firstExisting(filepath.Join(root, "homedir", "public_html"), filepath.Join(root, "homedir", user, "public_html"))
 	if source != "" {
 		if findings, scanErr := scanPHP(source); scanErr != nil {
 			return ImportResult{}, fmt.Errorf("malware scan failed: %w", scanErr)
@@ -174,14 +185,14 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 			return ImportResult{}, err
 		}
 	}
-	result := ImportResult{User: user, Home: home, FilesRestored: firstExisting(filepath.Join(stage, "homedir", "public_html"), filepath.Join(stage, "homedir", user, "public_html")) != "", StagedAt: stage}
+	result := ImportResult{User: user, Home: home, FilesRestored: source != "", StagedAt: stage}
 	if databases {
-		result.DatabasesRestored, result.DatabaseErrors = restoreSQL(cfg, stage, user)
+		result.DatabasesRestored, result.DatabaseErrors = restoreSQL(cfg, root, user)
 		if len(result.DatabaseErrors) > 0 {
 			return result, fmt.Errorf("database restore completed with %d error(s)", len(result.DatabaseErrors))
 		}
 	}
-	result.MailStaged, result.MailboxesStaged, result.MailErrors = restoreMail(cfg, stage, user)
+	result.MailStaged, result.MailboxesStaged, result.MailErrors = restoreMail(cfg, root, user)
 	if len(result.MailErrors) > 0 {
 		return result, fmt.Errorf("mail restore completed with %d error(s)", len(result.MailErrors))
 	}
@@ -256,6 +267,9 @@ func extractArchive(archive, destination string) error {
 		if !strings.HasPrefix(target, filepath.Clean(destination)+string(os.PathSeparator)) {
 			return errors.New("archive escapes staging directory")
 		}
+		if samePath(target, archive) {
+			return errors.New("archive entry conflicts with staged upload")
+		}
 		if h.FileInfo().IsDir() {
 			if err = os.MkdirAll(target, 0700); err != nil {
 				return err
@@ -287,7 +301,7 @@ func extractArchive(archive, destination string) error {
 	}
 }
 func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
-	matches, _ := filepath.Glob(filepath.Join(stage, "mysql", "*.sql"))
+	matches := sqlDumps(filepath.Join(stage, "mysql"))
 	restored, failures := []string{}, []string{}
 	for _, dump := range matches {
 		db := safeUser(strings.TrimSuffix(filepath.Base(dump), ".sql"))
@@ -295,7 +309,7 @@ func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
 			failures = append(failures, filepath.Base(dump)+": invalid database name")
 			continue
 		}
-		name := user + "_" + db
+		name := databaseName(user, db)
 		if len(name) > 64 {
 			failures = append(failures, name+": database name exceeds 64 characters")
 			continue
@@ -348,6 +362,26 @@ func mysqlArgs(cfg Config) []string {
 	}
 	return args
 }
+
+func sqlDumps(root string) []string {
+	matches := []string{}
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && strings.HasSuffix(info.Name(), ".sql") {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+	sort.Strings(matches)
+	return matches
+}
+
+func databaseName(user, db string) string {
+	if strings.HasPrefix(db, user+"_") {
+		return db
+	}
+	return user + "_" + db
+}
+
 func copyTree(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -371,7 +405,6 @@ func copyTree(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		defer in.Close()
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, 0640)
 		if os.IsExist(err) {
 			out, err = os.OpenFile(target, os.O_WRONLY|os.O_TRUNC, 0640)
@@ -380,7 +413,11 @@ func copyTree(src, dst string) error {
 			return err
 		}
 		_, err = io.Copy(out, in)
+		inErr := in.Close()
 		closeErr := out.Close()
+		if err == nil {
+			err = inErr
+		}
 		if err == nil {
 			err = closeErr
 		}
@@ -398,4 +435,64 @@ func firstExisting(paths ...string) string {
 func safeArchivePath(path string) bool {
 	clean := filepath.Clean(path)
 	return path != "" && !strings.Contains(path, "\\") && clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") && !filepath.IsAbs(path)
+}
+
+func normalizeCPMovePath(path string) cpmovePathInfo {
+	name := strings.Trim(filepath.ToSlash(path), "/")
+	parts := strings.Split(name, "/")
+	if len(parts) >= 2 && isCPMoveRoot(parts[0]) && (parts[1] == "homedir" || parts[1] == "mysql") {
+		return cpmovePathInfo{Path: strings.Join(parts[1:], "/"), User: userFromArchiveName(parts[0])}
+	}
+	return cpmovePathInfo{Path: name}
+}
+
+func isCPMoveRoot(name string) bool {
+	return strings.HasPrefix(name, "cpmove-") || strings.HasPrefix(name, "backup-")
+}
+
+func userFromArchiveName(name string) string {
+	base := filepath.Base(strings.TrimSuffix(strings.TrimSuffix(name, ".gz"), ".tar"))
+	if strings.HasPrefix(base, "cpmove-") {
+		candidate := strings.TrimPrefix(base, "cpmove-")
+		if i := strings.Index(candidate, "."); i > 0 {
+			candidate = candidate[:i]
+		}
+		if safeUser(candidate) != "" {
+			return candidate
+		}
+	}
+	if strings.HasPrefix(base, "backup-") {
+		candidate := strings.TrimPrefix(base, "backup-")
+		if i := strings.LastIndex(candidate, "_"); i >= 0 && i < len(candidate)-1 {
+			candidate = candidate[i+1:]
+		} else {
+			return ""
+		}
+		if safeUser(candidate) != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func cpmoveRoot(stage string) (string, error) {
+	if firstExisting(filepath.Join(stage, "homedir"), filepath.Join(stage, "mysql")) != "" {
+		return stage, nil
+	}
+	entries, err := os.ReadDir(stage)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && firstExisting(filepath.Join(stage, entry.Name(), "homedir"), filepath.Join(stage, entry.Name(), "mysql")) != "" {
+			return filepath.Join(stage, entry.Name()), nil
+		}
+	}
+	return "", errors.New("backup does not contain a cPanel homedir or mysql directory")
+}
+
+func samePath(a, b string) bool {
+	aa, errA := filepath.Abs(a)
+	bb, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && aa == bb
 }

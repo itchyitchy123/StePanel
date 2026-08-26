@@ -188,6 +188,7 @@ if [[ -n "$FPM_LENS_BINARY" ]]; then install -m 0755 "$FPM_LENS_BINARY" /usr/loc
 install -m 0644 -D "$ROOT_DIR/web/index.html" "$APP_DIR/web/index.html"
 install -m 0644 -D "$ROOT_DIR/web/static/app.css" "$APP_DIR/web/static/app.css"
 install -m 0644 -D "$ROOT_DIR/web/static/import.css" "$APP_DIR/web/static/import.css"
+install -m 0644 -D "$ROOT_DIR/web/static/cpmove.js" "$APP_DIR/web/static/cpmove.js"
 install -m 0644 -D "$ROOT_DIR/web/static/deploy.js" "$APP_DIR/web/static/deploy.js"
 install -m 0644 -D "$ROOT_DIR/web/static/certificates.js" "$APP_DIR/web/static/certificates.js"
 install -m 0644 -D "$ROOT_DIR/web/static/wpress.js" "$APP_DIR/web/static/wpress.js"
