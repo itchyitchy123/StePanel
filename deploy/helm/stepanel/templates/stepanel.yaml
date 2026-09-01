@@ -64,6 +64,10 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: admin-password}}
             - name: STEPANEL_SESSION_SECRET
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: session-secret}}
+            - name: STEPANEL_AUDIT_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: audit-key}}
+            - name: STEPANEL_ADMIN_TOTP_SECRET
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: admin-totp-secret, optional: true}}
           readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
           livenessProbe: {httpGet: {path: /livez, port: http}, initialDelaySeconds: 15, periodSeconds: 20, timeoutSeconds: 2, failureThreshold: 3}
           resources: {{- toYaml .Values.resources | nindent 12 }}

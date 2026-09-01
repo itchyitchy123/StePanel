@@ -26,6 +26,11 @@ func (a *App) SecurityChecks() []SecurityCheck {
 		}
 		checks = append(checks, SecurityCheck{Name: "Administrator authentication", Status: status, Severity: severity, Detail: detail})
 	}
+	if a.Auth.TOTPEnabled {
+		checks = append(checks, SecurityCheck{Name: "Administrator MFA", Status: "pass", Severity: "low", Detail: "TOTP is required for administrator login."})
+	} else {
+		checks = append(checks, SecurityCheck{Name: "Administrator MFA", Status: "warning", Severity: "medium", Detail: "Configure STEPANEL_ADMIN_TOTP_SECRET to require an authenticator code."})
+	}
 	checks = append(checks, privateDirectoryCheck("Import staging permissions", a.Config.ImportRoot))
 	checks = append(checks, directoryCheck("Web root availability", a.Config.WebRoot))
 

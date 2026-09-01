@@ -83,6 +83,25 @@ resource "kubernetes_deployment" "stepanel" {
               }
             }
           }
+          env {
+            name = "STEPANEL_AUDIT_KEY"
+            value_from {
+              secret_key_ref {
+                name = "stepanel-secrets"
+                key  = "audit-key"
+              }
+            }
+          }
+          env {
+            name = "STEPANEL_ADMIN_TOTP_SECRET"
+            value_from {
+              secret_key_ref {
+                name     = "stepanel-secrets"
+                key      = "admin-totp-secret"
+                optional = true
+              }
+            }
+          }
           readiness_probe {
             http_get {
               path = "/readyz"

@@ -5,7 +5,9 @@ cluster is owned by the environment, while Terraform owns the StePanel
 namespace and workload manifest.
 
 Before applying, pin `var.image` to a reviewed digest and create the
-`stepanel-secrets` secret in the target namespace. Then run:
+`stepanel-secrets` secret with `admin-password`, `session-secret`, and
+independent `audit-key` entries in the target namespace. The optional
+`admin-totp-secret` entry enables MFA. Then run:
 
 ```sh
 terraform init

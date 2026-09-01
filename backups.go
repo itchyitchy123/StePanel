@@ -95,9 +95,9 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 		if err := a.Jobs.SubmitBackup(jobID, input.Site, func() (BackupResult, error) {
 			result, err := CreateSiteBackup(a.Config, input.Site, input.IncludeDatabases)
 			if err != nil {
-				_ = Audit(a.Config.AuditLog, "site.backup.failed", input.Site, err.Error())
+				_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.failed", input.Site, err.Error())
 			} else {
-				_ = Audit(a.Config.AuditLog, "site.backup.completed", input.Site, result.ArchiveSHA256)
+				_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.completed", input.Site, result.ArchiveSHA256)
 			}
 			return result, err
 		}); err != nil {

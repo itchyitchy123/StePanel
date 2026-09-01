@@ -47,7 +47,7 @@ func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
 		if err := helperCommandContext(ctx, a.Config, a.Config.Certbot, input.Domain, input.Email).Run(); err != nil {
 			return CertificateResult{}, err
 		}
-		_ = Audit(a.Config.AuditLog, "certificate.issued", input.Domain, "Let's Encrypt certificate requested")
+		_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "certificate.issued", input.Domain, "Let's Encrypt certificate requested")
 		return CertificateResult{Domain: input.Domain, Status: "issued"}, nil
 	}); err != nil {
 		if errors.Is(err, ErrJobBusy) {

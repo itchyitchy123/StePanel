@@ -19,11 +19,14 @@
 
 - Authenticated mutating routes require CSRF validation.
 - Sessions are signed, expiring, and protected with HttpOnly/SameSite cookies.
+- Optional TOTP adds replay-resistant second-factor validation; accepted codes
+  cannot be reused within the process lifetime.
 - Login attempts are rate-limited.
 - Uploads are size-limited and staged privately.
 - Archive paths are checked for absolute paths and traversal.
 - Restore destinations are account-scoped and SQL restoration is opt-in.
-- Audit events are appended to a mode-0600 JSONL file.
+- Audit events distinguish actor from target, are sequence/HMAC linked, and
+  fail closed before authenticated mutating handlers when persistence is down.
 - Active Apache snippets are root-owned and rendered by a fixed-template helper.
 - Concurrent restores targeting the same site are rejected.
 - New database destinations are rolled back on restore failure; existing
@@ -41,7 +44,8 @@
 - Remote database deployments may give the service account a powerful
   administration credential; compromise requires credential rotation and a
   database integrity review. Local installs instead use the restricted helper.
-- TLS and MFA/OIDC remain deployment responsibilities or roadmap items.
+- TLS and multi-user OIDC remain deployment responsibilities or roadmap items;
+  the built-in administrator is still a single shared identity.
 - Backup checksums detect corruption but are not signatures. An actor able to
   modify both an archive and its manifest can replace both.
 

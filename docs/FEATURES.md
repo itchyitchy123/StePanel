@@ -7,7 +7,8 @@ longer-term hosting-panel roadmap.
 ## Available now
 
 - Go HTTP control plane with signed administrator sessions.
-- CSRF protection, login rate limiting, security headers, and JSONL audit logs.
+- CSRF protection, login rate limiting, optional TOTP MFA, and security headers.
+- Actor-attributed, HMAC-linked JSONL audit logs with offline verification.
 - cPanel `cpmove` inspection with archive traversal and size checks.
 - Asynchronous website and optional SQL restore jobs.
 - MySQL/MariaDB selection during installation.
@@ -17,12 +18,13 @@ longer-term hosting-panel roadmap.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
 - Transactional Apache vhosts and reverse proxies with duplicate-domain checks.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
+- Independently verified site and registered-database backups.
 
 ## Planned hosting features
 
 - Site deletion and per-site PHP version selection.
-- Verified scheduled backups and snapshot-backed rollback.
-- Role-based access and MFA/OIDC.
+- Scheduled backups and snapshot-backed rollback.
+- Role-based access and OIDC federation.
 
 Planned operations will be introduced behind explicit permissions and dry-run
 modes. The project will not silently mutate live web-server configuration.

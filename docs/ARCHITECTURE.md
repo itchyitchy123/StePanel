@@ -30,7 +30,9 @@ StePanel HTTP server
 
 When configured, StePanel provides administrator authentication with signed,
 expiring sessions, CSRF tokens for mutating forms, login rate limiting,
-security response headers, and JSONL audit events. TLS and a reverse proxy are
+optional replay-resistant TOTP, security response headers, and JSONL audit
+events with explicit actor and target identity. Unsafe authenticated requests
+must persist a preflight audit event before reaching their handler. TLS and a reverse proxy are
 still required before internet-facing production use. Apache snippets and
 systemd application units cross narrowly validated, root-owned helper
 boundaries; the service account cannot edit active configuration directly.
@@ -78,3 +80,9 @@ backup, and recovery filesystems. Restore admission separately checks both the
 upload staging filesystem and the destination site filesystem. Global job slots,
 per-site serialization, upload bytes, and archive-entry counts provide bounded
 concurrency and work size.
+
+Audit events are HMAC-authenticated and linked by monotonically increasing
+sequence and previous-hash fields. Separately HMAC-authenticated chain state survives
+log rotation and detects tail/prefix inconsistency; startup and readiness expose
+audit persistence failures. This is tamper evidence, not immutable storage, so
+the log, state, and key still require independent retention.

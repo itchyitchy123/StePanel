@@ -21,6 +21,23 @@ journalctl -u apache2 --since today
 journalctl -u mysql --since today
 ```
 
+Audit records include distinct `actor`, `target`, sequence, previous-hash, and
+HMAC fields. Unsafe authenticated requests are recorded before their handlers;
+the control plane returns `503` instead of mutating state when that preflight
+record cannot be persisted. Verify the active audit segment with:
+
+```sh
+sudo /opt/stepanel/stepanel verify-audit /var/lib/ste-panel/audit.jsonl
+```
+
+The HMAC chain continues across log rotation through `audit.jsonl.state`.
+Preserve rotated logs, the state file, and `/etc/stepanel-audit.key` together in
+independently controlled storage. On the first upgraded write, an unsigned
+legacy log is preserved as `audit.jsonl.legacy-TIMESTAMP` before the signed
+chain begins. Do not rotate or replace the audit key in place: doing so makes
+the existing chain unverifiable, and the installer refuses the replacement
+while the key file exists.
+
 On RHEL-family systems, the Apache and database unit names may be `httpd` and `mariadb`.
 
 ## Capacity and retention

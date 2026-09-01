@@ -34,6 +34,13 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stdout, "%s  %s\n", manifest.ArchiveSHA256, filepath.Join(os.Args[2], manifest.Archive))
 		return
 	}
+	if len(os.Args) == 3 && os.Args[1] == "verify-audit" {
+		if err := VerifyAuditLog(os.Args[2]); err != nil {
+			log.Fatal(err)
+		}
+		_, _ = fmt.Fprintf(os.Stdout, "audit chain verified: %s\n", os.Args[2])
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "hash-password" {
 		password, err := io.ReadAll(io.LimitReader(os.Stdin, 1025))
 		if err != nil || len(password) == 0 || len(password) > 1024 || strings.ContainsAny(string(password), "\r\n") {
@@ -92,12 +99,16 @@ func main() {
 	if cfg.Production && !auth.Enabled {
 		log.Fatal("authentication must be configured in production")
 	}
+	auth.AuditLog = cfg.AuditLog
 	view := template.Must(template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).ParseFiles("web/index.html"))
 	jobs, err := OpenJobs(cfg.JobState, cfg.MaxConcurrentJobs)
 	if err != nil {
 		log.Fatalf("open persistent job state: %v", err)
 	}
 	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics()}
+	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
+		log.Printf("initialize audit chain: %v", err)
+	}
 	if !app.Auth.Enabled {
 		log.Println("warning: authentication is disabled; set STEPANEL_ADMIN_PASSWORD and STEPANEL_SESSION_SECRET")
 	}
@@ -286,9 +297,9 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		defer staged.Close()
 		result, restoreErr := RestoreCPMove(a.Config, staged, header, user, databaseRestore)
 		if restoreErr != nil {
-			_ = Audit(a.Config.AuditLog, "cpmove.restore.failed", user, restoreErr.Error())
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.failed", user, restoreErr.Error())
 		} else {
-			_ = Audit(a.Config.AuditLog, "cpmove.restore.completed", user, result.StagedAt)
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.completed", user, result.StagedAt)
 		}
 		return result, restoreErr
 	}); err != nil {

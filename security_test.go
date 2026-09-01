@@ -16,8 +16,17 @@ func TestSecurityChecksDetectPrivateImportRoot(t *testing.T) {
 	if checks[0].Status != "pass" {
 		t.Fatalf("authentication check = %q, want pass", checks[0].Status)
 	}
-	if checks[1].Status != "pass" {
-		t.Fatalf("import permissions check = %q, want pass", checks[1].Status)
+	foundImportCheck := false
+	for _, check := range checks {
+		if check.Name == "Import staging permissions" && check.Status != "pass" {
+			t.Fatalf("import permissions check = %q, want pass", check.Status)
+		}
+		if check.Name == "Import staging permissions" {
+			foundImportCheck = true
+		}
+	}
+	if !foundImportCheck {
+		t.Fatal("import permissions check is missing")
 	}
 }
 

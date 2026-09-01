@@ -8,7 +8,8 @@ helm upgrade --install stepanel deploy/helm/stepanel \
   --set image.tag=v0.1.0
 ```
 
-Create `stepanel-secrets` separately. Production installations should pin an
+Create `stepanel-secrets` separately with `admin-password`, `session-secret`,
+and an independent `audit-key`; `admin-totp-secret` is optional. Production installations should pin an
 image digest, select an appropriate persistent storage class, enable and
 configure the ingress with TLS, and add a network policy appropriate to the
 cluster ingress controller. The chart enforces one replica because restore

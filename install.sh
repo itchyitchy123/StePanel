@@ -36,6 +36,8 @@ fi
 
 ADMIN_USERNAME="${STEPANEL_ADMIN_USERNAME:-admin}"; ADMIN_PASSWORD="${STEPANEL_ADMIN_PASSWORD:-}"; SESSION_SECRET="${STEPANEL_SESSION_SECRET:-}"
 EXISTING_ADMIN_PASSWORD_HASH="${STEPANEL_ADMIN_PASSWORD_HASH:-}"
+AUDIT_KEY="${STEPANEL_AUDIT_KEY:-}"
+ADMIN_TOTP_SECRET="${STEPANEL_ADMIN_TOTP_SECRET:-}"
 DB_ENGINE="${STEPANEL_DB_ENGINE:-}"; DB_VERSION="${STEPANEL_DB_VERSION:-default}"
 DB_HOST="${STEPANEL_DB_HOST:-localhost}"; DB_USER="${STEPANEL_DB_USER:-}"; DB_PASSWORD="${STEPANEL_DB_PASSWORD:-}"
 INSTALL_FAIL2BAN="${STEPANEL_INSTALL_FAIL2BAN:-0}"; FAIL2BAN_JAILS="${STEPANEL_FAIL2BAN_JAILS:-auto}"; FAIL2BAN_IGNORE_IP="${STEPANEL_FAIL2BAN_IGNORE_IP:-}"
@@ -62,8 +64,23 @@ unset STEPANEL_ADMIN_PASSWORD STEPANEL_SESSION_SECRET STEPANEL_DB_PASSWORD
 if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then read -r -s -p "StePanel admin password: " ADMIN_PASSWORD; echo; fi
 if [[ -z "$ADMIN_PASSWORD" && -z "$EXISTING_ADMIN_PASSWORD_HASH" ]]; then echo "Set STEPANEL_ADMIN_PASSWORD or run the installer interactively." >&2; exit 1; fi
 if [[ -z "$SESSION_SECRET" ]]; then SESSION_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"; fi
+if [[ -e /etc/stepanel-audit.key || -L /etc/stepanel-audit.key ]]; then
+  [[ -f /etc/stepanel-audit.key && ! -L /etc/stepanel-audit.key ]] || { echo '/etc/stepanel-audit.key must be a regular file.' >&2; exit 1; }
+  audit_key_owner=$(stat -c %u /etc/stepanel-audit.key)
+  audit_key_mode=$(stat -c %a /etc/stepanel-audit.key)
+  [[ $audit_key_owner == 0 && $audit_key_mode =~ ^[0-7]{3,4}$ && $(( 8#$audit_key_mode & 077 )) == 0 ]] || { echo '/etc/stepanel-audit.key must be root-owned and mode 0600 or stricter.' >&2; exit 1; }
+  existing_audit_key=$(< /etc/stepanel-audit.key)
+  if [[ -z $AUDIT_KEY ]]; then AUDIT_KEY=$existing_audit_key; fi
+  [[ $existing_audit_key == "$AUDIT_KEY" ]] || { echo 'Refusing to replace the audit key while an existing audit chain may depend on it.' >&2; exit 1; }
+fi
+if [[ -z "$AUDIT_KEY" ]]; then AUDIT_KEY="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"; fi
 if [[ -n "$ADMIN_PASSWORD" ]] && (( ${#ADMIN_PASSWORD} < 12 )); then echo "STEPANEL_ADMIN_PASSWORD must be at least 12 characters." >&2; exit 1; fi
 if (( ${#SESSION_SECRET} < 32 )); then echo "STEPANEL_SESSION_SECRET must be at least 32 characters." >&2; exit 1; fi
+if (( ${#AUDIT_KEY} < 32 )) || [[ $AUDIT_KEY == *$'\n'* || $AUDIT_KEY == *$'\r'* ]]; then echo 'STEPANEL_AUDIT_KEY must be at least 32 characters and contain no newlines.' >&2; exit 1; fi
+ADMIN_TOTP_SECRET=${ADMIN_TOTP_SECRET// /}
+ADMIN_TOTP_SECRET=${ADMIN_TOTP_SECRET^^}
+totp_remainder=$(( ${#ADMIN_TOTP_SECRET} % 8 ))
+if [[ -n $ADMIN_TOTP_SECRET && ( ! $ADMIN_TOTP_SECRET =~ ^[A-Z2-7]{32,}$ || ! $totp_remainder =~ ^(0|2|4|5|7)$ ) ]]; then echo 'STEPANEL_ADMIN_TOTP_SECRET must be an unpadded base32 secret of at least 160 bits.' >&2; exit 1; fi
 if [[ ! "$ADMIN_USERNAME" =~ ^[a-zA-Z0-9._-]{1,64}$ || "$ADMIN_USERNAME" == *$'\n'* || "$ADMIN_USERNAME" == *$'\r'* ]]; then echo "Invalid admin username." >&2; exit 1; fi
 if [[ -z "$PANEL_HOSTNAME" ]]; then
   for panel_config in /etc/apache2/sites-available/stepanel.conf /etc/httpd/conf.d/stepanel.conf; do
@@ -342,6 +359,7 @@ managed_targets=(
   /etc/systemd/system/stepanel.service
   /etc/logrotate.d/stepanel
   /etc/sudoers.d/stepanel
+  /etc/stepanel-audit.key
 )
 if [[ "$PKG" == "apt" ]]; then
   managed_targets+=(/etc/apache2/sites-available/stepanel.conf /etc/apache2/sites-enabled/stepanel.conf /etc/apache2/conf-enabled/stepanel-proxy.conf)
@@ -370,6 +388,8 @@ if [[ "$INSTALL_TLS" == "1" ]]; then
   if [[ "$PKG" == "apt" ]]; then apt-get install -y certbot python3-certbot-apache; else dnf install -y certbot python3-certbot-apache; fi
 fi
 install -m 0755 "$ROOT_DIR/stepanel" "$APP_DIR/stepanel"
+printf '%s\n' "$AUDIT_KEY" > "$INSTALL_TXN/audit.key"
+install -m 0600 -o root -g root "$INSTALL_TXN/audit.key" /etc/stepanel-audit.key
 install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/integrations/install-fail2ban.sh"
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-proxyctl" /usr/local/sbin/stepanel-proxyctl
@@ -418,6 +438,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_LISTEN 127.0.0.1:8090
   write_env STEPANEL_ADMIN_USERNAME "$ADMIN_USERNAME"
   write_env STEPANEL_ADMIN_PASSWORD_HASH "$ADMIN_PASSWORD_HASH"
+  if [[ -n $ADMIN_TOTP_SECRET ]]; then write_env STEPANEL_ADMIN_TOTP_SECRET "$ADMIN_TOTP_SECRET"; fi
   write_env STEPANEL_SESSION_SECRET "$SESSION_SECRET"
   write_env STEPANEL_PANEL_HOSTNAME "$PANEL_HOSTNAME"
   write_env STEPANEL_DB_ENGINE "$DB_ENGINE"
@@ -439,6 +460,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_VHOST_ROOT "$VHOST_ROOT"
   if [[ "$DB_LOCAL_HELPER" == "1" ]]; then write_env STEPANEL_DBCTL /usr/local/sbin/stepanel-dbctl; fi
   write_env STEPANEL_AUDIT_LOG "$DATA_DIR/audit.jsonl"
+  write_env STEPANEL_AUDIT_KEY "$AUDIT_KEY"
   write_env STEPANEL_BACKUP_ROOT /var/backups/stepanel
   write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
   write_env STEPANEL_RECOVERY_ROOT /var/www/sites/.stepanel-recovery
@@ -456,6 +478,7 @@ TXN_TEMPS+=("$env_tmp")
 } > "$env_tmp"
 chmod 0600 "$env_tmp"
 mv -f "$env_tmp" "$ENV_FILE"
+unset AUDIT_KEY
 install -m 0644 "$ROOT_DIR/deploy/stepanel.service" /etc/systemd/system/stepanel.service
 install -m 0644 "$ROOT_DIR/deploy/stepanel.logrotate" /etc/logrotate.d/stepanel
 sudoers_tmp=$(mktemp)

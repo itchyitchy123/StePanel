@@ -95,7 +95,7 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 	if running, err := json.MarshalIndent(app, "", "  "); err == nil {
 		_ = os.WriteFile(manifestPath, append(running, '\n'), 0600)
 	}
-	_ = Audit(a.Config.AuditLog, "app.deployed", app.Site, app.Domain+" on port "+strconv.Itoa(app.Port))
+	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "app.deployed", app.Site, app.Domain+" on port "+strconv.Itoa(app.Port))
 	writeJSON(w, http.StatusAccepted, app)
 }
 
@@ -134,6 +134,6 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "app action failed", 502)
 		return
 	}
-	_ = Audit(a.Config.AuditLog, "app."+parts[1], parts[0], "systemd action")
+	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "app."+parts[1], parts[0], "systemd action")
 	writeJSON(w, http.StatusAccepted, map[string]string{"site": parts[0], "action": parts[1]})
 }

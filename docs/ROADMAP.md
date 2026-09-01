@@ -5,7 +5,7 @@
 - Authenticated operations dashboard
 - LAMP installation with MySQL/MariaDB selection
 - Safe asynchronous cpmove staging and restore
-- Health, metrics, audit events, and release automation
+- Health, metrics, tamper-evident audit events, and release automation
 - Live service inventory and authenticated security posture checks
 
 ## 0.2 — Hosting operations
@@ -18,8 +18,8 @@
 ## 0.3 — Recovery and scale
 
 - Snapshot-backed restore rollback for files and databases
-- Scheduled and verified backups
-- Multi-user roles and MFA/OIDC
+- Scheduled backup policies
+- Multi-user roles and OIDC federation
 - Import progress, cancellation, and retry
 - Docker and distribution integration tests
 

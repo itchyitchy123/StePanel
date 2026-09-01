@@ -1,0 +1,170 @@
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestAuditChainRecordsActorAndVerifies(t *testing.T) {
+	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("k", 32))
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := AuditAs(path, "admin", "site.deployed", "account", "example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AuditAs(path, "admin", "site.backup.completed", "account", "checksum"); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAuditLog(path); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	events := []AuditEvent{}
+	for scanner.Scan() {
+		var event AuditEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, event)
+	}
+	if len(events) != 2 || events[0].Actor != "admin" || events[0].Target != "account" || events[1].PreviousHash != events[0].Hash || events[1].Sequence != 2 {
+		t.Fatalf("audit events = %#v", events)
+	}
+}
+
+func TestAuditRequiresStrongSigningKey(t *testing.T) {
+	t.Setenv("STEPANEL_AUDIT_KEY", "")
+	t.Setenv("STEPANEL_SESSION_SECRET", "")
+	previousKeyPath := auditKeyPath
+	auditKeyPath = filepath.Join(t.TempDir(), "missing-audit.key")
+	t.Cleanup(func() { auditKeyPath = previousKeyPath })
+	if err := Audit(filepath.Join(t.TempDir(), "audit.jsonl"), "test.action", "site", "detail"); err == nil {
+		t.Fatal("audit event was accepted without a signing key")
+	}
+	auditMu.Lock()
+	auditPersistenceErr = nil
+	auditMu.Unlock()
+}
+
+func TestVerifyAuditLogRejectsTampering(t *testing.T) {
+	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("s", 32))
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := AuditAs(path, "admin", "test.action", "site", "original"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.Replace(string(data), `"detail":"original"`, `"detail":"tampered"`, 1))
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAuditLog(path); err == nil {
+		t.Fatal("tampered audit log passed verification")
+	}
+}
+
+func TestVerifyAuditLogRejectsWrongKey(t *testing.T) {
+	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("a", 32))
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := AuditAs(path, "admin", "test.action", "site", "detail"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("b", 32))
+	if err := VerifyAuditLog(path); err == nil {
+		t.Fatal("audit log passed verification with the wrong key")
+	}
+	if err := AuditAs(path, "admin", "second.action", "site", "detail"); err == nil {
+		t.Fatal("audit chain accepted an event signed with a replacement key")
+	}
+	auditMu.Lock()
+	auditPersistenceErr = nil
+	auditMu.Unlock()
+}
+
+func TestVerifyAuditLogRejectsRewrittenState(t *testing.T) {
+	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("w", 32))
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := AuditAs(path, "admin", "test.action", "site", "detail"); err != nil {
+		t.Fatal(err)
+	}
+	stateData, err := os.ReadFile(path + ".state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(stateData, &state); err != nil {
+		t.Fatal(err)
+	}
+	state["sequence"] = float64(0)
+	state["hash"] = ""
+	stateData, err = json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+".state", stateData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAuditLog(path); err == nil {
+		t.Fatal("audit log passed verification with rewritten state")
+	}
+}
+
+func TestAuditPreservesUnsignedLegacyLog(t *testing.T) {
+	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("l", 32))
+	root := t.TempDir()
+	path := filepath.Join(root, "audit.jsonl")
+	if err := os.WriteFile(path, []byte("{\"legacy\":true}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Audit(path, "service.started", "stepanel", "upgrade"); err != nil {
+		t.Fatal(err)
+	}
+	matches, err := filepath.Glob(path + ".legacy-*")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("legacy logs = %#v, error = %v", matches, err)
+	}
+	if err := VerifyAuditLog(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAuditChainContinuesAcrossRotation(t *testing.T) {
+	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("r", 32))
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := AuditAs(path, "admin", "one", "site", "first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AuditAs(path, "admin", "two", "site", "second"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path, path+".1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := AuditAs(path, "admin", "three", "site", "third"); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAuditLog(path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event AuditEvent
+	if err := json.Unmarshal(data, &event); err != nil || event.Sequence != 3 || event.PreviousHash == "" {
+		t.Fatalf("rotated audit event = %#v, error = %v", event, err)
+	}
+}

@@ -77,7 +77,7 @@ func (a *App) selectNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to select Node version", 500)
 		return
 	}
-	_ = Audit(a.Config.AuditLog, "node.version.selected", input.Site, "Node v"+version)
+	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "node.version.selected", input.Site, "Node v"+version)
 	writeJSON(w, http.StatusOK, map[string]string{"site": input.Site, "version": "v" + version})
 }
 
@@ -106,7 +106,7 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "proxy helper rejected the configuration or Apache reload failed", http.StatusServiceUnavailable)
 		return
 	}
-	_ = Audit(a.Config.AuditLog, "proxy.deployed", input.Site, input.Domain+" -> "+backend)
+	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deployed", input.Site, input.Domain+" -> "+backend)
 	writeJSON(w, http.StatusAccepted, map[string]any{"site": input.Site, "domain": input.Domain, "backend": backend, "config": path, "reloaded": true})
 }
 
@@ -167,7 +167,7 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "proxy was not removed because the helper or Apache reload failed", http.StatusServiceUnavailable)
 		return
 	}
-	_ = Audit(a.Config.AuditLog, "proxy.deleted", name, "managed proxy removed")
+	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deleted", name, "managed proxy removed")
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "reloaded": true})
 }
 

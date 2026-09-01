@@ -152,9 +152,9 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		defer os.Remove(tempPath)
 		result, restoreErr := RestoreWPress(a.Config, tempPath, site, dbSuffix, dbUserSuffix, password, siteURL, targetPrefix, force)
 		if restoreErr != nil {
-			_ = Audit(a.Config.AuditLog, "wordpress.restore.failed", site, restoreErr.Error())
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.failed", site, restoreErr.Error())
 		} else {
-			_ = Audit(a.Config.AuditLog, "wordpress.restore.completed", site, result.StagedAt)
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.completed", site, result.StagedAt)
 		}
 		return result, restoreErr
 	}); err != nil {

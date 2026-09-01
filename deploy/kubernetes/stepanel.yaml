@@ -95,6 +95,17 @@ spec:
                 secretKeyRef:
                   name: stepanel-secrets
                   key: session-secret
+            - name: STEPANEL_AUDIT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stepanel-secrets
+                  key: audit-key
+            - name: STEPANEL_ADMIN_TOTP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stepanel-secrets
+                  key: admin-totp-secret
+                  optional: true
           readinessProbe:
             httpGet:
               path: /readyz

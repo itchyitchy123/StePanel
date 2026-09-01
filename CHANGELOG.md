@@ -28,6 +28,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   repeatable offline verification command.
 - Separate dependency-free liveness and persistent-storage readiness endpoints,
   plus configurable upload, archive-entry, and global job concurrency limits.
+- Optional TOTP administrator MFA with accepted-code replay protection, plus
+  actor/target-aware, sequence-linked HMAC audit records and offline verification.
 
 ### Changed
 
@@ -73,6 +75,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   initiated backup from racing a site replacement.
 - Restore admission now checks free space on both staging and destination
   filesystems instead of silently continuing when a capacity check fails.
+- Authenticated mutating requests now fail closed before handler execution when
+  their audit preflight event cannot be durably persisted.
 - Apache proxy snippets are rendered with valid HTTP backend URLs, tested before
   reload, and rolled back when validation or reload fails.
 - PHP site vhosts and Node proxies share an Apache configuration lock and reject

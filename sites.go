@@ -63,7 +63,7 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + ".conf"
-	_ = Audit(a.Config.AuditLog, "site.deployed", input.Site, input.Domain)
+	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deployed", input.Site, input.Domain)
 	writeJSON(w, http.StatusAccepted, map[string]string{"site": input.Site, "domain": input.Domain, "config": filepath.Join(a.Config.VHostRoot, name)})
 }
 
@@ -86,6 +86,6 @@ func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site route was not removed because validation or Apache reload failed", http.StatusServiceUnavailable)
 		return
 	}
-	_ = Audit(a.Config.AuditLog, "site.deleted", name, "managed PHP vhost removed")
+	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deleted", name, "managed PHP vhost removed")
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": name})
 }

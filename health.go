@@ -35,6 +35,11 @@ func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
 
 func readinessChecks(cfg Config, jobs *Jobs) map[string]ReadinessCheck {
 	checks := map[string]ReadinessCheck{}
+	if err := AuditPersistenceError(); err != nil {
+		checks["audit_state"] = ReadinessCheck{Ready: false, Detail: err.Error()}
+	} else {
+		checks["audit_state"] = ReadinessCheck{Ready: true}
+	}
 	if jobs == nil {
 		checks["job_state"] = ReadinessCheck{Ready: false, Detail: "job store is not initialized"}
 	} else if err := jobs.PersistenceError(); err != nil {

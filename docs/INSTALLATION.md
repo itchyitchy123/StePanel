@@ -61,6 +61,29 @@ Fail2ban, Node, ClamAV, or Certbot package configuration are outside that file
 rollback boundary. Snapshot the host and verified backup artifacts before an
 upgrade, and review package-manager history if dependency installation fails.
 
+## Administrator MFA and audit key
+
+Set `STEPANEL_ADMIN_TOTP_SECRET` to an unpadded base32 secret representing at
+least 20 random bytes to require a six-digit authenticator code at every login.
+Generate a secret on the host and enroll the same value manually in the
+operator's authenticator before running the installer:
+
+```sh
+umask 077
+totp_secret=$(head -c 20 /dev/urandom | base32 | tr -d '=\n')
+sudo STEPANEL_ADMIN_TOTP_SECRET="$totp_secret" ./install.sh
+```
+
+Test a fresh login before closing the recovery console. If the authenticator is
+lost, a local root operator can rerun the installer with
+`STEPANEL_ADMIN_TOTP_SECRET=''` to remove the requirement. StePanel remains a
+single-administrator system; teams should not share the account when individual
+attribution is required.
+
+The installer generates a separate audit HMAC key, stores a root-only copy at
+`/etc/stepanel-audit.key`, and supplies it through the protected service
+environment. Preserve both in the host's secret backup.
+
 FTP is opt-in. Installation alone leaves a newly installed vsftpd service
 disabled. Activation requires `STEPANEL_ACTIVATE_FTP=1` and readable certificate
 and private-key paths; the resulting configuration requires TLS for both login
@@ -74,6 +97,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | Variable | Values | Meaning |
 | --- | --- | --- |
 | `STEPANEL_DB_ENGINE` | `mysql`, `mariadb` | Database distribution |
+| `STEPANEL_ADMIN_TOTP_SECRET` | Unpadded base32, 160 bits or more | Require TOTP MFA for administrator login |
 | `STEPANEL_PANEL_HOSTNAME` | Fully qualified domain | Required Apache virtual-host name |
 | `STEPANEL_DB_VERSION` | `default` or an exact package version | Requested repository version |
 | `STEPANEL_INSTALL_MAIL` | `0` or `1` | Install Exim, Dovecot, SpamAssassin, and enable mailbox staging |
@@ -113,6 +137,7 @@ outbound-network policy.
 | `/var/lib/ste-panel/quarantine` | Recoverable malware quarantine |
 | `/var/www/sites/.stepanel-recovery` | Journaled site rollback data |
 | `/etc/ste-panel.env` | Runtime configuration |
+| `/etc/stepanel-audit.key` | Root-only HMAC key for audit verification |
 | `/etc/systemd/system/stepanel.service` | Service definition |
 | `/etc/logrotate.d/stepanel` | Audit-log retention policy |
 
