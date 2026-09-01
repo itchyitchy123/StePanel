@@ -31,7 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - The installer now requires a panel FQDN and a 12-character administrator
   password, stores only its bcrypt hash, generates a session secret, validates
-  options before host mutations, and writes configuration atomically.
+  options before host mutations, and writes configuration atomically. In-place
+  upgrades preserve the existing root-owned runtime values, snapshot all
+  StePanel-owned files, validate Apache and the candidate health endpoint, and
+  restore the previous files and service state on core installation failure.
 - Local installations use a root-owned, operation-scoped database helper; the
   long-running control plane retains no local administrative credential.
 - Newly installed mail and FTP daemons remain disabled until explicitly

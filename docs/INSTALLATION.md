@@ -16,8 +16,8 @@ sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \\
   STEPANEL_DB_VERSION=10.11 ./install.sh
 ```
 
-The installer requires an admin password, stores only its bcrypt hash, generates
-a session secret when one is not supplied, and starts in production mode. It
+For a fresh installation, the installer requires an admin password, stores only
+its bcrypt hash, generates a session secret when one is not supplied, and starts in production mode. It
 supports `mysql` and `mariadb`. Use `default` for the distribution-provided
 version, or provide an exact version available from the configured package
 repositories. The installer verifies requested versions before installing the
@@ -37,6 +37,29 @@ Apache virtual host. Production sessions use Secure cookies, so complete TLS
 termination before attempting to sign in. When Certbot integration is
 installed, issuance can be bootstrapped from the host with
 `sudo stepanel-certbot panel.example.com admin@example.com`.
+
+## Upgrades and rollback boundary
+
+Running the installer over an existing installation preserves values from the
+root-owned, non-writable `/etc/ste-panel.env` unless the corresponding
+`STEPANEL_*` variable is explicitly supplied. This preserves the administrator
+hash, session secret, database selection and credentials, hostname, and runtime
+paths; an upgrade therefore does not require the plaintext administrator
+password.
+
+Before replacing StePanel-owned files, the installer snapshots the binary, web
+assets, helpers, environment, sudoers policy, systemd unit, logrotate policy,
+and panel Apache configuration into a private `/var/tmp/stepanel-install.*`
+transaction. It stops the old daemon, installs the candidate, validates the
+complete Apache configuration, starts the candidate, and requires the local
+health endpoint to succeed. A failure restores those files and the prior
+StePanel service state. Apache changes share the same lock as vhost, proxy, and
+certificate operations.
+
+Package-manager transactions and optional third-party mail, FTP, ModSecurity,
+Fail2ban, Node, ClamAV, or Certbot package configuration are outside that file
+rollback boundary. Snapshot the host and verified backup artifacts before an
+upgrade, and review package-manager history if dependency installation fails.
 
 FTP is opt-in. Installation alone leaves a newly installed vsftpd service
 disabled. Activation requires `STEPANEL_ACTIVATE_FTP=1` and readable certificate

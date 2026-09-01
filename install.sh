@@ -6,7 +6,36 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_USER="stepanel"; APP_DIR="/opt/stepanel"; DATA_DIR="/var/lib/ste-panel"; ENV_FILE="/etc/ste-panel.env"
 if [[ ! -f "$ROOT_DIR/stepanel" || ! -x "$ROOT_DIR/stepanel" ]]; then echo "Build an executable stepanel binary before installing." >&2; exit 1; fi
 
+# On upgrades, retain the generated runtime configuration unless the operator
+# explicitly supplied a replacement STEPANEL_* environment variable.
+if [[ -f "$ENV_FILE" ]]; then
+  env_owner=$(stat -c %u "$ENV_FILE")
+  env_mode=$(stat -c %a "$ENV_FILE")
+  [[ $env_owner == 0 && $env_mode =~ ^[0-7]{3,4}$ && $(( 8#$env_mode & 022 )) == 0 ]] || { echo "$ENV_FILE must be root-owned and not group/world-writable." >&2; exit 1; }
+  while IFS='=' read -r env_key env_encoded; do
+    [[ -n $env_key ]] || continue
+    [[ $env_key =~ ^STEPANEL_[A-Z0-9_]+$ && $env_encoded == \"*\" ]] || { echo "$ENV_FILE contains an unsupported entry." >&2; exit 1; }
+    [[ -v $env_key ]] && continue
+    env_encoded=${env_encoded:1:${#env_encoded}-2}
+    env_value=
+    while [[ -n $env_encoded ]]; do
+      env_character=${env_encoded:0:1}
+      env_encoded=${env_encoded:1}
+      if [[ $env_character == '\' ]]; then
+        [[ -n $env_encoded ]] || { echo "$ENV_FILE contains an invalid escape." >&2; exit 1; }
+        env_character=${env_encoded:0:1}
+        [[ $env_character == '\' || $env_character == '"' ]] || { echo "$ENV_FILE contains an unsupported escape." >&2; exit 1; }
+        env_encoded=${env_encoded:1}
+      fi
+      env_value+=$env_character
+    done
+    printf -v "$env_key" '%s' "$env_value"
+    export "${env_key?}"
+  done < "$ENV_FILE"
+fi
+
 ADMIN_USERNAME="${STEPANEL_ADMIN_USERNAME:-admin}"; ADMIN_PASSWORD="${STEPANEL_ADMIN_PASSWORD:-}"; SESSION_SECRET="${STEPANEL_SESSION_SECRET:-}"
+EXISTING_ADMIN_PASSWORD_HASH="${STEPANEL_ADMIN_PASSWORD_HASH:-}"
 DB_ENGINE="${STEPANEL_DB_ENGINE:-}"; DB_VERSION="${STEPANEL_DB_VERSION:-default}"
 DB_HOST="${STEPANEL_DB_HOST:-localhost}"; DB_USER="${STEPANEL_DB_USER:-}"; DB_PASSWORD="${STEPANEL_DB_PASSWORD:-}"
 INSTALL_FAIL2BAN="${STEPANEL_INSTALL_FAIL2BAN:-0}"; FAIL2BAN_JAILS="${STEPANEL_FAIL2BAN_JAILS:-auto}"; FAIL2BAN_IGNORE_IP="${STEPANEL_FAIL2BAN_IGNORE_IP:-}"
@@ -28,11 +57,18 @@ STAGE_RETENTION_HOURS="${STEPANEL_STAGE_RETENTION_HOURS:-168}"
 MIN_FREE_BYTES="${STEPANEL_MIN_FREE_BYTES:-1073741824}"
 unset STEPANEL_ADMIN_PASSWORD STEPANEL_SESSION_SECRET STEPANEL_DB_PASSWORD
 if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then read -r -s -p "StePanel admin password: " ADMIN_PASSWORD; echo; fi
-if [[ -z "$ADMIN_PASSWORD" ]]; then echo "Set STEPANEL_ADMIN_PASSWORD or run the installer interactively." >&2; exit 1; fi
+if [[ -z "$ADMIN_PASSWORD" && -z "$EXISTING_ADMIN_PASSWORD_HASH" ]]; then echo "Set STEPANEL_ADMIN_PASSWORD or run the installer interactively." >&2; exit 1; fi
 if [[ -z "$SESSION_SECRET" ]]; then SESSION_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"; fi
-if (( ${#ADMIN_PASSWORD} < 12 )); then echo "STEPANEL_ADMIN_PASSWORD must be at least 12 characters." >&2; exit 1; fi
+if [[ -n "$ADMIN_PASSWORD" ]] && (( ${#ADMIN_PASSWORD} < 12 )); then echo "STEPANEL_ADMIN_PASSWORD must be at least 12 characters." >&2; exit 1; fi
 if (( ${#SESSION_SECRET} < 32 )); then echo "STEPANEL_SESSION_SECRET must be at least 32 characters." >&2; exit 1; fi
 if [[ ! "$ADMIN_USERNAME" =~ ^[a-zA-Z0-9._-]{1,64}$ || "$ADMIN_USERNAME" == *$'\n'* || "$ADMIN_USERNAME" == *$'\r'* ]]; then echo "Invalid admin username." >&2; exit 1; fi
+if [[ -z "$PANEL_HOSTNAME" ]]; then
+  for panel_config in /etc/apache2/sites-available/stepanel.conf /etc/httpd/conf.d/stepanel.conf; do
+    [[ -f $panel_config ]] || continue
+    PANEL_HOSTNAME=$(awk 'tolower($1) == "servername" { print tolower($2); exit }' "$panel_config")
+    [[ -n $PANEL_HOSTNAME ]] && break
+  done
+fi
 if [[ ! "$PANEL_HOSTNAME" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then echo "Set STEPANEL_PANEL_HOSTNAME to the panel's fully qualified domain name." >&2; exit 1; fi
 if [[ "$ADMIN_PASSWORD" == *$'\n'* || "$ADMIN_PASSWORD" == *$'\r'* || "$SESSION_SECRET" == *$'\n'* || "$SESSION_SECRET" == *$'\r'* || "$DB_PASSWORD" == *$'\n'* || "$DB_PASSWORD" == *$'\r'* ]]; then echo "Credentials may not contain newlines." >&2; exit 1; fi
 if [[ "$DB_HOST" == *$'\n'* || "$DB_HOST" == *$'\r'* ]]; then echo "STEPANEL_DB_HOST may not contain newlines." >&2; exit 1; fi
@@ -76,6 +112,8 @@ if [[ -z "${STEPANEL_DB_VERSION:-}" && -t 0 ]]; then
 fi
 DB_VERSION="${DB_VERSION:-default}"
 if [[ ! "$DB_VERSION" =~ ^(default|[0-9][0-9A-Za-z.+:~-]*)$ ]]; then echo "Invalid database version: $DB_VERSION" >&2; exit 1; fi
+if [[ -n "$ADMIN_PASSWORD" ]]; then ADMIN_PASSWORD_HASH="$(printf '%s' "$ADMIN_PASSWORD" | "$ROOT_DIR/stepanel" hash-password)"; else ADMIN_PASSWORD_HASH="$EXISTING_ADMIN_PASSWORD_HASH"; fi
+unset ADMIN_PASSWORD
 
 if [[ "$DB_ENGINE" == "mysql" ]]; then DB_PACKAGE="mysql-server"; else DB_PACKAGE="mariadb-server"; fi
 if [[ "$PKG" == "apt" ]]; then DB_SERVICE="${DB_ENGINE/mysql/mysql}"; [[ "$DB_ENGINE" == "mariadb" ]] && DB_SERVICE="mariadb"; export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y apache2 php php-cli php-fpm php-mysql php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate
@@ -230,7 +268,85 @@ configure_modsecurity() {
   echo "ModSecurity configured in $MODSEC_MODE mode${crs_load:+ with OWASP CRS}."
 }
 
+command -v flock >/dev/null 2>&1 || { echo 'flock is required for installation locking.' >&2; exit 1; }
+exec 8>/run/lock/stepanel-apache.lock
+flock -x 8
 if [[ "$INSTALL_MODSEC" == "1" ]]; then configure_modsecurity; fi
+
+INSTALL_TXN=$(mktemp -d /var/tmp/stepanel-install.XXXXXX)
+chmod 0700 "$INSTALL_TXN"
+declare -a TXN_TARGETS=() TXN_BACKUPS=() TXN_EXISTED=() TXN_TEMPS=()
+INSTALL_COMMITTED=0
+STEPANEL_WAS_ACTIVE=0
+STEPANEL_WAS_ENABLED=0
+systemctl is-active --quiet stepanel.service 2>/dev/null && STEPANEL_WAS_ACTIVE=1
+systemctl is-enabled --quiet stepanel.service 2>/dev/null && STEPANEL_WAS_ENABLED=1
+
+backup_managed_target() {
+  local target=$1 index backup existing=0
+  for index in "${!TXN_TARGETS[@]}"; do [[ ${TXN_TARGETS[$index]} != "$target" ]] || return 0; done
+  [[ ! -d $target || -L $target ]] || { echo "Refusing unexpected directory at managed file path $target." >&2; return 1; }
+  backup="$INSTALL_TXN/${#TXN_TARGETS[@]}"
+  if [[ -e $target || -L $target ]]; then cp -a "$target" "$backup"; existing=1; fi
+  TXN_TARGETS+=("$target")
+  TXN_BACKUPS+=("$backup")
+  TXN_EXISTED+=("$existing")
+}
+
+rollback_install() {
+  local status=$? index temporary
+  trap - ERR EXIT INT TERM
+  if (( INSTALL_COMMITTED )); then exit "$status"; fi
+  echo 'Installation failed; restoring the previous StePanel-owned files.' >&2
+  for (( index=${#TXN_TARGETS[@]}-1; index>=0; index-- )); do
+    rm -f "${TXN_TARGETS[$index]}"
+    if [[ ${TXN_EXISTED[$index]} == 1 ]]; then cp -a "${TXN_BACKUPS[$index]}" "${TXN_TARGETS[$index]}"; fi
+  done
+  for temporary in "${TXN_TEMPS[@]}"; do rm -f "$temporary"; done
+  systemctl daemon-reload 2>/dev/null || true
+  if (( STEPANEL_WAS_ENABLED )); then systemctl enable stepanel.service 2>/dev/null || true; else systemctl disable stepanel.service 2>/dev/null || true; fi
+  if (( STEPANEL_WAS_ACTIVE )); then systemctl restart stepanel.service 2>/dev/null || true; else systemctl stop stepanel.service 2>/dev/null || true; fi
+  if command -v apachectl >/dev/null 2>&1 && apachectl -t >/dev/null 2>&1; then systemctl reload "$APACHE_SERVICE" 2>/dev/null || true
+  elif command -v httpd >/dev/null 2>&1 && httpd -t >/dev/null 2>&1; then systemctl reload "$APACHE_SERVICE" 2>/dev/null || true
+  fi
+  rm -rf "$INSTALL_TXN"
+  exit "$status"
+}
+trap rollback_install ERR EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+managed_targets=(
+  "$APP_DIR/stepanel"
+  "$APP_DIR/integrations/install-fail2ban.sh"
+  /usr/local/sbin/stepanel-appctl
+  /usr/local/sbin/stepanel-proxyctl
+  /usr/local/sbin/stepanel-sitectl
+  /usr/local/sbin/stepanel-vhostctl
+  /usr/local/sbin/stepanel-dbctl
+  "$APP_DIR/web/index.html"
+  "$APP_DIR/web/static/app.css"
+  "$APP_DIR/web/static/import.css"
+  "$APP_DIR/web/static/cpmove.js"
+  "$APP_DIR/web/static/deploy.js"
+  "$APP_DIR/web/static/certificates.js"
+  "$APP_DIR/web/static/wpress.js"
+  "$APP_DIR/web/static/favicon.svg"
+  "$ENV_FILE"
+  /etc/systemd/system/stepanel.service
+  /etc/logrotate.d/stepanel
+  /etc/sudoers.d/stepanel
+)
+if [[ "$PKG" == "apt" ]]; then
+  managed_targets+=(/etc/apache2/sites-available/stepanel.conf /etc/apache2/sites-enabled/stepanel.conf /etc/apache2/conf-enabled/stepanel-proxy.conf)
+else
+  managed_targets+=(/etc/httpd/conf.d/stepanel.conf /etc/httpd/conf.d/stepanel-proxy.conf)
+fi
+if [[ "$INSTALL_TLS" == "1" ]]; then managed_targets+=(/usr/local/sbin/stepanel-certbot); fi
+if [[ -n "$FPM_LENS_BINARY" ]]; then managed_targets+=(/usr/local/bin/fpm-lens); fi
+if [[ "$INSTALL_SECURITY" == "1" ]]; then managed_targets+=(/usr/local/sbin/stepanel-malware-guard /etc/systemd/system/stepanel-malware-guard.service); fi
+for managed_target in "${managed_targets[@]}"; do backup_managed_target "$managed_target"; done
+if (( STEPANEL_WAS_ACTIVE )); then systemctl stop stepanel.service; fi
 
 install -d -m 0750 "$APP_DIR" "$DATA_DIR/imports" "$DATA_DIR/mail" "$DATA_DIR/apps" /var/www/sites
 install -d -m 0755 -o root -g root "$PROXY_ROOT" "$VHOST_ROOT"
@@ -248,8 +364,6 @@ if [[ "$INSTALL_TLS" == "1" ]]; then
   if [[ "$PKG" == "apt" ]]; then apt-get install -y certbot python3-certbot-apache; else dnf install -y certbot python3-certbot-apache; fi
 fi
 install -m 0755 "$ROOT_DIR/stepanel" "$APP_DIR/stepanel"
-ADMIN_PASSWORD_HASH="$(printf '%s' "$ADMIN_PASSWORD" | "$APP_DIR/stepanel" hash-password)"
-unset ADMIN_PASSWORD
 install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/integrations/install-fail2ban.sh"
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-proxyctl" /usr/local/sbin/stepanel-proxyctl
@@ -292,13 +406,14 @@ write_env() {
   printf '%s="%s"\n' "$key" "$value"
 }
 env_tmp=$(mktemp /etc/ste-panel.env.XXXXXX)
-trap 'rm -f "$env_tmp"' EXIT
+TXN_TEMPS+=("$env_tmp")
 {
   write_env STEPANEL_ENV production
   write_env STEPANEL_LISTEN 127.0.0.1:8090
   write_env STEPANEL_ADMIN_USERNAME "$ADMIN_USERNAME"
   write_env STEPANEL_ADMIN_PASSWORD_HASH "$ADMIN_PASSWORD_HASH"
   write_env STEPANEL_SESSION_SECRET "$SESSION_SECRET"
+  write_env STEPANEL_PANEL_HOSTNAME "$PANEL_HOSTNAME"
   write_env STEPANEL_DB_ENGINE "$DB_ENGINE"
   write_env STEPANEL_DB_VERSION "$DB_VERSION"
   write_env STEPANEL_DB_HOST "$DB_HOST"
@@ -326,16 +441,16 @@ trap 'rm -f "$env_tmp"' EXIT
   write_env STEPANEL_SUDO /usr/bin/sudo
   write_env STEPANEL_STAGE_RETENTION_HOURS "$STAGE_RETENTION_HOURS"
   write_env STEPANEL_MIN_FREE_BYTES "$MIN_FREE_BYTES"
-  if [[ "$INSTALL_FTP" == "1" ]]; then write_env STEPANEL_FTP_PASSIVE_MIN "$FTP_PASSIVE_MIN"; write_env STEPANEL_FTP_PASSIVE_MAX "$FTP_PASSIVE_MAX"; fi
-  if [[ "$INSTALL_TLS" == "1" ]]; then write_env STEPANEL_CERTBOT /usr/local/sbin/stepanel-certbot; fi
+  write_env STEPANEL_FTP_PASSIVE_MIN "$FTP_PASSIVE_MIN"
+  write_env STEPANEL_FTP_PASSIVE_MAX "$FTP_PASSIVE_MAX"
+  if [[ "$INSTALL_TLS" == "1" || -x /usr/local/sbin/stepanel-certbot ]]; then write_env STEPANEL_CERTBOT /usr/local/sbin/stepanel-certbot; fi
 } > "$env_tmp"
 chmod 0600 "$env_tmp"
 mv -f "$env_tmp" "$ENV_FILE"
-trap - EXIT
 install -m 0644 "$ROOT_DIR/deploy/stepanel.service" /etc/systemd/system/stepanel.service
 install -m 0644 "$ROOT_DIR/deploy/stepanel.logrotate" /etc/logrotate.d/stepanel
 sudoers_tmp=$(mktemp)
-trap 'rm -f "$sudoers_tmp"' EXIT
+TXN_TEMPS+=("$sudoers_tmp")
 printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-appctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-proxyctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-sitectl *\n' "$APP_USER" "$APP_USER" "$APP_USER" > "$sudoers_tmp"
 printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-vhostctl *\n' "$APP_USER" >> "$sudoers_tmp"
 if [[ "$DB_LOCAL_HELPER" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-dbctl *\n' "$APP_USER" >> "$sudoers_tmp"; fi
@@ -347,8 +462,22 @@ if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
   command -v restorecon >/dev/null 2>&1 && restorecon -RF /opt/stepanel /var/lib/ste-panel /var/lib/stepanel-privileged /var/backups/stepanel /var/www/sites /etc/httpd/conf.d/stepanel.conf "$PROXY_ROOT" "$VHOST_ROOT"
   if command -v setsebool >/dev/null 2>&1; then setsebool -P httpd_can_network_connect 1; fi
 fi
-systemctl daemon-reload; systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" stepanel; systemctl reload "$APACHE_SERVICE" || true
-while read -r php_fpm_unit; do [[ -n "$php_fpm_unit" ]] && systemctl enable --now "$php_fpm_unit"; done < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
+systemctl daemon-reload
+if command -v apachectl >/dev/null 2>&1; then apachectl -t; else httpd -t; fi
+systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" "${FPM_UNITS[@]}"
+systemctl reload "$APACHE_SERVICE"
+systemctl enable --now stepanel.service
+health_ready=0
+for _ in {1..30}; do
+  if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8090/api/health >/dev/null; then health_ready=1; break; fi
+  sleep 1
+done
+(( health_ready == 1 )) || { echo 'StePanel failed its post-install health check.' >&2; false; }
+INSTALL_COMMITTED=1
+trap - ERR EXIT INT TERM
+for temporary in "${TXN_TEMPS[@]}"; do rm -f "$temporary"; done
+rm -rf "$INSTALL_TXN"
+flock -u 8
 if [[ "$INSTALL_SECURITY" == "1" ]]; then systemctl enable --now stepanel-malware-guard; fi
 if [[ "$INSTALL_MAIL" == "1" && "$ACTIVATE_MAIL" == "1" ]]; then
   systemctl enable --now "$([[ "$PKG" == "apt" ]] && echo exim4 || echo exim)" dovecot "$MAIL_SPAM_SERVICE"

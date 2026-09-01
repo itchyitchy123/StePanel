@@ -37,6 +37,14 @@ Check `stepanel_restore_jobs_active` before package upgrades or planned reboots.
 Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
 `/var/lib/ste-panel` before upgrading.
 
+For an in-place upgrade, build the candidate binary, ensure no restore or backup
+job is active, then run `install.sh` without re-supplying secrets. The installer
+loads the existing root-owned environment, snapshots StePanel-owned files,
+waits for the old service to stop, and health-checks the candidate. If core
+configuration or startup fails it restores the previous files and service
+state. Package-manager and optional integration changes are not automatically
+reverted; retain the host snapshot and inspect the package transaction log.
+
 ## Verified site backups
 
 Queue a filesystem-only backup, or include databases registered to the site by
