@@ -39,7 +39,7 @@ See the [product preview](docs/SCREENSHOTS.md) for the current dashboard directi
 
 ### Local development
 
-Requirements: Go 1.22+.
+Requirements: Go 1.26+.
 
 ```sh
 git clone https://github.com/itchyitchy123/StePanel.git
@@ -69,11 +69,12 @@ Build a release binary and run the installer as root:
 ```sh
 go build -trimpath -ldflags='-s -w' -o stepanel .
 sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
+  STEPANEL_PANEL_HOSTNAME=panel.example.com \
   STEPANEL_DB_ENGINE=mariadb \
   STEPANEL_DB_VERSION=default ./install.sh
 ```
 
-The installer records the selected database engine/version, creates a restricted `stepanel` service account, and binds the control plane to `127.0.0.1:8090`. Configure [`deploy/apache/stepanel.conf`](deploy/apache/stepanel.conf) and HTTPS before exposing it.
+The installer records the selected database engine/version, creates a restricted `stepanel` service account, writes the requested Apache hostname, and binds the control plane to `127.0.0.1:8090`. Complete HTTPS termination before signing in.
 
 ## cpmove migration
 
@@ -84,7 +85,7 @@ The installer records the selected database engine/version, creates a restricted
 5. Poll the returned job status until it completes or fails.
 6. Review the audit log and verify the site before switching traffic.
 
-Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are restored to account-prefixed database names. Existing destination files can be overwritten; always snapshot first.
+Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are restored to new account-prefixed database names; existing databases are refused. Existing destination files can be overwritten only with explicit confirmation; always snapshot first.
 
 ## WordPress `.wpress` migration
 

@@ -29,6 +29,20 @@ func TestHealthAndMetricsEndpoints(t *testing.T) {
 	}
 }
 
+func TestLoggingAddsBrowserSecurityHeaders(t *testing.T) {
+	handler := logging(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}), nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/health", nil))
+	if response.Header().Get("Content-Security-Policy") == "" {
+		t.Fatal("Content-Security-Policy header is missing")
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+}
+
 func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	root := t.TempDir()
 	app := &App{Config: Config{ImportRoot: root, WebRoot: root}, Auth: Auth{}, Jobs: NewJobs(), Metrics: NewMetrics()}
@@ -87,4 +101,24 @@ func TestJobsCompleteAndCleanup(t *testing.T) {
 	if _, ok := jobs.Get("missing"); ok {
 		t.Fatal("missing job unexpectedly found")
 	}
+}
+
+func TestJobsRejectConcurrentRestoresForSameSite(t *testing.T) {
+	jobs := NewJobs()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	if !jobs.Submit("job-1", "site", func() (ImportResult, error) {
+		close(started)
+		<-release
+		return ImportResult{}, nil
+	}) {
+		t.Fatal("first restore was rejected")
+	}
+	<-started
+	if jobs.SubmitWPress("job-2", "site", func() (WPressResult, error) {
+		return WPressResult{}, nil
+	}) {
+		t.Fatal("concurrent restore for the same site was accepted")
+	}
+	close(release)
 }

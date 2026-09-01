@@ -13,7 +13,8 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-The example creates one replica and persistent claims for control-plane data
-and site files. The Kubernetes provider is deliberately used instead of
+The example creates one replica with a `Recreate` rollout, persistent claims
+for control-plane data and site files, and an unprivileged pod with a read-only
+root filesystem. The Kubernetes provider is deliberately used instead of
 provisioning a cloud account, keeping the example portable across managed or
 on-premises clusters.

@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ServiceSummary struct {
@@ -22,7 +24,7 @@ func ServiceStatus() map[string]string {
 	result := map[string]string{}
 	for _, service := range []string{"apache2", "httpd", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
 		if _, err := exec.LookPath(service); err == nil {
-			result[service] = "installed"
+			result[service] = serviceUnitState(service)
 		}
 	}
 	for _, apache := range []string{"apachectl", "httpd"} {
@@ -35,6 +37,23 @@ func ServiceStatus() map[string]string {
 		}
 	}
 	return result
+}
+
+func serviceUnitState(service string) string {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return "installed"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "systemctl", "is-active", service).CombinedOutput()
+	state := strings.TrimSpace(string(output))
+	if err == nil && state == "active" {
+		return "active"
+	}
+	if state == "failed" {
+		return "failed"
+	}
+	return "installed"
 }
 
 func ServiceSummaries() []ServiceSummary {
@@ -90,8 +109,8 @@ func (a *App) ftpStatus(w http.ResponseWriter, r *http.Request) {
 		"anonymous":         false,
 		"local_user_chroot": true,
 		"passive_ports":     []int{a.Config.FTPPassiveMin, a.Config.FTPPassiveMax},
-		"ftps_required":     false,
-		"setup_warning":     "Configure FTPS, firewall rules, and per-site users before external access.",
+		"ftps_required":     true,
+		"setup_warning":     "Keep vsftpd disabled until FTPS certificates, firewall rules, and per-site users are configured.",
 	})
 }
 

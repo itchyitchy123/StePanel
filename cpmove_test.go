@@ -124,6 +124,41 @@ func TestSQLDumpsFindsNestedCPanelDumps(t *testing.T) {
 	}
 }
 
+func TestRestoreSQLDropsPartiallyImportedDatabase(t *testing.T) {
+	root := t.TempDir()
+	dumpRoot := filepath.Join(root, "mysql")
+	if err := os.MkdirAll(dumpRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dumpRoot, "blog.sql"), []byte("broken import"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "mysql.log")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TEST_MYSQL_LOG\"\ncase \"$*\" in *'CREATE DATABASE'*) exit 0;; *'DROP DATABASE'*) exit 0;; esac\nexit 1\n"
+	for _, name := range []string{"mysql", "mariadb"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_MYSQL_LOG", logPath)
+	restored, failures := restoreSQL(Config{}, root, "account")
+	if len(restored) != 0 || len(failures) == 0 {
+		t.Fatalf("restoreSQL() = restored %v, failures %v", restored, failures)
+	}
+	logBody, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logBody), "CREATE DATABASE `account_blog`") || !strings.Contains(string(logBody), "DROP DATABASE IF EXISTS `account_blog`") {
+		t.Fatalf("database create/cleanup commands were not both issued: %s", logBody)
+	}
+}
+
 func TestUserFromArchiveName(t *testing.T) {
 	cases := map[string]string{
 		"cpmove-account.tar.gz":                    "account",

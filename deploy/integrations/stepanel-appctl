@@ -6,9 +6,11 @@ action=${1:-}; site=${2:-}
 unit="stepanel-app-${site}.service"
 case "$action" in
   apply)
+    (( $# == 5 )) || { echo 'usage: stepanel-appctl apply SITE VERSION ROOT PORT' >&2; exit 64; }
     version=${3:?missing Node version}; root=${4:?missing root}; port=${5:?missing port}
     [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $port =~ ^[0-9]+$ ]] || { echo 'invalid app parameters' >&2; exit 1; }
-    [[ $root == /var/www/sites/*/public ]] || { echo 'invalid app root' >&2; exit 1; }
+    (( port >= 1024 && port <= 65535 )) || { echo 'invalid app port' >&2; exit 1; }
+    [[ $root == "/var/www/sites/$site/public" ]] || { echo 'invalid app root' >&2; exit 1; }
     cat > "/etc/systemd/system/$unit" <<EOF
 [Unit]
 Description=StePanel Node app $site
@@ -23,13 +25,29 @@ ExecStart=/bin/bash -lc 'export NVM_DIR=/opt/stepanel/.nvm; . "\$NVM_DIR/nvm.sh"
 Restart=on-failure
 RestartSec=5s
 NoNewPrivileges=true
-ProtectSystem=full
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0027
+LimitNOFILE=65536
+TasksMax=256
 ReadWritePaths=$root
 
 [Install]
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload; systemctl enable --now "$unit" ;;
-  start|stop|restart) systemctl "$action" "$unit" ;;
+  start|stop|restart)
+    (( $# == 2 )) || { echo "usage: stepanel-appctl $action SITE" >&2; exit 64; }
+    systemctl "$action" "$unit" ;;
   *) echo 'usage: stepanel-appctl apply|start|stop|restart SITE ...' >&2; exit 64 ;;
 esac

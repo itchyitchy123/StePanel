@@ -215,6 +215,12 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	if err := createWPressDatabase(cfg, dbName, dbUser, dbPassword); err != nil {
 		return WPressResult{}, err
 	}
+	databaseCreated := true
+	defer func() {
+		if !committed && databaseCreated {
+			_ = cleanupWPressDatabase(cfg, dbName, dbUser)
+		}
+	}()
 	if err := importWPressDatabase(cfg, dbName, filepath.Join(source, "database.sql")); err != nil {
 		return WPressResult{}, err
 	}
@@ -363,11 +369,40 @@ func detectWPressPrefix(cfg Config, dbName string) (string, error) {
 }
 
 func createWPressDatabase(cfg Config, dbName, dbUser, password string) error {
-	query := "CREATE DATABASE IF NOT EXISTS " + sqlIdent(dbName) + "; CREATE USER IF NOT EXISTS " + sqlString(dbUser) + "@'localhost' IDENTIFIED BY " + sqlString(password) + "; GRANT ALL PRIVILEGES ON " + sqlIdent(dbName) + ".* TO " + sqlString(dbUser) + "@'localhost'; FLUSH PRIVILEGES;"
+	databaseExists, err := mysqlObjectExists(cfg, "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME="+sqlString(dbName))
+	if err != nil {
+		return fmt.Errorf("check WordPress database: %w", err)
+	}
+	userExists, err := mysqlObjectExists(cfg, "SELECT COUNT(*) FROM mysql.user WHERE User="+sqlString(dbUser)+" AND Host='localhost'")
+	if err != nil {
+		return fmt.Errorf("check WordPress database user: %w", err)
+	}
+	if databaseExists || userExists {
+		return errors.New("database or database user already exists; choose unused names to avoid destructive overwrite")
+	}
+	if _, err := runMySQL(cfg, "CREATE DATABASE "+sqlIdent(dbName)); err != nil {
+		return fmt.Errorf("create WordPress database: %w", err)
+	}
+	query := "CREATE USER " + sqlString(dbUser) + "@'localhost' IDENTIFIED BY " + sqlString(password) + "; GRANT ALL PRIVILEGES ON " + sqlIdent(dbName) + ".* TO " + sqlString(dbUser) + "@'localhost'; FLUSH PRIVILEGES;"
 	if _, err := runMySQL(cfg, query); err != nil {
-		return fmt.Errorf("provision WordPress database: %w", err)
+		_ = cleanupWPressDatabase(cfg, dbName, dbUser)
+		return fmt.Errorf("provision WordPress database user: %w", err)
 	}
 	return nil
+}
+
+func mysqlObjectExists(cfg Config, query string) (bool, error) {
+	output, err := runMySQL(cfg, query)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(output) != "0", nil
+}
+
+func cleanupWPressDatabase(cfg Config, dbName, dbUser string) error {
+	query := "DROP DATABASE IF EXISTS " + sqlIdent(dbName) + "; DROP USER IF EXISTS " + sqlString(dbUser) + "@'localhost'; FLUSH PRIVILEGES;"
+	_, err := runMySQL(cfg, query)
+	return err
 }
 
 func importWPressDatabase(cfg Config, dbName, dump string) error {

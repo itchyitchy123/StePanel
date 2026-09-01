@@ -35,7 +35,7 @@ func (a *App) SecurityChecks() []SecurityCheck {
 	} else {
 		checks = append(checks, SecurityCheck{Name: "ModSecurity", Status: "warning", Severity: "medium", Detail: "ModSecurity was not detected as enabled."})
 	}
-	if services["fail2ban"] == "installed" {
+	if services["fail2ban"] == "installed" || services["fail2ban"] == "active" {
 		checks = append(checks, SecurityCheck{Name: "Fail2Ban", Status: "pass", Severity: "low", Detail: "The Fail2Ban executable is available."})
 	} else {
 		checks = append(checks, SecurityCheck{Name: "Fail2Ban", Status: "warning", Severity: "medium", Detail: "Fail2Ban is not available on PATH."})

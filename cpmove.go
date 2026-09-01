@@ -186,6 +186,14 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 		}
 	}
 	result := ImportResult{User: user, Home: home, FilesRestored: source != "", StagedAt: stage}
+	defer func() {
+		if committed {
+			return
+		}
+		for _, name := range result.DatabasesRestored {
+			_ = dropDatabase(cfg, name)
+		}
+	}()
 	if databases {
 		result.DatabasesRestored, result.DatabaseErrors = restoreSQL(cfg, root, user)
 		if len(result.DatabaseErrors) > 0 {
@@ -316,7 +324,7 @@ func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		args := mysqlArgs(cfg)
-		args = append(args, "--batch", "--execute", "CREATE DATABASE IF NOT EXISTS `"+name+"`")
+		args = append(args, "--batch", "--execute", "CREATE DATABASE `"+name+"`")
 		cmd := exec.CommandContext(ctx, "mysql", args...)
 		if cfg.DBPassword != "" {
 			cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
@@ -345,11 +353,29 @@ func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
 		cancel()
 		if err != nil {
 			failures = append(failures, name+": import failed: "+strings.TrimSpace(string(output)))
+			if cleanupErr := dropDatabase(cfg, name); cleanupErr != nil {
+				failures = append(failures, name+": cleanup failed: "+cleanupErr.Error())
+			}
 			continue
 		}
 		restored = append(restored, name)
 	}
 	return restored, failures
+}
+
+func dropDatabase(cfg Config, name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	args := append(mysqlArgs(cfg), "--batch", "--execute", "DROP DATABASE IF EXISTS `"+name+"`")
+	cmd := exec.CommandContext(ctx, mysqlClient(), args...)
+	if cfg.DBPassword != "" {
+		cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("drop database: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func mysqlArgs(cfg Config) []string {

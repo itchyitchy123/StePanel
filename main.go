@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
@@ -25,6 +26,18 @@ type App struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "hash-password" {
+		password, err := io.ReadAll(io.LimitReader(os.Stdin, 1025))
+		if err != nil || len(password) == 0 || len(password) > 1024 || strings.ContainsAny(string(password), "\r\n") {
+			log.Fatal("password must be 1-1024 bytes and contain no newlines")
+		}
+		hash, err := hashPassword(string(password))
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, _ = fmt.Fprintln(os.Stdout, hash)
+		return
+	}
 	cfg := LoadConfig()
 	if err := os.MkdirAll(cfg.ImportRoot, 0750); err != nil {
 		log.Fatal(err)
@@ -96,6 +109,11 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("graceful shutdown: %v", err)
+	}
+	jobCtx, jobCancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer jobCancel()
+	if err := app.Jobs.Wait(jobCtx); err != nil {
+		log.Printf("timed out waiting for active jobs: %v", err)
 	}
 }
 
@@ -246,6 +264,11 @@ func logging(next http.Handler, metrics *Metrics) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'")
+		w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+		if !strings.HasPrefix(r.URL.Path, "/static/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		next.ServeHTTP(wrapped, r)
 		if metrics != nil {
 			metrics.ObserveHTTP(wrapped.status, time.Since(started))

@@ -24,12 +24,15 @@ StePanel HTTP server
 3. Absolute and parent-traversing archive paths are rejected.
 4. The archive is copied to a private, timestamped staging directory.
 5. Website files are copied to a target-specific root.
-6. SQL restore is opt-in and uses account-prefixed database names.
+6. SQL restore is opt-in, uses account-prefixed database names, refuses an
+   existing destination database, and removes newly created databases when a
+   restore fails.
 
 When configured, StePanel provides administrator authentication with signed,
 expiring sessions, CSRF tokens for mutating forms, login rate limiting,
 security response headers, and JSONL audit events. TLS and a reverse proxy are
-still required before internet-facing production use. The current restore
-implementation runs inside the service account and writes only to the
-configured site root; a dedicated privileged helper remains the next
-hardening step for database/socket operations.
+still required before internet-facing production use. Apache snippets and
+systemd application units cross narrowly validated, root-owned helper
+boundaries; the service account cannot edit active configuration directly.
+Database administration uses a dedicated credential stored in the
+root-readable service environment.

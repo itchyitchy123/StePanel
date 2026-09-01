@@ -6,10 +6,10 @@ resource "kubernetes_service" "stepanel" {
   metadata {
     name      = "stepanel"
     namespace = kubernetes_namespace.stepanel.metadata[0].name
-    labels    = {"app.kubernetes.io/name" = "stepanel"}
+    labels    = { "app.kubernetes.io/name" = "stepanel" }
   }
   spec {
-    selector = {"app.kubernetes.io/name" = "stepanel"}
+    selector = { "app.kubernetes.io/name" = "stepanel" }
     port {
       name        = "http"
       port        = 8080
@@ -22,18 +22,25 @@ resource "kubernetes_deployment" "stepanel" {
   metadata {
     name      = "stepanel"
     namespace = kubernetes_namespace.stepanel.metadata[0].name
-    labels    = {"app.kubernetes.io/name" = "stepanel"}
+    labels    = { "app.kubernetes.io/name" = "stepanel" }
   }
   spec {
     replicas = 1
+    strategy { type = "Recreate" }
     selector {
-      match_labels = {"app.kubernetes.io/name" = "stepanel"}
+      match_labels = { "app.kubernetes.io/name" = "stepanel" }
     }
     template {
-      metadata { labels = {"app.kubernetes.io/name" = "stepanel"} }
+      metadata { labels = { "app.kubernetes.io/name" = "stepanel" } }
       spec {
+        automount_service_account_token  = false
+        termination_grace_period_seconds = 30
         security_context {
-          run_as_non_root = true
+          run_as_non_root        = true
+          run_as_user            = 10001
+          run_as_group           = 10001
+          fs_group               = 10001
+          fs_group_change_policy = "OnRootMismatch"
           seccomp_profile { type = "RuntimeDefault" }
         }
         container {
@@ -43,6 +50,11 @@ resource "kubernetes_deployment" "stepanel" {
           port {
             name           = "http"
             container_port = 8080
+          }
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            capabilities { drop = ["ALL"] }
           }
           env {
             name  = "STEPANEL_ENV"
@@ -75,7 +87,9 @@ resource "kubernetes_deployment" "stepanel" {
               path = "/api/health"
               port = "http"
             }
-            period_seconds = 10
+            period_seconds    = 10
+            timeout_seconds   = 2
+            failure_threshold = 3
           }
           liveness_probe {
             http_get {
@@ -83,11 +97,13 @@ resource "kubernetes_deployment" "stepanel" {
               port = "http"
             }
             initial_delay_seconds = 15
-            period_seconds = 20
+            period_seconds        = 20
+            timeout_seconds       = 2
+            failure_threshold     = 3
           }
           resources {
-            requests = {cpu = "100m", memory = "128Mi"}
-            limits   = {cpu = "500m", memory = "512Mi"}
+            requests = { cpu = "100m", memory = "128Mi" }
+            limits   = { cpu = "500m", memory = "512Mi" }
           }
           volume_mount {
             name       = "stepanel-data"
@@ -97,6 +113,10 @@ resource "kubernetes_deployment" "stepanel" {
             name       = "stepanel-sites"
             mount_path = "/var/www/sites"
           }
+          volume_mount {
+            name       = "tmp"
+            mount_path = "/tmp"
+          }
         }
         volume {
           name = "stepanel-data"
@@ -105,6 +125,10 @@ resource "kubernetes_deployment" "stepanel" {
         volume {
           name = "stepanel-sites"
           persistent_volume_claim { claim_name = kubernetes_persistent_volume_claim.stepanel_sites.metadata[0].name }
+        }
+        volume {
+          name = "tmp"
+          empty_dir { size_limit = "64Mi" }
         }
       }
     }

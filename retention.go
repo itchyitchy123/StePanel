@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -17,18 +18,27 @@ func CleanupImportStages(root string, maxAge time.Duration) error {
 	}
 	cutoff := time.Now().Add(-maxAge)
 	for _, entry := range entries {
-		if !entry.IsDir() || !restoreStagePattern.MatchString(entry.Name()) {
-			continue
-		}
 		info, err := entry.Info()
 		if err != nil || info.ModTime().After(cutoff) {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
-			return err
+		path := filepath.Join(root, entry.Name())
+		if entry.IsDir() && restoreStagePattern.MatchString(entry.Name()) {
+			if err := os.RemoveAll(path); err != nil {
+				return err
+			}
+		} else if !entry.IsDir() && isOrphanUpload(entry.Name()) {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func isOrphanUpload(name string) bool {
+	return strings.HasPrefix(name, "upload-") && strings.HasSuffix(name, ".tar.gz") ||
+		strings.HasPrefix(name, "wpress-upload-") && strings.HasSuffix(name, ".wpress")
 }
 
 func availableBytes(path string) (uint64, error) {

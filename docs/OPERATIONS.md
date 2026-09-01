@@ -16,6 +16,31 @@ journalctl -u mysql --since today
 
 On RHEL-family systems, the Apache and database unit names may be `httpd` and `mariadb`.
 
+## Capacity and retention
+
+```sh
+df -h /var/lib/ste-panel /var/www/sites
+du -sh /var/lib/ste-panel/imports /var/lib/ste-panel/mail /var/lib/ste-panel/quarantine
+logrotate --debug /etc/logrotate.d/stepanel
+```
+
+Keep the configured free-space floor above the largest expected compressed
+upload plus extraction and database working space. Audit logs rotate daily,
+at 50 MiB, and retain 30 compressed rotations. Interrupted upload files and
+expired restore stages are removed by the control-plane retention loop.
+
+## Safe maintenance
+
+`systemctl stop stepanel` stops accepting HTTP work and waits for active restore
+and certificate jobs for up to two hours before systemd forces termination.
+Check `stepanel_restore_jobs_active` before package upgrades or planned reboots.
+Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
+`/var/lib/ste-panel` before upgrading.
+
+Upgrades from the legacy writable proxy directory disable its Apache include.
+Re-deploy each managed proxy through the panel so the validated helper creates
+the corresponding root-owned snippet.
+
 ## Recovery
 
 If an import fails, preserve the timestamped staging directory, inspect the service logs, and restore from the pre-import snapshot. Do not repeatedly retry against a live destination without identifying the failure mode.

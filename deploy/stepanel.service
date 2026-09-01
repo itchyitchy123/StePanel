@@ -12,10 +12,22 @@ EnvironmentFile=/etc/ste-panel.env
 ExecStart=/opt/stepanel/stepanel
 Restart=on-failure
 RestartSec=5s
-NoNewPrivileges=true
+TimeoutStopSec=2h5min
+UMask=0027
+LimitNOFILE=65536
+TasksMax=512
 PrivateTmp=true
-ProtectSystem=full
-ReadWritePaths=/var/lib/ste-panel /var/www/sites
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+LockPersonality=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+# The daemon is unprivileged. Its sudoers policy permits only the validated
+# root helpers; these paths are writable solely inside that helper boundary.
+ReadWritePaths=/var/lib/ste-panel /var/www/sites -/etc/systemd/system -/etc/letsencrypt -/etc/apache2 -/etc/httpd -/var/lib/letsencrypt -/var/log/letsencrypt -/run/sudo
 
 [Install]
 WantedBy=multi-user.target

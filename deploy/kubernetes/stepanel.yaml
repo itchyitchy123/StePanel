@@ -47,6 +47,8 @@ metadata:
     app.kubernetes.io/name: stepanel
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: stepanel
@@ -55,17 +57,28 @@ spec:
       labels:
         app.kubernetes.io/name: stepanel
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: stepanel
-          image: ghcr.io/itchyitchy123/stepanel:latest
+          image: ghcr.io/itchyitchy123/stepanel:v0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
           env:
             - name: STEPANEL_ENV
               value: "production"
@@ -86,12 +99,16 @@ spec:
               path: /api/health
               port: http
             periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /api/health
               port: http
             initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
@@ -102,8 +119,11 @@ spec:
           volumeMounts:
             - {name: stepanel-data, mountPath: /var/lib/ste-panel}
             - {name: stepanel-sites, mountPath: /var/www/sites}
+            - {name: tmp, mountPath: /tmp}
       volumes:
         - name: stepanel-data
           persistentVolumeClaim: {claimName: stepanel-data}
         - name: stepanel-sites
           persistentVolumeClaim: {claimName: stepanel-sites}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}

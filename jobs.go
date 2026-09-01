@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -19,17 +20,17 @@ type Job struct {
 }
 
 func (j *Jobs) SubmitWPress(id, user string, work func() (WPressResult, error)) bool {
-	select {
-	case j.slots <- struct{}{}:
-	default:
+	if !j.reserve(user) {
 		return false
 	}
 	item := &Job{ID: id, Kind: "wordpress.restore", State: "running", User: user, StartedAt: time.Now().UTC()}
 	j.mu.Lock()
 	j.items[id] = item
 	j.mu.Unlock()
+	j.wg.Add(1)
 	go func() {
-		defer func() { <-j.slots }()
+		defer j.wg.Done()
+		defer j.release(user)
 		result, err := work()
 		now := time.Now().UTC()
 		j.mu.Lock()
@@ -51,10 +52,12 @@ type Jobs struct {
 	items         map[string]*Job
 	slots         chan struct{}
 	activeDomains map[string]bool
+	activeTargets map[string]bool
+	wg            sync.WaitGroup
 }
 
 func NewJobs() *Jobs {
-	return &Jobs{items: make(map[string]*Job), slots: make(chan struct{}, 2), activeDomains: make(map[string]bool)}
+	return &Jobs{items: make(map[string]*Job), slots: make(chan struct{}, 2), activeDomains: make(map[string]bool), activeTargets: make(map[string]bool)}
 }
 func (j *Jobs) Get(id string) (Job, bool) {
 	j.mu.RLock()
@@ -67,17 +70,17 @@ func (j *Jobs) Get(id string) (Job, bool) {
 	return copy, true
 }
 func (j *Jobs) Submit(id, user string, work func() (ImportResult, error)) bool {
-	select {
-	case j.slots <- struct{}{}:
-	default:
+	if !j.reserve(user) {
 		return false
 	}
 	item := &Job{ID: id, Kind: "cpmove.restore", State: "running", User: user, StartedAt: time.Now().UTC()}
 	j.mu.Lock()
 	j.items[id] = item
 	j.mu.Unlock()
+	j.wg.Add(1)
 	go func() {
-		defer func() { <-j.slots }()
+		defer j.wg.Done()
+		defer j.release(user)
 		result, err := work()
 		now := time.Now().UTC()
 		j.mu.Lock()
@@ -92,6 +95,29 @@ func (j *Jobs) Submit(id, user string, work func() (ImportResult, error)) bool {
 		}
 	}()
 	return true
+}
+
+func (j *Jobs) reserve(target string) bool {
+	select {
+	case j.slots <- struct{}{}:
+	default:
+		return false
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.activeTargets[target] {
+		<-j.slots
+		return false
+	}
+	j.activeTargets[target] = true
+	return true
+}
+
+func (j *Jobs) release(target string) {
+	j.mu.Lock()
+	delete(j.activeTargets, target)
+	j.mu.Unlock()
+	<-j.slots
 }
 
 func (j *Jobs) SubmitCertificate(id, domain string, work func() (CertificateResult, error)) bool {
@@ -112,7 +138,9 @@ func (j *Jobs) SubmitCertificate(id, domain string, work func() (CertificateResu
 	j.mu.Lock()
 	j.items[id] = item
 	j.mu.Unlock()
+	j.wg.Add(1)
 	go func() {
+		defer j.wg.Done()
 		defer func() { j.mu.Lock(); delete(j.activeDomains, domain); j.mu.Unlock(); <-j.slots }()
 		result, err := work()
 		now := time.Now().UTC()
@@ -129,6 +157,21 @@ func (j *Jobs) SubmitCertificate(id, domain string, work func() (CertificateResu
 	}()
 	return true
 }
+
+func (j *Jobs) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		j.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (j *Jobs) Cleanup(maxAge time.Duration) {
 	cutoff := time.Now().Add(-maxAge)
 	j.mu.Lock()

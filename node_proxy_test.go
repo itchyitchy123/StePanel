@@ -38,7 +38,7 @@ func TestProxyDeleteRestoresConfigWhenReloadFails(t *testing.T) {
 	if err := os.WriteFile(reloader, []byte("#!/bin/sh\nexit 1\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	app := &App{Config: Config{ProxyRoot: proxyRoot, ApacheReload: reloader}, Auth: Auth{}}
+	app := &App{Config: Config{ProxyRoot: proxyRoot, ProxyCtl: reloader}, Auth: Auth{}}
 	req := httptest.NewRequest(http.MethodDelete, "/api/proxy/account-example_com.conf", nil)
 	response := httptest.NewRecorder()
 	app.proxyManage(response, req)
@@ -47,6 +47,6 @@ func TestProxyDeleteRestoresConfigWhenReloadFails(t *testing.T) {
 	}
 	restored, err := os.ReadFile(path)
 	if err != nil || string(restored) != string(original) {
-		t.Fatalf("proxy config was not restored: %q, %v", restored, err)
+		t.Fatalf("proxy helper failure changed the config: %q, %v", restored, err)
 	}
 }

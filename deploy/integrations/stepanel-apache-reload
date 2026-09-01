@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
+(( $# == 0 )) || { echo 'stepanel-apache-reload accepts no arguments' >&2; exit 64; }
 if command -v apachectl >/dev/null 2>&1; then
   apachectl -t
   systemctl reload apache2 2>/dev/null || systemctl reload httpd

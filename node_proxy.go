@@ -3,12 +3,10 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -102,45 +100,14 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 422)
 		return
 	}
-	if err := os.MkdirAll(a.Config.ProxyRoot, 0750); err != nil {
-		http.Error(w, "unable to create proxy directory", 500)
-		return
-	}
 	name := input.Site + "-" + strings.ReplaceAll(strings.ToLower(input.Domain), ".", "_") + ".conf"
 	path := filepath.Join(a.Config.ProxyRoot, name)
-	previous, readErr := os.ReadFile(path)
-	existed := readErr == nil
-	content := fmt.Sprintf("<VirtualHost *:80>\n    ServerName %s\n    ProxyPreserveHost On\n    ProxyPass / %s/\n    ProxyPassReverse / %s/\n    RequestHeader set X-Forwarded-Proto \"http\"\n</VirtualHost>\n", input.Domain, backend, backend)
-	tmp, err := os.CreateTemp(a.Config.ProxyRoot, ".proxy-*.tmp")
-	if err != nil {
-		http.Error(w, "unable to stage proxy configuration", 500)
+	if a.Config.ProxyCtl == "" || helperCommand(a.Config, a.Config.ProxyCtl, "apply", input.Site, strings.ToLower(input.Domain), backend).Run() != nil {
+		http.Error(w, "proxy helper rejected the configuration or Apache reload failed", http.StatusServiceUnavailable)
 		return
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err = tmp.Chmod(0644); err == nil {
-		_, err = tmp.WriteString(content)
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil || os.Rename(tmpName, path) != nil {
-		http.Error(w, "unable to write proxy configuration", 500)
-		return
-	}
-	reloaded := false
-	if a.Config.ApacheReload != "" {
-		reloaded = exec.Command(a.Config.ApacheReload).Run() == nil
-		if !reloaded {
-			if existed {
-				_ = os.WriteFile(path, previous, 0644)
-			} else {
-				_ = os.Remove(path)
-			}
-		}
 	}
 	_ = Audit(a.Config.AuditLog, "proxy.deployed", input.Site, input.Domain+" -> "+backend)
-	writeJSON(w, http.StatusAccepted, map[string]any{"site": input.Site, "domain": input.Domain, "backend": backend, "config": path, "reloaded": reloaded})
+	writeJSON(w, http.StatusAccepted, map[string]any{"site": input.Site, "domain": input.Domain, "backend": backend, "config": path, "reloaded": true})
 }
 
 func (a *App) proxyList(w http.ResponseWriter, r *http.Request) {
@@ -192,19 +159,12 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := filepath.Join(a.Config.ProxyRoot, name)
-	previous, readErr := os.ReadFile(path)
-	if readErr != nil {
+	if _, err := os.Stat(path); err != nil {
 		http.Error(w, "proxy not found", http.StatusNotFound)
 		return
 	}
-	if err := os.Remove(path); err != nil {
-		http.Error(w, "unable to remove proxy", 500)
-		return
-	}
-	reloaded := a.Config.ApacheReload == "" || exec.Command(a.Config.ApacheReload).Run() == nil
-	if !reloaded {
-		_ = os.WriteFile(path, previous, 0644)
-		http.Error(w, "proxy removed but Apache reload failed", 503)
+	if a.Config.ProxyCtl == "" || helperCommand(a.Config, a.Config.ProxyCtl, "delete", name).Run() != nil {
+		http.Error(w, "proxy was not removed because the helper or Apache reload failed", http.StatusServiceUnavailable)
 		return
 	}
 	_ = Audit(a.Config.AuditLog, "proxy.deleted", name, "managed proxy removed")

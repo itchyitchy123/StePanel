@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/itchyitchy123/stepanel
-  tag: latest
+  tag: v0.1.0
   pullPolicy: IfNotPresent
 replicaCount: 1
 service:
@@ -19,3 +19,5 @@ ingress:
   enabled: false
   className: ""
   host: stepanel.example.com
+  annotations: {}
+  tls: []

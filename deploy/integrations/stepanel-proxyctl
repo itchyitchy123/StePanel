@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
+
+if [[ -d /etc/apache2 ]]; then
+  CONFIG_ROOT=/etc/apache2/stepanel-proxy
+  APACHE_SERVICE=apache2
+elif [[ -d /etc/httpd ]]; then
+  CONFIG_ROOT=/etc/httpd/conf.d/stepanel-proxy
+  APACHE_SERVICE=httpd
+else
+  echo 'Apache configuration directory was not found' >&2
+  exit 1
+fi
+
+apache_test() {
+  if command -v apachectl >/dev/null 2>&1; then apachectl -t
+  else httpd -t
+  fi
+}
+
+apache_reload() { systemctl reload "$APACHE_SERVICE"; }
+
+valid_backend() {
+  local backend=$1 host port first second third fourth
+  port=${backend##*:}
+  host=${backend%:*}
+  [[ $port =~ ^[0-9]{1,5}$ ]] && (( port >= 1 && port <= 65535 )) || return 1
+  [[ $host == localhost || $host == '[::1]' ]] && return 0
+  [[ $host =~ ^\[([fF][cCdD][0-9A-Fa-f:]*|[fF][eE][89aAbB][0-9A-Fa-f:]*)\]$ ]] && return 0
+  [[ $host =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  IFS=. read -r first second third fourth <<< "$host"
+  (( first <= 255 && second <= 255 && third <= 255 && fourth <= 255 )) || return 1
+  (( first == 10 || first == 127 || first == 192 && second == 168 || first == 172 && second >= 16 && second <= 31 || first == 169 && second == 254 ))
+}
+
+action=${1:-}
+install -d -m 0755 -o root -g root "$CONFIG_ROOT"
+case "$action" in
+  apply)
+    (( $# == 4 )) || { echo 'usage: stepanel-proxyctl apply SITE DOMAIN BACKEND' >&2; exit 64; }
+    site=${2:-}; domain=${3:-}; backend=${4:-}
+    [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
+    [[ $domain =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] || { echo 'invalid domain' >&2; exit 1; }
+    valid_backend "$backend" || { echo 'invalid backend' >&2; exit 1; }
+    name="${site}-${domain//./_}.conf"
+    path="$CONFIG_ROOT/$name"
+    backup=$(mktemp)
+    existed=0
+    if [[ -f $path ]]; then cp -p "$path" "$backup"; existed=1; fi
+    staged=$(mktemp "$CONFIG_ROOT/.stepanel-proxy.XXXXXX")
+    trap 'rm -f "$backup" "$staged"' EXIT
+    printf '<VirtualHost *:80>\n    ServerName %s\n    ProxyPreserveHost On\n    ProxyPass / http://%s/\n    ProxyPassReverse / http://%s/\n    RequestHeader set X-Forwarded-Proto "http"\n</VirtualHost>\n' "$domain" "$backend" "$backend" > "$staged"
+    chmod 0644 "$staged"
+    mv -f "$staged" "$path"
+    if ! apache_test; then
+      if (( existed )); then mv -f "$backup" "$path"; else rm -f "$path"; fi
+      exit 1
+    fi
+    if ! apache_reload; then
+      if (( existed )); then mv -f "$backup" "$path"; else rm -f "$path"; fi
+      if apache_test; then apache_reload || true; fi
+      exit 1
+    fi
+    ;;
+  delete)
+    (( $# == 2 )) || { echo 'usage: stepanel-proxyctl delete NAME' >&2; exit 64; }
+    name=${2:-}
+    [[ $name =~ ^[a-z0-9_-]{1,32}-[a-z0-9_-]+\.conf$ ]] || { echo 'invalid proxy name' >&2; exit 1; }
+    path="$CONFIG_ROOT/$name"
+    [[ -f $path ]] || { echo 'proxy not found' >&2; exit 1; }
+    backup=$(mktemp)
+    trap 'rm -f "$backup"' EXIT
+    cp -p "$path" "$backup"
+    rm -f "$path"
+    if ! apache_test; then mv -f "$backup" "$path"; exit 1; fi
+    if ! apache_reload; then mv -f "$backup" "$path"; if apache_test; then apache_reload || true; fi; exit 1; fi
+    ;;
+  *) echo 'usage: stepanel-proxyctl apply SITE DOMAIN BACKEND | delete NAME' >&2; exit 64 ;;
+esac

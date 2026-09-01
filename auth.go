@@ -32,11 +32,11 @@ func NewAuth(secureCookies bool) (Auth, error) {
 	password := os.Getenv("STEPANEL_ADMIN_PASSWORD")
 	hash := os.Getenv("STEPANEL_ADMIN_PASSWORD_HASH")
 	if hash == "" && password != "" {
-		generated, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		generated, err := hashPassword(password)
 		if err != nil {
 			return Auth{}, err
 		}
-		hash = string(generated)
+		hash = generated
 	}
 	secret := os.Getenv("STEPANEL_SESSION_SECRET")
 	if password == "" && hash == "" {
@@ -49,6 +49,11 @@ func NewAuth(secureCookies bool) (Auth, error) {
 		return Auth{}, errors.New("STEPANEL_SESSION_SECRET must be at least 32 characters")
 	}
 	return Auth{Username: username, PasswordHash: hash, Secret: secret, Enabled: true, SecureCookies: secureCookies, loginLimiter: newLoginLimiter()}, nil
+}
+
+func hashPassword(password string) (string, error) {
+	generated, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(generated), err
 }
 
 func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +72,11 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.loginLimiter != nil && !a.loginLimiter.Allow(clientIP(r)) {
 		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid login request", http.StatusBadRequest)
 		return
 	}
 	if r.FormValue("username") != a.Username || bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(r.FormValue("password"))) != nil {

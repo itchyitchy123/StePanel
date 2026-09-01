@@ -4,4 +4,11 @@
 /coverage.out
 /data/
 *.log
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
 .DS_Store

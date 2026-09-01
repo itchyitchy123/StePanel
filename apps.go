@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -83,7 +82,7 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to save app manifest", 500)
 		return
 	}
-	if a.Config.AppCtl == "" || exec.Command(a.Config.AppCtl, "apply", app.Site, strings.TrimPrefix(app.Version, "v"), app.Root, strconv.Itoa(app.Port)).Run() != nil {
+	if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, "apply", app.Site, strings.TrimPrefix(app.Version, "v"), app.Root, strconv.Itoa(app.Port)).Run() != nil {
 		if hadPrevious {
 			_ = os.WriteFile(manifestPath, previous, 0600)
 		} else {
@@ -123,7 +122,7 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid previous app release", 500)
 			return
 		}
-		if a.Config.AppCtl == "" || exec.Command(a.Config.AppCtl, "apply", previous.Site, strings.TrimPrefix(previous.Version, "v"), previous.Root, strconv.Itoa(previous.Port)).Run() != nil {
+		if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, "apply", previous.Site, strings.TrimPrefix(previous.Version, "v"), previous.Root, strconv.Itoa(previous.Port)).Run() != nil {
 			http.Error(w, "rollback failed", 502)
 			return
 		}
@@ -131,7 +130,7 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 			_ = os.WriteFile(manifestPath+".bak", current, 0600)
 		}
 		_ = os.WriteFile(manifestPath, backup, 0600)
-	} else if a.Config.AppCtl == "" || exec.Command(a.Config.AppCtl, parts[1], parts[0]).Run() != nil {
+	} else if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, parts[1], parts[0]).Run() != nil {
 		http.Error(w, "app action failed", 502)
 		return
 	}

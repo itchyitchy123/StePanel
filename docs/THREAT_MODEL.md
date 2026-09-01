@@ -24,15 +24,19 @@
 - Archive paths are checked for absolute paths and traversal.
 - Restore destinations are account-scoped and SQL restoration is opt-in.
 - Audit events are appended to a mode-0600 JSONL file.
+- Active Apache snippets are root-owned and rendered by a fixed-template helper.
+- Concurrent restores targeting the same site are rejected.
+- New database destinations are rolled back on restore failure; existing
+  databases and database users are never silently reused.
 
 ## Residual risks
 
 - A compromised administrator can request destructive restores.
 - A restored WordPress application is untrusted code after extraction.
-- The service account may need carefully reviewed privileges for database and
-  web-server operations.
-- TLS, MFA/OIDC, and a privileged helper are deployment responsibilities or
-  roadmap items.
+- The service account holds a powerful database administration credential;
+  compromise of the control plane therefore requires credential rotation and
+  database integrity review.
+- TLS and MFA/OIDC remain deployment responsibilities or roadmap items.
 
 ## Operator requirements
 

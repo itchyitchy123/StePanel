@@ -6,18 +6,18 @@ import (
 )
 
 type Config struct {
-	Listen, ImportRoot, WebRoot, MailRoot, NVMDir, ProxyRoot, AppRoot, MalwareRoot, AppCtl, Certbot, WPressExtract, WPCLI, ApacheReload, AuditLog string
-	DBHost, DBUser, DBPassword                                                                                                                    string
-	Production                                                                                                                                    bool
-	MaxUpload                                                                                                                                     int64
-	MaxEntries                                                                                                                                    int
-	StageRetentionHours                                                                                                                           int
-	MinFreeBytes                                                                                                                                  uint64
-	FTPPassiveMin, FTPPassiveMax                                                                                                                  int
+	Listen, ImportRoot, WebRoot, MailRoot, NVMDir                 string
+	ProxyRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl, Certbot    string
+	WPressExtract, WPCLI, AuditLog, Sudo                          string
+	DBHost, DBUser, DBPassword                                    string
+	Production                                                    bool
+	MaxUpload                                                     int64
+	MaxEntries, StageRetentionHours, FTPPassiveMin, FTPPassiveMax int
+	MinFreeBytes                                                  uint64
 }
 
 func LoadConfig() Config {
-	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", ApacheReload: "/usr/local/sbin/stepanel-apache-reload", AuditLog: "data/stepanel-audit.jsonl", MaxUpload: 20 << 30, MaxEntries: 1000000, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", MaxUpload: 20 << 30, MaxEntries: 1000000, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_LISTEN"); v != "" {
 		c.Listen = v
 	}
@@ -42,6 +42,9 @@ func LoadConfig() Config {
 	if v := os.Getenv("STEPANEL_APPCTL"); v != "" {
 		c.AppCtl = v
 	}
+	if v := os.Getenv("STEPANEL_PROXYCTL"); v != "" {
+		c.ProxyCtl = v
+	}
 	if v := os.Getenv("STEPANEL_CERTBOT"); v != "" {
 		c.Certbot = v
 	}
@@ -54,11 +57,11 @@ func LoadConfig() Config {
 	if v := os.Getenv("STEPANEL_MALWARE_ROOT"); v != "" {
 		c.MalwareRoot = v
 	}
-	if v := os.Getenv("STEPANEL_APACHE_RELOAD"); v != "" {
-		c.ApacheReload = v
-	}
 	if v := os.Getenv("STEPANEL_AUDIT_LOG"); v != "" {
 		c.AuditLog = v
+	}
+	if v := os.Getenv("STEPANEL_SUDO"); v != "" {
+		c.Sudo = v
 	}
 	c.DBHost = os.Getenv("STEPANEL_DB_HOST")
 	c.DBUser = os.Getenv("STEPANEL_DB_USER")

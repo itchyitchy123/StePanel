@@ -7,7 +7,8 @@ certificate for a domain managed by the panel.
 
 ```sh
 sudo STEPANEL_INSTALL_TLS=1 \
-  STEPANEL_ADMIN_PASSWORD='use-a-secret-manager' ./install.sh
+  STEPANEL_ADMIN_PASSWORD='use-a-secret-manager' \
+  STEPANEL_PANEL_HOSTNAME=panel.example.com ./install.sh
 ```
 
 The installer adds `certbot` and the Apache plugin, installs the root-owned
@@ -19,6 +20,12 @@ Before issuing a certificate:
 - Make ports 80 and 443 reachable from the public internet.
 - Ensure Apache has a matching virtual host and no conflicting proxy config.
 - Use a dedicated hostname; wildcard certificates are not supported here.
+
+Bootstrap the first certificate from the host before browser login:
+
+```sh
+sudo stepanel-certbot panel.example.com admin@example.com
+```
 
 The authenticated `POST /api/certificates/issue` endpoint accepts a domain and
 email address, validates both values, queues a bounded certificate job, invokes

@@ -1,0 +1,11 @@
+/var/lib/ste-panel/audit.jsonl {
+    daily
+    rotate 30
+    maxsize 50M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0600 stepanel stepanel
+    su stepanel stepanel
+}

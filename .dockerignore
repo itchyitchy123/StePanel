@@ -3,3 +3,8 @@
 data
 stepanel
 coverage.out
+**/.terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json

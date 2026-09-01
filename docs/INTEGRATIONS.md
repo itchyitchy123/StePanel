@@ -6,17 +6,20 @@ configuration.
 
 ## FTP service
 
-Install the optional vsftpd service with:
+Install the optional vsftpd package without activating it:
 
 ```sh
-sudo STEPANEL_INSTALL_FTP=1 ./install.sh
+sudo STEPANEL_INSTALL_FTP=1 \
+  STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
+  STEPANEL_PANEL_HOSTNAME=panel.example.com ./install.sh
 ```
 
 StePanel configures local-user-only access, chrooting, site-root mapping, and
-a bounded passive port range. The dashboard and `/api/services` endpoint show
-`vsftpd` as an installed service. User creation, password rotation, FTPS
-certificates, firewall rules, and per-site authorization remain operator
-responsibilities; do not expose plain FTP to the public internet.
+a bounded passive port range. A newly installed service stays disabled. To
+activate it, rerun with `STEPANEL_ACTIVATE_FTP=1` and absolute
+`STEPANEL_FTP_CERT_FILE` and `STEPANEL_FTP_KEY_FILE` paths; TLS is then required
+for login and data. User creation, password rotation, firewall rules, and
+per-site authorization remain operator responsibilities.
 
 ## ModSecurity and OWASP CRS
 
@@ -31,6 +34,8 @@ the audit log and tuning false positives:
 ```sh
 sudo STEPANEL_INSTALL_MODSEC=1 \
   STEPANEL_MODSEC_MODE=DetectionOnly \
+  STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
+  STEPANEL_PANEL_HOSTNAME=panel.example.com \
   ./install.sh
 ```
 
@@ -48,6 +53,8 @@ network:
 sudo STEPANEL_INSTALL_FAIL2BAN=1 \
   STEPANEL_FAIL2BAN_IGNORE_IP='127.0.0.1/8 ::1 192.0.2.0/24' \
   STEPANEL_FAIL2BAN_JAILS='sshd,recidive,apache-auth,web-scanners' \
+  STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
+  STEPANEL_PANEL_HOSTNAME=panel.example.com \
   ./install.sh
 ```
 
@@ -74,7 +81,9 @@ plan automatically.
 Install a verified FPM Lens release binary during StePanel installation:
 
 ```sh
-sudo STEPANEL_FPM_LENS_BINARY=/path/to/fpm-lens ./install.sh
+sudo STEPANEL_FPM_LENS_BINARY=/path/to/fpm-lens \
+  STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
+  STEPANEL_PANEL_HOSTNAME=panel.example.com ./install.sh
 ```
 
 Then run the review workflow on the host:

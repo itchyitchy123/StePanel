@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/mail"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -44,7 +43,7 @@ func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
 	if !a.Jobs.SubmitCertificate(jobID, input.Domain, func() (CertificateResult, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
-		if err := exec.CommandContext(ctx, a.Config.Certbot, input.Domain, input.Email).Run(); err != nil {
+		if err := helperCommandContext(ctx, a.Config, a.Config.Certbot, input.Domain, input.Email).Run(); err != nil {
 			return CertificateResult{}, err
 		}
 		_ = Audit(a.Config.AuditLog, "certificate.issued", input.Domain, "Let's Encrypt certificate requested")
