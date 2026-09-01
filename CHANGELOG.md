@@ -39,6 +39,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   upgrades preserve the existing root-owned runtime values, snapshot all
   StePanel-owned files, validate Apache and the candidate health endpoint, and
   restore the previous files and service state on core installation failure.
+- The installer now generates and preserves a dedicated root-only audit HMAC
+  key, refuses unsafe in-place key replacement, and deployment manifests accept
+  the corresponding secret plus optional TOTP enrollment material.
 - Local installations use a root-owned, operation-scoped database helper; the
   long-running control plane retains no local administrative credential.
 - Newly installed mail and FTP daemons remain disabled until explicitly
@@ -77,6 +80,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   filesystems instead of silently continuing when a capacity check fails.
 - Authenticated mutating requests now fail closed before handler execution when
   their audit preflight event cannot be durably persisted.
+- Audit persistence failures remain visible in readiness until restart, while
+  signed chain-state metadata detects unauthorized tail-pointer rewrites and
+  safely anchors event sequences across log rotation.
 - Apache proxy snippets are rendered with valid HTTP backend URLs, tested before
   reload, and rolled back when validation or reload fails.
 - PHP site vhosts and Node proxies share an Apache configuration lock and reject
