@@ -12,19 +12,26 @@ import (
 )
 
 type SiteTransaction struct {
-	Version     int       `json:"version"`
-	ID          string    `json:"id"`
-	Kind        string    `json:"kind"`
-	Site        string    `json:"site"`
-	Home        string    `json:"home"`
-	Backup      string    `json:"backup"`
-	FailedSite  string    `json:"failed_site,omitempty"`
-	HadExisting bool      `json:"had_existing"`
-	State       string    `json:"state"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Version     int               `json:"version"`
+	ID          string            `json:"id"`
+	Kind        string            `json:"kind"`
+	Site        string            `json:"site"`
+	Home        string            `json:"home"`
+	Backup      string            `json:"backup"`
+	FailedSite  string            `json:"failed_site,omitempty"`
+	HadExisting bool              `json:"had_existing"`
+	State       string            `json:"state"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+	Databases   []ManagedDatabase `json:"databases,omitempty"`
 
 	dir string
+}
+
+type ManagedDatabase struct {
+	Name string `json:"name"`
+	User string `json:"user,omitempty"`
+	Kind string `json:"kind"`
 }
 
 func BeginSiteTransaction(root, home, kind, site string) (*SiteTransaction, error) {
@@ -100,6 +107,77 @@ func BeginSiteTransaction(root, home, kind, site string) (*SiteTransaction, erro
 func (t *SiteTransaction) Commit() error {
 	t.State = "committed"
 	return t.persist()
+}
+
+func (t *SiteTransaction) TrackDatabase(database ManagedDatabase) error {
+	if err := validateManagedDatabase(database); err != nil {
+		return err
+	}
+	for _, existing := range t.Databases {
+		if existing == database {
+			return nil
+		}
+	}
+	t.Databases = append(t.Databases, database)
+	if err := t.persist(); err != nil {
+		t.Databases = t.Databases[:len(t.Databases)-1]
+		return err
+	}
+	return nil
+}
+
+func (t *SiteTransaction) cleanupDatabases(cfg Config) error {
+	for len(t.Databases) > 0 {
+		database := t.Databases[0]
+		var err error
+		switch database.Kind {
+		case "cpmove":
+			err = dropDatabase(cfg, database.Name)
+		case "wordpress":
+			err = cleanupWPressDatabase(cfg, database.Name, database.User)
+		default:
+			err = fmt.Errorf("unsupported managed database kind %q", database.Kind)
+		}
+		if err != nil {
+			return fmt.Errorf("clean up managed database %s: %w", database.Name, err)
+		}
+		t.Databases = t.Databases[1:]
+		if err := t.persist(); err != nil {
+			return fmt.Errorf("record managed database cleanup: %w", err)
+		}
+	}
+	return nil
+}
+
+func validateManagedDatabase(database ManagedDatabase) error {
+	if !validManagedDatabaseIdentifier(database.Name, 64) {
+		return errors.New("invalid managed database name")
+	}
+	switch database.Kind {
+	case "cpmove":
+		if database.User != "" {
+			return errors.New("cpmove database must not specify a user")
+		}
+	case "wordpress":
+		if !validManagedDatabaseIdentifier(database.User, 32) {
+			return errors.New("invalid managed WordPress database user")
+		}
+	default:
+		return errors.New("invalid managed database kind")
+	}
+	return nil
+}
+
+func validManagedDatabaseIdentifier(value string, max int) bool {
+	if value == "" || len(value) > max {
+		return false
+	}
+	for _, r := range value {
+		if !(r == '_' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *SiteTransaction) Rollback() error {
@@ -216,6 +294,35 @@ func RecoverSiteTransactions(root string) ([]string, error) {
 	return recovered, nil
 }
 
+func RecoverTransactionDatabases(cfg Config, root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	recovered := []string{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		txn, err := loadSiteTransaction(filepath.Join(root, entry.Name()))
+		if err != nil {
+			return recovered, err
+		}
+		if txn.State == "committed" || txn.State == "rolled-back" || len(txn.Databases) == 0 {
+			continue
+		}
+		if err := txn.cleanupDatabases(cfg); err != nil {
+			return recovered, fmt.Errorf("recover transaction %s databases: %w", txn.ID, err)
+		}
+		recovered = append(recovered, txn.ID)
+	}
+	sort.Strings(recovered)
+	return recovered, nil
+}
+
 func loadSiteTransaction(dir string) (*SiteTransaction, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "transaction.json"))
 	if err != nil {
@@ -231,6 +338,11 @@ func loadSiteTransaction(dir string) (*SiteTransaction, error) {
 	}
 	if txn.Version != 1 || txn.ID != filepath.Base(dir) || safeUser(txn.Site) == "" || !filepath.IsAbs(txn.Home) {
 		return nil, fmt.Errorf("invalid recovery transaction %s", filepath.Base(dir))
+	}
+	for _, database := range txn.Databases {
+		if err := validateManagedDatabase(database); err != nil {
+			return nil, fmt.Errorf("recovery transaction %s contains an invalid managed database: %w", txn.ID, err)
+		}
 	}
 	expectedBackup := filepath.Join(dir, "site-before")
 	if filepath.Clean(txn.Backup) != expectedBackup || txn.FailedSite != "" && !strings.HasPrefix(filepath.Clean(txn.FailedSite), dir+string(os.PathSeparator)) {

@@ -34,8 +34,10 @@ security response headers, and JSONL audit events. TLS and a reverse proxy are
 still required before internet-facing production use. Apache snippets and
 systemd application units cross narrowly validated, root-owned helper
 boundaries; the service account cannot edit active configuration directly.
-Database administration uses a dedicated credential stored in the
-root-readable service environment.
+Local database administration crosses a root-owned helper boundary. Uploaded
+SQL is executed through an ephemeral account with privileges only on the newly
+created target schema. Remote database deployments use the explicitly supplied
+credential and remain an operator-managed trust boundary.
 
 ## Durable restore state
 
@@ -43,6 +45,7 @@ Restore and certificate jobs are recorded atomically before background work
 starts. A restart preserves completed results and marks work interrupted by an
 unclean shutdown as failed. Site overwrites use a transaction journal on the
 site filesystem: the previous document root is moved into the recovery
-transaction before deployment, and every uncommitted transaction is rolled
-back during startup. Recovery artifacts are retained for the same period as
-restore staging data.
+transaction before deployment. Newly created database names and users are
+journaled in the same transaction before provisioning. Startup removes managed
+databases first and then rolls back every uncommitted site transaction.
+Recovery artifacts are retained for the same period as restore staging data.

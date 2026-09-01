@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,8 +16,9 @@ import (
 	"time"
 )
 
-var wpressNamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{1,40}$`)
+var wpressNamePattern = regexp.MustCompile(`^[a-z0-9_]{1,40}$`)
 var wpressPrefixPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,31}$`)
+var databasePasswordPattern = regexp.MustCompile(`^[A-Za-z0-9!@#%^*_=+.,:-]{16,128}$`)
 
 type WPressResult struct {
 	Site             string `json:"site"`
@@ -70,8 +72,8 @@ func validateWPressInput(site, dbSuffix, dbUserSuffix, password, targetPrefix, s
 	if !wpressPrefixPattern.MatchString(targetPrefix) {
 		return errors.New("invalid WordPress table prefix")
 	}
-	if len(password) < 12 || strings.ContainsAny(password, "\r\n") {
-		return errors.New("database password must be at least 12 characters and contain no newlines")
+	if !databasePasswordPattern.MatchString(password) {
+		return errors.New("database password must be 16-128 characters using letters, numbers, or !@#%^*_=+.,:-")
 	}
 	if siteURL != "" {
 		u, err := url.Parse(siteURL)
@@ -170,8 +172,9 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	if !commandAvailable(cfg.WPressExtract) || !commandAvailable(cfg.WPCLI) {
 		return WPressResult{}, errors.New("wpress-extract and wp-cli are required")
 	}
-	dbName := site + "_" + dbSuffix
-	dbUser := site + "_" + dbUserSuffix
+	databaseSite := strings.ReplaceAll(site, "-", "_")
+	dbName := databaseSite + "_" + dbSuffix
+	dbUser := databaseSite + "_" + dbUserSuffix
 	if len(dbName) > 64 || len(dbUser) > 32 {
 		return WPressResult{}, errors.New("database name or user is too long")
 	}
@@ -204,6 +207,10 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	committed := false
 	defer func() {
 		if !committed {
+			if err := txn.cleanupDatabases(cfg); err != nil {
+				log.Printf("defer WordPress database recovery for transaction %s: %v", txn.ID, err)
+				return
+			}
 			_ = txn.Rollback()
 			if txn.HadExisting {
 				_ = siteHelper(cfg, "seal", site)
@@ -219,22 +226,45 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	if err := copyWPressTree(source, home); err != nil {
 		return WPressResult{}, fmt.Errorf("restore WordPress files: %w", err)
 	}
-	if err := createWPressDatabase(cfg, dbName, dbUser, dbPassword); err != nil {
-		return WPressResult{}, err
-	}
-	databaseCreated := true
-	defer func() {
-		if !committed && databaseCreated {
-			_ = cleanupWPressDatabase(cfg, dbName, dbUser)
+	if cfg.DBCtl == "" {
+		databaseExists, checkErr := mysqlObjectExists(cfg, "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME="+sqlString(dbName))
+		if checkErr != nil {
+			return WPressResult{}, fmt.Errorf("check WordPress database: %w", checkErr)
 		}
-	}()
-	if err := importWPressDatabase(cfg, dbName, filepath.Join(source, "database.sql")); err != nil {
-		return WPressResult{}, err
+		userExists, checkErr := mysqlObjectExists(cfg, "SELECT COUNT(*) FROM mysql.user WHERE User="+sqlString(dbUser)+" AND Host='localhost'")
+		if checkErr != nil {
+			return WPressResult{}, fmt.Errorf("check WordPress database user: %w", checkErr)
+		}
+		if databaseExists || userExists {
+			return WPressResult{}, errors.New("database or database user already exists; choose unused names to avoid destructive overwrite")
+		}
+	}
+	if err := txn.TrackDatabase(ManagedDatabase{Name: dbName, User: dbUser, Kind: "wordpress"}); err != nil {
+		return WPressResult{}, fmt.Errorf("record database recovery state: %w", err)
+	}
+	if cfg.DBCtl != "" {
+		if err := restoreWPressDatabaseWithHelper(cfg, dbName, dbUser, dbPassword, filepath.Join(source, "database.sql")); err != nil {
+			return WPressResult{}, err
+		}
+	} else {
+		if err := createWPressDatabase(cfg, dbName, dbUser, dbPassword); err != nil {
+			return WPressResult{}, err
+		}
+	}
+	if cfg.DBCtl == "" {
+		if err := importWPressDatabase(cfg, dbName, filepath.Join(source, "database.sql")); err != nil {
+			return WPressResult{}, err
+		}
 	}
 	if err := configureWordPress(cfg, home, dbName, dbUser, dbPassword, targetPrefix); err != nil {
 		return WPressResult{}, err
 	}
-	sourcePrefix, err := detectWPressPrefix(cfg, dbName)
+	siteDBConfig := cfg
+	if cfg.DBCtl != "" {
+		siteDBConfig.DBUser = dbUser
+		siteDBConfig.DBPassword = dbPassword
+	}
+	sourcePrefix, err := detectWPressPrefix(siteDBConfig, dbName)
 	if err != nil {
 		return WPressResult{}, err
 	}
@@ -413,9 +443,34 @@ func mysqlObjectExists(cfg Config, query string) (bool, error) {
 }
 
 func cleanupWPressDatabase(cfg Config, dbName, dbUser string) error {
+	if cfg.DBCtl != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		output, err := helperCommandContext(ctx, cfg, cfg.DBCtl, "cleanup-wordpress", dbName, dbUser).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("cleanup WordPress database: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	}
 	query := "DROP DATABASE IF EXISTS " + sqlIdent(dbName) + "; DROP USER IF EXISTS " + sqlString(dbUser) + "@'localhost'; FLUSH PRIVILEGES;"
 	_, err := runMySQL(cfg, query)
 	return err
+}
+
+func restoreWPressDatabaseWithHelper(cfg Config, dbName, dbUser, password, dump string) error {
+	input, err := os.Open(dump)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore-wordpress", dbName, dbUser)
+	cmd.Stdin = io.MultiReader(strings.NewReader(password+"\n"), input)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("restore WordPress database: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func importWPressDatabase(cfg Config, dbName, dump string) error {

@@ -40,9 +40,16 @@ Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
 Job records are persisted in `/var/lib/ste-panel/jobs.json`. Site overwrites
 move the previous document root into a journaled transaction under
 `/var/www/sites/.stepanel-recovery`. On startup, StePanel marks interrupted jobs
-failed and rolls back every uncommitted site transaction. Committed and
+failed, removes databases recorded by uncommitted restore transactions, and
+then rolls back their site files. Committed and
 rolled-back transactions remain available for the configured staging-retention
 period; preserve them before that deadline when investigating an incident.
+
+Local database operations are registered under
+`/var/lib/stepanel-privileged/db-managed`. Entries prefixed with `pending-` are reconciled
+by the database helper before transaction-journal recovery and HTTP startup. Do not edit this root-only
+registry manually; preserve the root-only `/var/lib/stepanel-privileged` tree
+with system backups.
 
 Host restores create site identities named from the site plus a stable hash.
 Inspect their ownership, ACL, and PHP-FPM pools with:

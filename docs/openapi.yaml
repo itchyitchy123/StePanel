@@ -108,9 +108,9 @@ paths:
               properties:
                 backup: {type: string, format: binary}
                 site: {type: string}
-                db_name: {type: string}
-                db_user: {type: string}
-                db_password: {type: string, format: password}
+                db_name: {type: string, pattern: '^[a-z0-9_]{1,40}$'}
+                db_user: {type: string, pattern: '^[a-z0-9_]{1,40}$'}
+                db_password: {type: string, format: password, minLength: 16, maxLength: 128}
                 site_url: {type: string, format: uri}
                 table_prefix: {type: string, default: wp_}
                 overwrite: {type: string}

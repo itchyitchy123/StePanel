@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"os"
 	"os/exec"
@@ -159,6 +160,10 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 		if committed {
 			return
 		}
+		if err := txn.cleanupDatabases(cfg); err != nil {
+			log.Printf("defer cpmove database recovery for transaction %s: %v", txn.ID, err)
+			return
+		}
 		_ = txn.Rollback()
 		if txn.HadExisting {
 			_ = siteHelper(cfg, "seal", user)
@@ -182,16 +187,8 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 		}
 	}
 	result := ImportResult{User: user, Home: home, FilesRestored: source != "", StagedAt: stage}
-	defer func() {
-		if committed {
-			return
-		}
-		for _, name := range result.DatabasesRestored {
-			_ = dropDatabase(cfg, name)
-		}
-	}()
 	if databases {
-		result.DatabasesRestored, result.DatabaseErrors = restoreSQL(cfg, root, user)
+		result.DatabasesRestored, result.DatabaseErrors = restoreSQL(cfg, root, user, txn)
 		if len(result.DatabaseErrors) > 0 {
 			return result, fmt.Errorf("database restore completed with %d error(s)", len(result.DatabaseErrors))
 		}
@@ -310,7 +307,7 @@ func extractArchive(archive, destination string) error {
 		total += written
 	}
 }
-func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
+func restoreSQL(cfg Config, stage, user string, txn *SiteTransaction) ([]string, []string) {
 	matches := sqlDumps(filepath.Join(stage, "mysql"))
 	restored, failures := []string{}, []string{}
 	for _, dump := range matches {
@@ -325,9 +322,53 @@ func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		if cfg.DBCtl != "" {
+			if txn != nil {
+				if err := txn.TrackDatabase(ManagedDatabase{Name: name, Kind: "cpmove"}); err != nil {
+					failures = append(failures, name+": record recovery state: "+err.Error())
+					cancel()
+					continue
+				}
+			}
+			input, openErr := os.Open(dump)
+			if openErr != nil {
+				failures = append(failures, name+": open failed: "+openErr.Error())
+				cancel()
+				continue
+			}
+			cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore", name)
+			cmd.Stdin = input
+			output, restoreErr := cmd.CombinedOutput()
+			_ = input.Close()
+			cancel()
+			if restoreErr != nil {
+				failures = append(failures, name+": restore failed: "+strings.TrimSpace(string(output)))
+				continue
+			}
+			restored = append(restored, name)
+			continue
+		}
+		exists, existsErr := mysqlObjectExists(cfg, "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME="+sqlString(name))
+		if existsErr != nil {
+			failures = append(failures, name+": existence check failed: "+existsErr.Error())
+			cancel()
+			continue
+		}
+		if exists {
+			failures = append(failures, name+": database already exists")
+			cancel()
+			continue
+		}
+		if txn != nil {
+			if err := txn.TrackDatabase(ManagedDatabase{Name: name, Kind: "cpmove"}); err != nil {
+				failures = append(failures, name+": record recovery state: "+err.Error())
+				cancel()
+				continue
+			}
+		}
 		args := mysqlArgs(cfg)
 		args = append(args, "--batch", "--execute", "CREATE DATABASE `"+name+"`")
-		cmd := exec.CommandContext(ctx, "mysql", args...)
+		cmd := exec.CommandContext(ctx, mysqlClient(), args...)
 		if cfg.DBPassword != "" {
 			cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
 		}
@@ -345,7 +386,7 @@ func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
 		}
 		args = mysqlArgs(cfg)
 		args = append(args, name)
-		cmd = exec.CommandContext(ctx, "mysql", args...)
+		cmd = exec.CommandContext(ctx, mysqlClient(), args...)
 		if cfg.DBPassword != "" {
 			cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
 		}
@@ -368,6 +409,13 @@ func restoreSQL(cfg Config, stage, user string) ([]string, []string) {
 func dropDatabase(cfg Config, name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if cfg.DBCtl != "" {
+		output, err := helperCommandContext(ctx, cfg, cfg.DBCtl, "drop", name).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("drop database: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	}
 	args := append(mysqlArgs(cfg), "--batch", "--execute", "DROP DATABASE IF EXISTS `"+name+"`")
 	cmd := exec.CommandContext(ctx, mysqlClient(), args...)
 	if cfg.DBPassword != "" {
@@ -404,6 +452,8 @@ func sqlDumps(root string) []string {
 }
 
 func databaseName(user, db string) string {
+	user = strings.ReplaceAll(user, "-", "_")
+	db = strings.ReplaceAll(db, "-", "_")
 	if strings.HasPrefix(db, user+"_") {
 		return db
 	}

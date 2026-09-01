@@ -21,6 +21,14 @@ starts with the selected account prefix, StePanel preserves that database name
 instead of duplicating the prefix. Existing files at the destination can be
 overwritten.
 
+For a local database, the root-owned database helper creates a temporary
+importer with privileges only on the new target schema, streams the dump through
+that account, removes the importer, and registers the resulting database for
+restricted cleanup. Remote database restores use the operator-supplied account.
+Managed database names are written to the site recovery transaction before
+creation, allowing startup to remove completed imports if the wider site restore
+was interrupted before commit.
+
 ## Mail restoration
 
 When `STEPANEL_INSTALL_MAIL=1` is used, the installer installs Exim, Dovecot,

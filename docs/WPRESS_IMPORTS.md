@@ -20,7 +20,9 @@ Use `/api/wpress/preflight` to verify availability.
 1. Take a filesystem and database snapshot.
 2. Open the WordPress migration card in the authenticated dashboard.
 3. Select the `.wpress` archive and a site account.
-4. Enter database and database-user suffixes, plus a new database password.
+4. Enter lowercase database and database-user suffixes using letters, numbers,
+   and underscores, plus a new 16-128 character database password using the
+   supported password-safe character set.
 5. Optionally enter the destination URL and table prefix.
 6. Enable overwrite only after verifying the backup.
 7. Type `WPRESTORE` and wait for the job to complete.
@@ -28,8 +30,8 @@ Use `/api/wpress/preflight` to verify availability.
 
 The resulting names are prefixed with the site account, for example
 `example_wordpress` and `example_wpuser`. The restore creates the database and
-local database user through the configured MySQL/MariaDB administrative
-connection, imports `database.sql`, and uses WP-CLI for serialized-safe table
+local database user through the restricted local helper (or the explicitly
+configured remote administrative connection), imports `database.sql`, and uses WP-CLI for serialized-safe table
 prefix and URL replacement.
 
 Archives are extracted into a private staging directory. Symlinks are rejected,
@@ -37,3 +39,9 @@ the database dump is not copied into the public site, and a failed overwrite
 attempt restores the previous site directory. WordPress code and plugins are
 untrusted after extraction; scan and update them before placing the site on
 public traffic.
+
+On local installations, uploaded SQL runs as the new site database user and
+therefore has privileges only on the new target schema. The root-only managed
+database ledger supports cleanup of interrupted provisioning.
+The database and user are also recorded in the site recovery transaction before
+creation, so an unclean shutdown removes them before restoring the prior files.

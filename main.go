@@ -39,8 +39,21 @@ func main() {
 		return
 	}
 	cfg := LoadConfig()
+	if cfg.DBCtl != "" {
+		if output, err := helperCommand(cfg, cfg.DBCtl, "reconcile").CombinedOutput(); err != nil {
+			log.Fatalf("reconcile interrupted database operations: %v: %s", err, strings.TrimSpace(string(output)))
+		}
+	}
 	if err := os.MkdirAll(cfg.ImportRoot, 0750); err != nil {
 		log.Fatal(err)
+	}
+	databaseRecoveries, err := RecoverTransactionDatabases(cfg, cfg.RecoveryRoot)
+	if err != nil {
+		log.Fatalf("recover interrupted database transactions: %v", err)
+	}
+	for _, id := range databaseRecoveries {
+		log.Printf("recovered databases for interrupted site transaction %s", id)
+		_ = Audit(cfg.AuditLog, "restore.database-recovered", id, "managed databases removed after unclean shutdown")
 	}
 	recovered, err := RecoverSiteTransactions(cfg.RecoveryRoot)
 	if err != nil {

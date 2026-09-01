@@ -38,9 +38,9 @@
 
 - A compromised administrator can request destructive restores.
 - A restored WordPress application is untrusted code after extraction.
-- The service account holds a powerful database administration credential;
-  compromise of the control plane therefore requires credential rotation and
-  database integrity review.
+- Remote database deployments may give the service account a powerful
+  administration credential; compromise requires credential rotation and a
+  database integrity review. Local installs instead use the restricted helper.
 - TLS and MFA/OIDC remain deployment responsibilities or roadmap items.
 
 ## Operator requirements

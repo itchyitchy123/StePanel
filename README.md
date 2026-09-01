@@ -172,7 +172,7 @@ checkbox and should be backed up first.
 | `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; default `wpress-extract` |
 | `STEPANEL_WPCLI` | WP-CLI executable; default `wp` |
 | `STEPANEL_DB_HOST` | MySQL/MariaDB host used for SQL imports |
-| `STEPANEL_DB_USER` | Database user used for SQL imports |
+| `STEPANEL_DB_USER` | Remote database user used for SQL imports; local installs use the restricted helper |
 | `STEPANEL_DB_PASSWORD` | Database password supplied through the process environment |
 | `STEPANEL_MAIL_ROOT` | Private root for staged cPanel mailbox data |
 | `STEPANEL_METRICS_PUBLIC` | Set to `1` only when Prometheus metrics must be unauthenticated |

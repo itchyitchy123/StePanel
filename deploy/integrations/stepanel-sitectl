@@ -39,10 +39,58 @@ command -v setfacl >/dev/null 2>&1 || { echo 'setfacl is required for site isola
 setfacl -R -m u:stepanel:rwX "$site_root"
 find "$site_root" -type d -exec setfacl -m d:u:stepanel:rwx {} +
 
+if [[ $action == seal ]]; then
+  chown -R "$site_user:$web_group" "$site_root"
+  find "$site_root" -type d -exec chmod 2750 {} +
+  setfacl -R -m u:stepanel:rwX "$site_root"
+  find "$site_root" -type d -exec setfacl -m d:u:stepanel:rwx {} +
+fi
+
+pool_targets=()
+pool_backups=()
+pool_existed=()
+pool_staged=()
+validators=()
+mapfile -t fpm_units < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
+
+rollback_pools() {
+  local index
+  for (( index=${#pool_targets[@]}-1; index>=0; index-- )); do
+    if [[ ${pool_existed[$index]} == 1 ]]; then
+      mv -f "${pool_backups[$index]}" "${pool_targets[$index]}" || true
+    else
+      rm -f "${pool_targets[$index]}"
+    fi
+  done
+}
+
+cleanup_pool_temp() {
+  local path
+  for path in "${pool_backups[@]}" "${pool_staged[@]}"; do
+    [[ -n $path ]] && rm -f "$path"
+  done
+}
+
+pool_error() {
+  local status=$?
+  trap - ERR
+  rollback_pools
+  local unit
+  for unit in "${fpm_units[@]}"; do systemctl reload-or-restart "$unit" 2>/dev/null || true; done
+  cleanup_pool_temp
+  exit "$status"
+}
+trap pool_error ERR
+
 write_pool() {
-  local target=$1 listen=$2 staged
+  local target=$1 listen=$2 staged backup existed=0
+  backup=$(mktemp)
+  if [[ -e $target ]]; then cp -p "$target" "$backup"; existed=1; fi
+  pool_targets+=("$target")
+  pool_backups+=("$backup")
+  pool_existed+=("$existed")
   staged=$(mktemp "${target}.XXXXXX")
-  trap 'rm -f "$staged"' RETURN
+  pool_staged+=("$staged")
   cat > "$staged" <<EOF
 ; Managed by StePanel. Manual changes will be replaced.
 [stepanel-$site]
@@ -67,7 +115,6 @@ EOF
   chmod 0644 "$staged"
   chown root:root "$staged"
   mv -f "$staged" "$target"
-  trap - RETURN
 }
 
 pool_written=0
@@ -75,11 +122,15 @@ for pool_root in /etc/php/*/fpm/pool.d; do
   [[ -d $pool_root ]] || continue
   version_root=$(dirname "$(dirname "$pool_root")")
   version=${version_root##*/}
+  validator=$(command -v "php-fpm$version") || { echo "php-fpm$version validator was not found" >&2; false; }
+  validators+=("$validator")
   install -d -m 0755 "$socket_root"
   write_pool "$pool_root/stepanel-$site.conf" "$socket_root/stepanel-$site-$version.sock"
   pool_written=1
 done
 if [[ -d /etc/php-fpm.d ]]; then
+  validator=$(command -v php-fpm) || { echo 'php-fpm validator was not found' >&2; false; }
+  validators+=("$validator")
   install -d -m 0755 "$socket_root"
   write_pool "/etc/php-fpm.d/stepanel-$site.conf" "$socket_root/stepanel-$site.sock"
   pool_written=1
@@ -89,17 +140,11 @@ if (( ! pool_written )); then
   exit 1
 fi
 
-if [[ $action == seal ]]; then
-  chown -R "$site_user:$web_group" "$site_root"
-  find "$site_root" -type d -exec chmod 2750 {} +
-  setfacl -R -m u:stepanel:rwX "$site_root"
-  find "$site_root" -type d -exec setfacl -m d:u:stepanel:rwx {} +
-fi
-
-systemctl daemon-reload
-while read -r unit; do
-  [[ -n $unit ]] || continue
-  systemctl reload-or-restart "$unit"
-done < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
+for validator in "${validators[@]}"; do
+  "$validator" -tt >/dev/null 2>&1 || { echo "$validator rejected the managed pool" >&2; false; }
+done
+for unit in "${fpm_units[@]}"; do systemctl reload-or-restart "$unit"; done
+trap - ERR
+cleanup_pool_temp
 
 printf '%s\n' "$site_user"

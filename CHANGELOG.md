@@ -42,6 +42,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Host restores now provision deterministic per-site Unix identities, private
   PHP-FPM pools, isolated Node service users, and explicit control-plane ACLs;
   site workloads are not members of Apache's shared filesystem group.
+- Local database restores now stream through a root-owned helper using an
+  importer restricted to the one new schema. Root-only pending-operation
+  records and site transaction journals enable startup cleanup after interrupted
+  database provisioning or a later restore crash.
 - Container and orchestration deployments now use numeric non-root identity
   `10001`, read-only root filesystems, dropped capabilities, bounded resources,
   persistent writable paths, and disabled service-account token mounting.
@@ -67,6 +71,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Apache proxy files and systemd units are root-owned and can only be changed
   through narrowly validated sudo helpers; the unprivileged daemon no longer
   controls Apache-included configuration directly.
+- The control-plane process no longer retains global database credentials for
+  local installations; destructive cleanup is limited to databases registered
+  by the root-owned restore helper.
 - systemd services now apply strict filesystem protection, namespace and kernel
   restrictions, empty capability sets where applicable, file-descriptor/task
   limits, private temporary directories, and restrictive umasks.

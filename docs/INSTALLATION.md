@@ -22,11 +22,16 @@ supports `mysql` and `mariadb`. Use `default` for the distribution-provided
 version, or provide an exact version available from the configured package
 repositories. The installer verifies requested versions before installing the
 database package and fails rather than silently selecting another version. For a local
-database it creates a dedicated `stepanel_admin` account with a generated
-credential and explicit schema/data/user-management privileges. It does not
-grant filesystem, shutdown, or other blanket server-administration rights. Set
-`STEPANEL_DB_HOST`, `STEPANEL_DB_USER`, and
-`STEPANEL_DB_PASSWORD` together when using a pre-provisioned database.
+database it installs a root-owned restore helper and does not place a global
+database credential in the control-plane environment. The helper creates only
+validated new schemas, imports through a temporary account restricted to that
+schema, and records managed objects for cleanup. Set `STEPANEL_DB_HOST`,
+`STEPANEL_DB_USER`, and `STEPANEL_DB_PASSWORD` together when using a
+pre-provisioned remote database; remote credential scope remains the operator's
+responsibility.
+When upgrading an older installation, verify that `STEPANEL_DBCTL` is active
+and restores succeed before manually removing the legacy `stepanel_admin`
+database account; the installer does not delete an existing account implicitly.
 It also requires the panel's fully qualified hostname and writes it into the
 Apache virtual host. Production sessions use Secure cookies, so complete TLS
 termination before attempting to sign in. When Certbot integration is

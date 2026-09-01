@@ -122,6 +122,9 @@ func TestSQLDumpsFindsNestedCPanelDumps(t *testing.T) {
 	if got := databaseName("account", "account_blog"); got != "account_blog" {
 		t.Fatalf("databaseName duplicated user prefix: %q", got)
 	}
+	if got := databaseName("my-account", "my-account_blog"); got != "my_account_blog" {
+		t.Fatalf("databaseName did not normalize a hyphenated account: %q", got)
+	}
 }
 
 func TestRestoreSQLDropsPartiallyImportedDatabase(t *testing.T) {
@@ -138,7 +141,7 @@ func TestRestoreSQLDropsPartiallyImportedDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	logPath := filepath.Join(root, "mysql.log")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TEST_MYSQL_LOG\"\ncase \"$*\" in *'CREATE DATABASE'*) exit 0;; *'DROP DATABASE'*) exit 0;; esac\nexit 1\n"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TEST_MYSQL_LOG\"\ncase \"$*\" in *'SELECT COUNT(*) FROM information_schema.SCHEMATA'*) printf '0\\n'; exit 0;; *'CREATE DATABASE'*) exit 0;; *'DROP DATABASE'*) exit 0;; esac\nexit 1\n"
 	for _, name := range []string{"mysql", "mariadb"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
 			t.Fatal(err)
@@ -146,7 +149,7 @@ func TestRestoreSQLDropsPartiallyImportedDatabase(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TEST_MYSQL_LOG", logPath)
-	restored, failures := restoreSQL(Config{}, root, "account")
+	restored, failures := restoreSQL(Config{}, root, "account", nil)
 	if len(restored) != 0 || len(failures) == 0 {
 		t.Fatalf("restoreSQL() = restored %v, failures %v", restored, failures)
 	}

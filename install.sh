@@ -96,27 +96,20 @@ getent group "$WEB_GROUP" >/dev/null || { echo "Apache group $WEB_GROUP was not 
 if [[ "$PKG" == "apt" ]]; then PROXY_ROOT=/etc/apache2/stepanel-proxy; else PROXY_ROOT=/etc/httpd/conf.d/stepanel-proxy; fi
 
 systemctl enable --now "$DB_SERVICE"
+DB_LOCAL_HELPER=0
 if [[ -z "$DB_USER" ]]; then
   [[ "$DB_HOST" == "localhost" ]] || { echo "Set STEPANEL_DB_USER and STEPANEL_DB_PASSWORD for a non-local database host." >&2; exit 1; }
-  DB_USER=stepanel_admin
-  DB_PASSWORD="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  DB_LOCAL_HELPER=1
   DB_CLIENT=mysql
   command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
-  "$DB_CLIENT" --protocol=socket --batch <<SQL
-CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
-ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, REFERENCES, INDEX, ALTER,
-  CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW,
-  CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER
-  ON *.* TO '$DB_USER'@'localhost' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
-SQL
-fi
-DB_CLIENT=mysql
-command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
-if ! env MYSQL_PWD="$DB_PASSWORD" "$DB_CLIENT" --host "$DB_HOST" --user "$DB_USER" --batch --skip-column-names --execute 'SELECT 1' | grep -Fxq 1; then
-  echo "StePanel database credentials could not connect to $DB_HOST." >&2
-  exit 1
+  "$DB_CLIENT" --protocol=socket --batch --skip-column-names --execute 'SELECT 1' | grep -Fxq 1 || { echo "Local database socket administration is unavailable." >&2; exit 1; }
+else
+  DB_CLIENT=mysql
+  command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
+  if ! env MYSQL_PWD="$DB_PASSWORD" "$DB_CLIENT" --host "$DB_HOST" --user "$DB_USER" --batch --skip-column-names --execute 'SELECT 1' | grep -Fxq 1; then
+    echo "StePanel database credentials could not connect to $DB_HOST." >&2
+    exit 1
+  fi
 fi
 
 install_mail_stack() {
@@ -238,6 +231,7 @@ if [[ "$INSTALL_MODSEC" == "1" ]]; then configure_modsecurity; fi
 
 install -d -m 0750 "$APP_DIR" "$DATA_DIR/imports" "$DATA_DIR/mail" "$DATA_DIR/apps" /var/www/sites
 install -d -m 0755 -o root -g root "$PROXY_ROOT"
+install -d -m 0700 -o root -g root /var/lib/stepanel-privileged
 install -d -m 0755 "$APP_DIR/integrations"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
 usermod -a -G "$WEB_GROUP" "$APP_USER"
@@ -256,6 +250,7 @@ install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/in
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-proxyctl" /usr/local/sbin/stepanel-proxyctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-sitectl" /usr/local/sbin/stepanel-sitectl
+install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-dbctl" /usr/local/sbin/stepanel-dbctl
 if [[ "$INSTALL_TLS" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-certbot" /usr/local/sbin/stepanel-certbot; fi
 if [[ -n "$FPM_LENS_BINARY" ]]; then install -m 0755 "$FPM_LENS_BINARY" /usr/local/bin/fpm-lens; fi
 install -m 0644 -D "$ROOT_DIR/web/index.html" "$APP_DIR/web/index.html"
@@ -314,6 +309,7 @@ trap 'rm -f "$env_tmp"' EXIT
   write_env STEPANEL_APPCTL /usr/local/sbin/stepanel-appctl
   write_env STEPANEL_PROXYCTL /usr/local/sbin/stepanel-proxyctl
   write_env STEPANEL_SITECTL /usr/local/sbin/stepanel-sitectl
+  if [[ "$DB_LOCAL_HELPER" == "1" ]]; then write_env STEPANEL_DBCTL /usr/local/sbin/stepanel-dbctl; fi
   write_env STEPANEL_AUDIT_LOG "$DATA_DIR/audit.jsonl"
   write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
   write_env STEPANEL_RECOVERY_ROOT /var/www/sites/.stepanel-recovery
@@ -333,12 +329,13 @@ install -m 0644 "$ROOT_DIR/deploy/stepanel.logrotate" /etc/logrotate.d/stepanel
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
 printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-appctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-proxyctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-sitectl *\n' "$APP_USER" "$APP_USER" "$APP_USER" > "$sudoers_tmp"
+if [[ "$DB_LOCAL_HELPER" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-dbctl *\n' "$APP_USER" >> "$sudoers_tmp"; fi
 if [[ "$INSTALL_TLS" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-certbot *\n' "$APP_USER" >> "$sudoers_tmp"; fi
 visudo -cf "$sudoers_tmp" >/dev/null
 install -m 0440 -o root -g root "$sudoers_tmp" /etc/sudoers.d/stepanel
 if [[ "$INSTALL_SECURITY" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-malware-guard" /usr/local/sbin/stepanel-malware-guard; install -m 0644 "$ROOT_DIR/deploy/stepanel-malware-guard.service" /etc/systemd/system/stepanel-malware-guard.service; fi
 if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
-  command -v restorecon >/dev/null 2>&1 && restorecon -RF /opt/stepanel /var/lib/ste-panel /var/www/sites /etc/httpd/conf.d/stepanel.conf "$PROXY_ROOT"
+  command -v restorecon >/dev/null 2>&1 && restorecon -RF /opt/stepanel /var/lib/ste-panel /var/lib/stepanel-privileged /var/www/sites /etc/httpd/conf.d/stepanel.conf "$PROXY_ROOT"
   if command -v setsebool >/dev/null 2>&1; then setsebool -P httpd_can_network_connect 1; fi
 fi
 systemctl daemon-reload; systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" stepanel; systemctl reload "$APACHE_SERVICE" || true

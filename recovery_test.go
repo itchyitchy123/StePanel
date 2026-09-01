@@ -3,9 +3,72 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestRecoverTransactionDatabasesCleansJournalBeforeSiteRollback(t *testing.T) {
+	root := t.TempDir()
+	recovery := filepath.Join(root, ".stepanel-recovery")
+	home := filepath.Join(root, "site", "public")
+	writeTestFile(t, filepath.Join(home, "index.html"), "old")
+	txn, err := BeginSiteTransaction(recovery, home, "test.restore", "site")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := txn.TrackDatabase(ManagedDatabase{Name: "site_archive", Kind: "cpmove"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := txn.TrackDatabase(ManagedDatabase{Name: "site_wordpress", User: "site_wordpress", Kind: "wordpress"}); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(home, "index.html"), "partial")
+	logPath := filepath.Join(root, "dbctl.log")
+	helper := filepath.Join(root, "dbctl")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TEST_DBCTL_LOG\"\n"
+	if err := os.WriteFile(helper, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_DBCTL_LOG", logPath)
+	recovered, err := RecoverTransactionDatabases(Config{DBCtl: helper}, recovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered) != 1 || recovered[0] != txn.ID {
+		t.Fatalf("database recoveries = %#v, want %q", recovered, txn.ID)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "drop site_archive\ncleanup-wordpress site_wordpress site_wordpress\n"
+	if string(data) != want {
+		t.Fatalf("database cleanup calls = %q, want %q", data, want)
+	}
+	loaded, err := loadSiteTransaction(txn.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Databases) != 0 || loaded.State != "site-backed-up" {
+		t.Fatalf("database journal was not cleared before site rollback: %#v", loaded)
+	}
+	if _, err := RecoverSiteTransactions(recovery); err != nil {
+		t.Fatal(err)
+	}
+	assertTestFile(t, filepath.Join(home, "index.html"), "old")
+}
+
+func TestManagedDatabaseValidationRejectsUnsafeJournalEntry(t *testing.T) {
+	root := t.TempDir()
+	txn, err := BeginSiteTransaction(filepath.Join(root, "recovery"), filepath.Join(root, "site", "public"), "test.restore", "site")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := txn.TrackDatabase(ManagedDatabase{Name: "../mysql", Kind: "cpmove"}); err == nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("unsafe database journal entry accepted: %v", err)
+	}
+}
 
 func TestSiteTransactionRollbackRestoresPreviousSite(t *testing.T) {
 	root := t.TempDir()
