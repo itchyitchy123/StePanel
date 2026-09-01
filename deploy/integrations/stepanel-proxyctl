@@ -5,9 +5,11 @@ if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
 
 if [[ -d /etc/apache2 ]]; then
   CONFIG_ROOT=/etc/apache2/stepanel-proxy
+  SITE_ROOT=/etc/apache2/stepanel-sites
   APACHE_SERVICE=apache2
 elif [[ -d /etc/httpd ]]; then
   CONFIG_ROOT=/etc/httpd/conf.d/stepanel-proxy
+  SITE_ROOT=/etc/httpd/conf.d/stepanel-sites
   APACHE_SERVICE=httpd
 else
   echo 'Apache configuration directory was not found' >&2
@@ -21,6 +23,15 @@ apache_test() {
 }
 
 apache_reload() { systemctl reload "$APACHE_SERVICE"; }
+
+domain_in_use() {
+  local domain=$1 own=$2 candidate
+  for candidate in "$CONFIG_ROOT"/*.conf "$SITE_ROOT"/*.conf /etc/apache2/sites-enabled/*.conf /etc/httpd/conf.d/*.conf; do
+    [[ -f $candidate && $candidate != "$own" ]] || continue
+    awk -v expected="$domain" 'tolower($1) == "servername" && tolower($2) == expected { found=1 } END { exit !found }' "$candidate" && return 0
+  done
+  return 1
+}
 
 valid_backend() {
   local backend=$1 host port first second third fourth
@@ -36,16 +47,21 @@ valid_backend() {
 }
 
 action=${1:-}
-install -d -m 0755 -o root -g root "$CONFIG_ROOT"
+install -d -m 0755 -o root -g root "$CONFIG_ROOT" "$SITE_ROOT"
+command -v flock >/dev/null 2>&1 || { echo 'flock is required for Apache configuration locking' >&2; exit 1; }
+exec 9>/run/lock/stepanel-apache.lock
+flock -x 9
 case "$action" in
   apply)
     (( $# == 4 )) || { echo 'usage: stepanel-proxyctl apply SITE DOMAIN BACKEND' >&2; exit 64; }
-    site=${2:-}; domain=${3:-}; backend=${4:-}
+    site=${2:-}; domain=${3,,}; backend=${4:-}
     [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
     [[ $domain =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] || { echo 'invalid domain' >&2; exit 1; }
+    (( ${#site} + ${#domain} <= 220 )) || { echo 'site and domain combination is too long' >&2; exit 1; }
     valid_backend "$backend" || { echo 'invalid backend' >&2; exit 1; }
     name="${site}-${domain//./_}.conf"
     path="$CONFIG_ROOT/$name"
+    domain_in_use "$domain" "$path" && { echo 'domain is already assigned to another managed route' >&2; exit 1; }
     backup=$(mktemp)
     existed=0
     if [[ -f $path ]]; then cp -p "$path" "$backup"; existed=1; fi
@@ -70,6 +86,9 @@ case "$action" in
     [[ $name =~ ^[a-z0-9_-]{1,32}-[a-z0-9_-]+\.conf$ ]] || { echo 'invalid proxy name' >&2; exit 1; }
     path="$CONFIG_ROOT/$name"
     [[ -f $path ]] || { echo 'proxy not found' >&2; exit 1; }
+    domain=$(awk 'tolower($1) == "servername" { print tolower($2); exit }' "$path")
+    [[ $domain =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo 'managed proxy has an invalid ServerName' >&2; exit 1; }
+    domain_in_use "$domain" "$path" && { echo 'another Apache vhost still serves this domain; remove its TLS or external vhost first' >&2; exit 1; }
     backup=$(mktemp)
     trap 'rm -f "$backup"' EXIT
     cp -p "$path" "$backup"

@@ -5,4 +5,7 @@ if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
 domain=${1:-}; email=${2:-}
 [[ $domain =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$ ]] || { echo 'invalid domain' >&2; exit 1; }
 [[ $email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || { echo 'invalid email' >&2; exit 1; }
+command -v flock >/dev/null 2>&1 || { echo 'flock is required for Apache configuration locking' >&2; exit 1; }
+exec 9>/run/lock/stepanel-apache.lock
+flock -x 9
 certbot --apache --non-interactive --agree-tos --keep-until-expiring --redirect --email "$email" -d "$domain"

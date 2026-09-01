@@ -66,7 +66,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_STAGE_RETENTION_HOURS` | Positive hours | Retain completed restore staging directories for audit |
 | `STEPANEL_MIN_FREE_BYTES` | Bytes | Refuse new restores below this free-space threshold |
 
-It also enables the Apache proxy, proxy_http, and headers modules on
+It also enables the Apache proxy, proxy_http, proxy_fcgi, setenvif, rewrite, and headers modules on
 Debian-family systems and writes the requested hostname into the generated
 virtual host. The installer creates:
 
@@ -81,6 +81,7 @@ outbound-network policy.
 | `/var/lib/ste-panel/imports` | Private cpmove staging |
 | `/var/lib/ste-panel/mail` | Private staged mailbox data |
 | `/etc/apache2/stepanel-proxy` or `/etc/httpd/conf.d/stepanel-proxy` | Root-owned managed Apache reverse-proxy snippets |
+| `/etc/apache2/stepanel-sites` or `/etc/httpd/conf.d/stepanel-sites` | Root-owned managed PHP site vhosts |
 | `/var/lib/ste-panel/apps` | Managed Node application manifests |
 | `/var/lib/ste-panel/quarantine` | Recoverable malware quarantine |
 | `/var/www/sites/.stepanel-recovery` | Journaled site rollback data |
@@ -100,7 +101,9 @@ ACL access for the unprivileged control plane, and renders private PHP-FPM
 pools for installed PHP versions. Restored files are sealed to the site user
 and Apache group afterward. Site users are not added to Apache's shared group;
 Apache receives group read access to static files and PHP-FPM sockets instead.
-Apache virtual-host-to-pool selection remains part of the site lifecycle work.
+The site deployment API renders a validated vhost that routes PHP requests to
+an active pool for that site and refuses domains already claimed by an existing
+Apache vhost or managed Node proxy.
 
 ## Reverse proxy
 

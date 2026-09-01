@@ -145,6 +145,9 @@ checkbox and should be backed up first.
 | `GET` | `/api/proxy` | List managed reverse proxies |
 | `POST` | `/api/proxy/test` | Test a local/private application backend |
 | `DELETE` | `/api/proxy/<config>` | Remove a managed reverse proxy and reload Apache |
+| `GET` | `/api/sites` | List managed PHP site vhosts |
+| `POST` | `/api/sites/deploy` | Validate and route a domain to its isolated PHP-FPM pool |
+| `DELETE` | `/api/sites/<config>` | Remove a managed PHP site vhost |
 | `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
 | `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |
@@ -166,6 +169,7 @@ checkbox and should be backed up first.
 | `STEPANEL_DB_VERSION` | `default` or an exact repository version |
 | `STEPANEL_IMPORT_ROOT` | Private backup staging directory |
 | `STEPANEL_WEB_ROOT` | Site destination root |
+| `STEPANEL_VHOST_ROOT` | Root-owned Apache snippets for managed PHP sites |
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |
 | `STEPANEL_JOB_STATE` | Durable restore and certificate job state file |
 | `STEPANEL_RECOVERY_ROOT` | Durable site rollback transactions on the site filesystem |
@@ -204,7 +208,9 @@ and credential mapping.
 
 ## Roadmap
 
-The next product milestones are first-run setup, site/domain lifecycle, PHP-FPM and database management, verified backups, and multi-user roles. See the [roadmap](docs/ROADMAP.md) for the full plan.
+The next product milestones are first-run setup, verified backups, safer
+upgrades, resource quotas, and multi-user roles. See the
+[roadmap](docs/ROADMAP.md) for the full plan.
 
 ## License
 

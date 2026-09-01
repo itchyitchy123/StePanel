@@ -15,13 +15,14 @@ longer-term hosting-panel roadmap.
 - Live service inventory for Apache, PHP-FPM, MySQL/MariaDB, Fail2Ban, and ModSecurity.
 - Authenticated security posture endpoint at `/api/security/audit`.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
+- Transactional Apache vhosts and reverse proxies with duplicate-domain checks.
+- Deterministic site identities and isolated PHP-FPM pools for restored sites.
 
 ## Planned hosting features
 
-- Site and domain lifecycle management.
-- PHP-FPM pools and per-site PHP version selection.
+- Site deletion and per-site PHP version selection.
 - Verified scheduled backups and snapshot-backed rollback.
-- Role-based access, MFA/OIDC, and a restricted privileged restore helper.
+- Role-based access and MFA/OIDC.
 
 Planned operations will be introduced behind explicit permissions and dry-run
 modes. The project will not silently mutate live web-server configuration.

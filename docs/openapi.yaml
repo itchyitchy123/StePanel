@@ -59,6 +59,36 @@ paths:
                 email: {type: string, format: email}
       responses:
         '202': {description: Certificate job queued}
+  /api/sites:
+    get:
+      summary: List managed PHP site routes
+      responses:
+        '200': {description: Managed site vhost names}
+  /api/sites/deploy:
+    post:
+      summary: Deploy a PHP site through its isolated PHP-FPM pool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site, domain]
+              properties:
+                site: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}
+                domain: {type: string, format: hostname}
+      responses:
+        '202': {description: Vhost validated, activated, and Apache reloaded}
+        '422': {description: Invalid route or missing site document root}
+        '503': {description: Host validation or Apache reload failed}
+  /api/sites/{name}:
+    delete:
+      summary: Remove a managed PHP site route
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Vhost removed and Apache reloaded}
+        '404': {description: Managed route not found}
   /api/cpmove/inspect:
     post:
       summary: Inspect a cPanel backup archive

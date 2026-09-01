@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
+action=${1:-}
+
+if [[ -d /etc/apache2 ]]; then
+  config_root=/etc/apache2/stepanel-sites
+  proxy_root=/etc/apache2/stepanel-proxy
+  apache_service=apache2
+  log_root='${APACHE_LOG_DIR}'
+  socket_root=/run/php
+elif [[ -d /etc/httpd ]]; then
+  config_root=/etc/httpd/conf.d/stepanel-sites
+  proxy_root=/etc/httpd/conf.d/stepanel-proxy
+  apache_service=httpd
+  log_root=/var/log/httpd
+  socket_root=/run/php-fpm
+else
+  echo 'Apache configuration directory was not found' >&2
+  exit 1
+fi
+
+install -d -m 0755 -o root -g root "$config_root" "$proxy_root"
+command -v flock >/dev/null 2>&1 || { echo 'flock is required for Apache configuration locking' >&2; exit 1; }
+exec 9>/run/lock/stepanel-apache.lock
+flock -x 9
+
+apache_test() {
+  if command -v apachectl >/dev/null 2>&1; then apachectl -t
+  else httpd -t
+  fi
+}
+apache_reload() { systemctl reload "$apache_service"; }
+
+domain_in_use() {
+  local domain=$1 own=$2 candidate
+  for candidate in "$config_root"/*.conf "$proxy_root"/*.conf /etc/apache2/sites-enabled/*.conf /etc/httpd/conf.d/*.conf; do
+    [[ -f $candidate && $candidate != "$own" ]] || continue
+    awk -v expected="$domain" 'tolower($1) == "servername" && tolower($2) == expected { found=1 } END { exit !found }' "$candidate" && return 0
+  done
+  return 1
+}
+
+case "$action" in
+  apply)
+    (( $# == 3 )) || { echo 'usage: stepanel-vhostctl apply SITE DOMAIN' >&2; exit 64; }
+    site=$2; domain=${3,,}
+    [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
+    [[ $domain =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo 'invalid domain' >&2; exit 1; }
+    (( ${#site} + ${#domain} <= 220 )) || { echo 'site and domain combination is too long' >&2; exit 1; }
+    public_root="/var/www/sites/$site/public"
+    [[ -d $public_root && ! -L $public_root ]] || { echo 'site document root is unavailable or unsafe' >&2; exit 1; }
+    name="site-${site}-${domain//./_}.conf"
+    path="$config_root/$name"
+    domain_in_use "$domain" "$path" && { echo 'domain is already assigned to another managed route' >&2; exit 1; }
+    if [[ -d /etc/apache2 ]]; then
+      pool=
+      for candidate in /etc/php/*/fpm/pool.d/stepanel-"$site".conf; do
+        [[ -f $candidate ]] || continue
+        version_root=$(dirname "$(dirname "$(dirname "$candidate")")")
+        candidate_version=${version_root##*/}
+        systemctl is-active --quiet "php$candidate_version-fpm.service" || continue
+        pool=$candidate
+        version=$candidate_version
+        break
+      done
+      [[ -n $pool ]] || { echo 'an active isolated PHP-FPM pool was not found for this site' >&2; exit 1; }
+      socket="$socket_root/stepanel-$site-$version.sock"
+    else
+      pool="/etc/php-fpm.d/stepanel-$site.conf"
+      socket="$socket_root/stepanel-$site.sock"
+      systemctl is-active --quiet php-fpm.service || { echo 'PHP-FPM is not active' >&2; exit 1; }
+    fi
+    [[ -f $pool ]] || { echo 'isolated PHP-FPM pool is not configured for this site' >&2; exit 1; }
+    backup=$(mktemp)
+    existed=0
+    [[ ! -f $path ]] || { cp -p "$path" "$backup"; existed=1; }
+    staged=$(mktemp "$config_root/.stepanel-site.XXXXXX")
+    trap 'rm -f "$backup" "$staged"' EXIT
+    cat > "$staged" <<EOF
+<VirtualHost *:80>
+    ServerName $domain
+    DocumentRoot $public_root
+    DirectoryIndex index.php index.html
+    <Directory "$public_root">
+        Options SymLinksIfOwnerMatch
+        AllowOverride FileInfo
+        Require all granted
+    </Directory>
+    <FilesMatch "^\\.">
+        Require all denied
+    </FilesMatch>
+    <FilesMatch "\\.php$">
+        SetHandler "proxy:unix:$socket|fcgi://localhost/"
+    </FilesMatch>
+    ProxyFCGIBackendType FPM
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    ErrorLog $log_root/stepanel-$site-error.log
+    CustomLog $log_root/stepanel-$site-access.log combined
+</VirtualHost>
+EOF
+    chmod 0644 "$staged"
+    chown root:root "$staged"
+    mv -f "$staged" "$path"
+    if ! apache_test; then
+      if (( existed )); then mv -f "$backup" "$path"; else rm -f "$path"; fi
+      exit 1
+    fi
+    if ! apache_reload; then
+      if (( existed )); then mv -f "$backup" "$path"; else rm -f "$path"; fi
+      if apache_test; then apache_reload || true; fi
+      exit 1
+    fi
+    ;;
+  delete)
+    (( $# == 2 )) || { echo 'usage: stepanel-vhostctl delete NAME' >&2; exit 64; }
+    name=$2
+    [[ $name =~ ^site-[a-z0-9_-]{1,32}-[a-z0-9_-]+\.conf$ ]] || { echo 'invalid site route name' >&2; exit 1; }
+    path="$config_root/$name"
+    [[ -f $path ]] || { echo 'site route not found' >&2; exit 1; }
+    domain=$(awk 'tolower($1) == "servername" { print tolower($2); exit }' "$path")
+    [[ $domain =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo 'managed route has an invalid ServerName' >&2; exit 1; }
+    domain_in_use "$domain" "$path" && { echo 'another Apache vhost still serves this domain; remove its TLS or external vhost first' >&2; exit 1; }
+    backup=$(mktemp)
+    trap 'rm -f "$backup"' EXIT
+    cp -p "$path" "$backup"
+    rm -f "$path"
+    if ! apache_test; then mv -f "$backup" "$path"; exit 1; fi
+    if ! apache_reload; then mv -f "$backup" "$path"; if apache_test; then apache_reload || true; fi; exit 1; fi
+    ;;
+  *) echo 'usage: stepanel-vhostctl apply SITE DOMAIN | delete NAME' >&2; exit 64 ;;
+esac

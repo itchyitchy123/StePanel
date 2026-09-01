@@ -52,6 +52,7 @@ pool_existed=()
 pool_staged=()
 validators=()
 mapfile -t fpm_units < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
+(( ${#fpm_units[@]} > 0 )) || { echo 'PHP-FPM systemd unit was not found' >&2; exit 1; }
 
 rollback_pools() {
   local index
@@ -108,8 +109,9 @@ chdir = /
 catch_workers_output = yes
 clear_env = yes
 security.limit_extensions = .php
-php_admin_value[open_basedir] = $public_root:$php_state:/tmp
+php_admin_value[open_basedir] = $public_root:$php_state
 php_admin_value[session.save_path] = $php_state/sessions
+php_admin_value[sys_temp_dir] = $php_state/tmp
 php_admin_value[upload_tmp_dir] = $php_state/tmp
 EOF
   chmod 0644 "$staged"

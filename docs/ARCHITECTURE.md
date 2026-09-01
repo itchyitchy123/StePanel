@@ -39,6 +39,12 @@ SQL is executed through an ephemeral account with privileges only on the newly
 created target schema. Remote database deployments use the explicitly supplied
 credential and remain an operator-managed trust boundary.
 
+PHP site domains use a separate root-owned vhost helper. It serializes Apache
+configuration changes with Node proxy changes, rejects a domain already present
+in managed or existing Apache vhosts, binds PHP requests to an active per-site
+FPM socket, validates the complete Apache configuration, and restores the prior
+snippet if validation or reload fails.
+
 ## Durable restore state
 
 Restore and certificate jobs are recorded atomically before background work

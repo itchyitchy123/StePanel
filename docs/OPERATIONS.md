@@ -61,6 +61,15 @@ find /etc/php /etc/php-fpm.d -name 'stepanel-ACCOUNT.conf' -print 2>/dev/null
 systemctl status 'stepanel-app-ACCOUNT.service'
 ```
 
+Activate a restored PHP document root only after verification by calling
+`POST /api/sites/deploy` with its site and domain. Managed vhosts live under
+`/etc/apache2/stepanel-sites` or `/etc/httpd/conf.d/stepanel-sites`. Apache
+configuration changes are serialized, syntax-tested, and rolled back on reload
+failure. A domain already present in an existing vhost or Node proxy is refused.
+Certificate issuance uses the same Apache lock. Route deletion refuses to
+proceed while another vhost (including a TLS companion) still serves the domain;
+remove that external or certificate-managed vhost first.
+
 Upgrades from the legacy writable proxy directory disable its Apache include.
 Re-deploy each managed proxy through the panel so the validated helper creates
 the corresponding root-owned snippet.

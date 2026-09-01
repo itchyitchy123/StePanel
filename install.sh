@@ -93,9 +93,12 @@ fi
 
 WEB_GROUP="$([[ "$PKG" == "apt" ]] && printf www-data || printf apache)"
 getent group "$WEB_GROUP" >/dev/null || { echo "Apache group $WEB_GROUP was not created by the package installation." >&2; exit 1; }
-if [[ "$PKG" == "apt" ]]; then PROXY_ROOT=/etc/apache2/stepanel-proxy; else PROXY_ROOT=/etc/httpd/conf.d/stepanel-proxy; fi
+if [[ "$PKG" == "apt" ]]; then PROXY_ROOT=/etc/apache2/stepanel-proxy; VHOST_ROOT=/etc/apache2/stepanel-sites; else PROXY_ROOT=/etc/httpd/conf.d/stepanel-proxy; VHOST_ROOT=/etc/httpd/conf.d/stepanel-sites; fi
 
 systemctl enable --now "$DB_SERVICE"
+mapfile -t FPM_UNITS < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
+(( ${#FPM_UNITS[@]} > 0 )) || { echo 'No PHP-FPM systemd service was found after installation.' >&2; exit 1; }
+systemctl enable --now "${FPM_UNITS[@]}"
 DB_LOCAL_HELPER=0
 if [[ -z "$DB_USER" ]]; then
   [[ "$DB_HOST" == "localhost" ]] || { echo "Set STEPANEL_DB_USER and STEPANEL_DB_PASSWORD for a non-local database host." >&2; exit 1; }
@@ -230,7 +233,7 @@ configure_modsecurity() {
 if [[ "$INSTALL_MODSEC" == "1" ]]; then configure_modsecurity; fi
 
 install -d -m 0750 "$APP_DIR" "$DATA_DIR/imports" "$DATA_DIR/mail" "$DATA_DIR/apps" /var/www/sites
-install -d -m 0755 -o root -g root "$PROXY_ROOT"
+install -d -m 0755 -o root -g root "$PROXY_ROOT" "$VHOST_ROOT"
 install -d -m 0700 -o root -g root /var/lib/stepanel-privileged
 install -d -m 0755 "$APP_DIR/integrations"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
@@ -250,6 +253,7 @@ install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/in
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-proxyctl" /usr/local/sbin/stepanel-proxyctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-sitectl" /usr/local/sbin/stepanel-sitectl
+install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-vhostctl" /usr/local/sbin/stepanel-vhostctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-dbctl" /usr/local/sbin/stepanel-dbctl
 if [[ "$INSTALL_TLS" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-certbot" /usr/local/sbin/stepanel-certbot; fi
 if [[ -n "$FPM_LENS_BINARY" ]]; then install -m 0755 "$FPM_LENS_BINARY" /usr/local/bin/fpm-lens; fi
@@ -264,7 +268,7 @@ install -m 0644 -D "$ROOT_DIR/web/static/favicon.svg" "$APP_DIR/web/static/favic
 if [[ "$PKG" == "apt" ]]; then
   install -m 0644 "$ROOT_DIR/deploy/apache/stepanel.conf" /etc/apache2/sites-available/stepanel.conf
   sed -i "s/panel\.example\.com/$PANEL_HOSTNAME/g" /etc/apache2/sites-available/stepanel.conf
-  a2enmod proxy proxy_http headers >/dev/null
+  a2enmod proxy proxy_http proxy_fcgi setenvif rewrite headers >/dev/null
   if [[ -e /etc/apache2/conf-enabled/stepanel-proxy.conf ]]; then a2disconf stepanel-proxy >/dev/null; fi
   a2ensite stepanel >/dev/null
 else
@@ -309,6 +313,8 @@ trap 'rm -f "$env_tmp"' EXIT
   write_env STEPANEL_APPCTL /usr/local/sbin/stepanel-appctl
   write_env STEPANEL_PROXYCTL /usr/local/sbin/stepanel-proxyctl
   write_env STEPANEL_SITECTL /usr/local/sbin/stepanel-sitectl
+  write_env STEPANEL_VHOSTCTL /usr/local/sbin/stepanel-vhostctl
+  write_env STEPANEL_VHOST_ROOT "$VHOST_ROOT"
   if [[ "$DB_LOCAL_HELPER" == "1" ]]; then write_env STEPANEL_DBCTL /usr/local/sbin/stepanel-dbctl; fi
   write_env STEPANEL_AUDIT_LOG "$DATA_DIR/audit.jsonl"
   write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
@@ -329,13 +335,14 @@ install -m 0644 "$ROOT_DIR/deploy/stepanel.logrotate" /etc/logrotate.d/stepanel
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
 printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-appctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-proxyctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-sitectl *\n' "$APP_USER" "$APP_USER" "$APP_USER" > "$sudoers_tmp"
+printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-vhostctl *\n' "$APP_USER" >> "$sudoers_tmp"
 if [[ "$DB_LOCAL_HELPER" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-dbctl *\n' "$APP_USER" >> "$sudoers_tmp"; fi
 if [[ "$INSTALL_TLS" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-certbot *\n' "$APP_USER" >> "$sudoers_tmp"; fi
 visudo -cf "$sudoers_tmp" >/dev/null
 install -m 0440 -o root -g root "$sudoers_tmp" /etc/sudoers.d/stepanel
 if [[ "$INSTALL_SECURITY" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-malware-guard" /usr/local/sbin/stepanel-malware-guard; install -m 0644 "$ROOT_DIR/deploy/stepanel-malware-guard.service" /etc/systemd/system/stepanel-malware-guard.service; fi
 if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
-  command -v restorecon >/dev/null 2>&1 && restorecon -RF /opt/stepanel /var/lib/ste-panel /var/lib/stepanel-privileged /var/www/sites /etc/httpd/conf.d/stepanel.conf "$PROXY_ROOT"
+  command -v restorecon >/dev/null 2>&1 && restorecon -RF /opt/stepanel /var/lib/ste-panel /var/lib/stepanel-privileged /var/www/sites /etc/httpd/conf.d/stepanel.conf "$PROXY_ROOT" "$VHOST_ROOT"
   if command -v setsebool >/dev/null 2>&1; then setsebool -P httpd_can_network_connect 1; fi
 fi
 systemctl daemon-reload; systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" stepanel; systemctl reload "$APACHE_SERVICE" || true

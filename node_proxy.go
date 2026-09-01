@@ -91,7 +91,7 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
-	if safeUser(input.Site) == "" || !domainPattern.MatchString(strings.ToLower(input.Domain)) {
+	if safeUser(input.Site) == "" || len(input.Domain)+len(input.Site) > 220 || !domainPattern.MatchString(strings.ToLower(input.Domain)) {
 		http.Error(w, "invalid site or domain", 422)
 		return
 	}

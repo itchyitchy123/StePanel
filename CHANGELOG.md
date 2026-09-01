@@ -21,15 +21,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Docker, Kubernetes, Helm, and Terraform deployment assets, including pinned
   images/providers, persistent storage, health probes, and ingress support.
 - Debian/Ubuntu and RHEL-family Apache configurations plus audit-log rotation.
+- Transactional PHP site vhosts that route domains to active per-site PHP-FPM
+  sockets and reject conflicts with existing sites or Node proxies.
 
 ### Changed
 
 - The installer now requires a panel FQDN and a 12-character administrator
   password, stores only its bcrypt hash, generates a session secret, validates
   options before host mutations, and writes configuration atomically.
-- Local installations use a dedicated generated database credential with
-  explicit schema, data, and user-management privileges instead of socket-root
-  access or blanket server-administration rights.
+- Local installations use a root-owned, operation-scoped database helper; the
+  long-running control plane retains no local administrative credential.
 - Newly installed mail and FTP daemons remain disabled until explicitly
   activated; FTPS activation requires readable certificate and key paths.
 - Long-running restore jobs are allowed to finish during graceful shutdown,
@@ -41,7 +42,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   configured recovery window and rolling back uncommitted work at startup.
 - Host restores now provision deterministic per-site Unix identities, private
   PHP-FPM pools, isolated Node service users, and explicit control-plane ACLs;
-  site workloads are not members of Apache's shared filesystem group.
+  site workloads are not members of Apache's shared filesystem group and PHP
+  temporary files remain inside the site state directory.
 - Local database restores now stream through a root-owned helper using an
   importer restricted to the one new schema. Root-only pending-operation
   records and site transaction journals enable startup cleanup after interrupted
@@ -61,6 +63,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Concurrent cpmove and WordPress jobs can no longer restore into the same site.
 - Apache proxy snippets are rendered with valid HTTP backend URLs, tested before
   reload, and rolled back when validation or reload fails.
+- PHP site vhosts and Node proxies share an Apache configuration lock and reject
+  duplicate managed or pre-existing `ServerName` assignments; certificate
+  issuance participates in the same lock.
 - Fresh RHEL-family installation now selects the correct Apache group and
   installs an appropriate virtual-host configuration.
 - Partial mail-stack installations preserve existing daemons while keeping only
