@@ -26,6 +26,14 @@ type App struct {
 }
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "verify-backup" {
+		manifest, err := VerifySiteBackup(os.Args[2])
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, _ = fmt.Fprintf(os.Stdout, "%s  %s\n", manifest.ArchiveSHA256, filepath.Join(os.Args[2], manifest.Archive))
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "hash-password" {
 		password, err := io.ReadAll(io.LimitReader(os.Stdin, 1025))
 		if err != nil || len(password) == 0 || len(password) > 1024 || strings.ContainsAny(string(password), "\r\n") {
@@ -121,6 +129,7 @@ func main() {
 	mux.Handle("/api/sites", app.Auth.Require(http.HandlerFunc(app.siteList)))
 	mux.Handle("/api/sites/deploy", app.Auth.Require(http.HandlerFunc(app.siteDeploy)))
 	mux.Handle("/api/sites/", app.Auth.Require(http.HandlerFunc(app.siteManage)))
+	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
 	mux.Handle("/api/apps", app.Auth.Require(http.HandlerFunc(app.appList)))
 	mux.Handle("/api/apps/deploy", app.Auth.Require(http.HandlerFunc(app.appDeploy)))
 	mux.Handle("/api/apps/", app.Auth.Require(http.HandlerFunc(app.appAction)))

@@ -148,6 +148,8 @@ checkbox and should be backed up first.
 | `GET` | `/api/sites` | List managed PHP site vhosts |
 | `POST` | `/api/sites/deploy` | Validate and route a domain to its isolated PHP-FPM pool |
 | `DELETE` | `/api/sites/<config>` | Remove a managed PHP site vhost |
+| `GET` | `/api/backups` | List private verified backup artifacts |
+| `POST` | `/api/backups` | Queue a site backup with optional managed database dumps |
 | `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
 | `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |
@@ -168,6 +170,7 @@ checkbox and should be backed up first.
 | `STEPANEL_DB_ENGINE` | `mysql` or `mariadb` during installation |
 | `STEPANEL_DB_VERSION` | `default` or an exact repository version |
 | `STEPANEL_IMPORT_ROOT` | Private backup staging directory |
+| `STEPANEL_BACKUP_ROOT` | Private published backup directory; use a dedicated backup mount |
 | `STEPANEL_WEB_ROOT` | Site destination root |
 | `STEPANEL_VHOST_ROOT` | Root-owned Apache snippets for managed PHP sites |
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |

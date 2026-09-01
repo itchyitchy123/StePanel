@@ -6,7 +6,7 @@ import (
 )
 
 type Config struct {
-	Listen, ImportRoot, WebRoot, MailRoot, NVMDir                 string
+	Listen, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir     string
 	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl  string
 	SiteCtl, VHostCtl, Certbot, DBCtl                             string
 	WPressExtract, WPCLI, AuditLog, JobState, RecoveryRoot, Sudo  string
@@ -18,12 +18,15 @@ type Config struct {
 }
 
 func LoadConfig() Config {
-	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_LISTEN"); v != "" {
 		c.Listen = v
 	}
 	if v := os.Getenv("STEPANEL_IMPORT_ROOT"); v != "" {
 		c.ImportRoot = v
+	}
+	if v := os.Getenv("STEPANEL_BACKUP_ROOT"); v != "" {
+		c.BackupRoot = v
 	}
 	if v := os.Getenv("STEPANEL_WEB_ROOT"); v != "" {
 		c.WebRoot = v

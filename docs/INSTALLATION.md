@@ -79,6 +79,7 @@ outbound-network policy.
 | --- | --- |
 | `/opt/stepanel` | Binary and web assets |
 | `/var/lib/ste-panel/imports` | Private cpmove staging |
+| `/var/backups/stepanel` | Private, verified site backup artifacts |
 | `/var/lib/ste-panel/mail` | Private staged mailbox data |
 | `/etc/apache2/stepanel-proxy` or `/etc/httpd/conf.d/stepanel-proxy` | Root-owned managed Apache reverse-proxy snippets |
 | `/etc/apache2/stepanel-sites` or `/etc/httpd/conf.d/stepanel-sites` | Root-owned managed PHP site vhosts |

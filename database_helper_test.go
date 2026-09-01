@@ -29,7 +29,7 @@ func TestRestoreSQLUsesRestrictedHelper(t *testing.T) {
 	if len(failures) != 0 || len(restored) != 1 || restored[0] != "account_blog" {
 		t.Fatalf("restored = %#v, failures = %#v", restored, failures)
 	}
-	assertTestFile(t, argsPath, "restore account_blog\n")
+	assertTestFile(t, argsPath, "restore account_blog account\n")
 	assertTestFile(t, inputPath, "CREATE TABLE posts (id INT);")
 }
 
@@ -49,10 +49,10 @@ func TestWPressDatabaseHelperStreamsPasswordAndDump(t *testing.T) {
 	t.Setenv("TEST_ARGS", argsPath)
 	t.Setenv("TEST_INPUT", inputPath)
 	password := "Strong-Database_2026!"
-	if err := restoreWPressDatabaseWithHelper(Config{DBCtl: helper}, "site_wordpress", "site_wordpress", password, dump); err != nil {
+	if err := restoreWPressDatabaseWithHelper(Config{DBCtl: helper}, "site", "site_wordpress", "site_wordpress", password, dump); err != nil {
 		t.Fatal(err)
 	}
-	assertTestFile(t, argsPath, "restore-wordpress site_wordpress site_wordpress\n")
+	assertTestFile(t, argsPath, "restore-wordpress site_wordpress site_wordpress site\n")
 	data, err := os.ReadFile(inputPath)
 	if err != nil {
 		t.Fatal(err)

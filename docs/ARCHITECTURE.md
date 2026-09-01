@@ -55,3 +55,17 @@ transaction before deployment. Newly created database names and users are
 journaled in the same transaction before provisioning. Startup removes managed
 databases first and then rolls back every uncommitted site transaction.
 Recovery artifacts are retained for the same period as restore staging data.
+
+## Verified backups
+
+Backups are built outside the live site and recovery trees. Site files and
+optional locally managed database dumps are written into a private gzip/tar
+archive. The publisher records a SHA-256 digest for every regular entry and for
+the complete archive, then reopens and reads the entire archive before an atomic
+directory rename makes it visible. Database dumps use single-transaction mode;
+the root helper only dumps databases whose ownership ledger matches the site.
+
+This verifies artifact integrity, not application-level consistency for files
+or nontransactional database tables that change during the backup. Put
+`STEPANEL_BACKUP_ROOT` on a dedicated backup filesystem, replicate completed
+directories off-host or to immutable storage, and run periodic restore drills.

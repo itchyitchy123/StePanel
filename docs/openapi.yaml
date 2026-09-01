@@ -89,6 +89,27 @@ paths:
       responses:
         '200': {description: Vhost removed and Apache reloaded}
         '404': {description: Managed route not found}
+  /api/backups:
+    get:
+      summary: List published site backup summaries
+      responses:
+        '200': {description: Backup paths, checksums, sizes, databases, and verification times}
+    post:
+      summary: Queue a verified site backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site]
+              properties:
+                site: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}
+                include_databases: {type: boolean, default: false}
+      responses:
+        '202': {description: Backup job queued}
+        '422': {description: Invalid site or unavailable managed-database helper}
+        '429': {description: Site already has an active restore or backup job}
   /api/cpmove/inspect:
     post:
       summary: Inspect a cPanel backup archive

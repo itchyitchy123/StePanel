@@ -23,6 +23,7 @@ type Job struct {
 	Result      *ImportResult      `json:"result,omitempty"`
 	WPress      *WPressResult      `json:"wpress,omitempty"`
 	Certificate *CertificateResult `json:"certificate,omitempty"`
+	Backup      *BackupResult      `json:"backup,omitempty"`
 	Error       string             `json:"error,omitempty"`
 	StartedAt   time.Time          `json:"started_at"`
 	FinishedAt  *time.Time         `json:"finished_at,omitempty"`
@@ -247,6 +248,36 @@ func (j *Jobs) Submit(id, user string, work func() (ImportResult, error)) error 
 		} else {
 			item.State = "completed"
 			item.Result = &result
+		}
+		j.mu.Unlock()
+		j.complete(item)
+	}()
+	return nil
+}
+
+func (j *Jobs) SubmitBackup(id, site string, work func() (BackupResult, error)) error {
+	if !j.reserve(site) {
+		return ErrJobBusy
+	}
+	item := &Job{ID: id, Kind: "site.backup", State: "running", User: site, StartedAt: time.Now().UTC()}
+	if err := j.add(item); err != nil {
+		j.release(site)
+		return fmt.Errorf("persist queued job: %w", err)
+	}
+	j.wg.Add(1)
+	go func() {
+		defer j.wg.Done()
+		defer j.release(site)
+		result, err := work()
+		now := time.Now().UTC()
+		j.mu.Lock()
+		item.FinishedAt = &now
+		if err != nil {
+			item.State = "failed"
+			item.Error = err.Error()
+		} else {
+			item.State = "completed"
+			item.Backup = &result
 		}
 		j.mu.Unlock()
 		j.complete(item)

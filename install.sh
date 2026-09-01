@@ -237,6 +237,7 @@ install -d -m 0755 -o root -g root "$PROXY_ROOT" "$VHOST_ROOT"
 install -d -m 0700 -o root -g root /var/lib/stepanel-privileged
 install -d -m 0755 "$APP_DIR/integrations"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
+install -d -m 0750 -o "$APP_USER" -g "$APP_USER" /var/backups/stepanel
 usermod -a -G "$WEB_GROUP" "$APP_USER"
 if [[ "$INSTALL_NODE" == "1" ]]; then bash "$ROOT_DIR/deploy/integrations/install-node-nvm.sh" "$APP_USER" "$APP_DIR/.nvm" "$NODE_VERSIONS"; fi
 if [[ "$INSTALL_SECURITY" == "1" ]]; then
@@ -317,6 +318,7 @@ trap 'rm -f "$env_tmp"' EXIT
   write_env STEPANEL_VHOST_ROOT "$VHOST_ROOT"
   if [[ "$DB_LOCAL_HELPER" == "1" ]]; then write_env STEPANEL_DBCTL /usr/local/sbin/stepanel-dbctl; fi
   write_env STEPANEL_AUDIT_LOG "$DATA_DIR/audit.jsonl"
+  write_env STEPANEL_BACKUP_ROOT /var/backups/stepanel
   write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
   write_env STEPANEL_RECOVERY_ROOT /var/www/sites/.stepanel-recovery
   write_env STEPANEL_WPRESS_EXTRACT "$WPRESS_EXTRACT"
@@ -342,7 +344,7 @@ visudo -cf "$sudoers_tmp" >/dev/null
 install -m 0440 -o root -g root "$sudoers_tmp" /etc/sudoers.d/stepanel
 if [[ "$INSTALL_SECURITY" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-malware-guard" /usr/local/sbin/stepanel-malware-guard; install -m 0644 "$ROOT_DIR/deploy/stepanel-malware-guard.service" /etc/systemd/system/stepanel-malware-guard.service; fi
 if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
-  command -v restorecon >/dev/null 2>&1 && restorecon -RF /opt/stepanel /var/lib/ste-panel /var/lib/stepanel-privileged /var/www/sites /etc/httpd/conf.d/stepanel.conf "$PROXY_ROOT" "$VHOST_ROOT"
+  command -v restorecon >/dev/null 2>&1 && restorecon -RF /opt/stepanel /var/lib/ste-panel /var/lib/stepanel-privileged /var/backups/stepanel /var/www/sites /etc/httpd/conf.d/stepanel.conf "$PROXY_ROOT" "$VHOST_ROOT"
   if command -v setsebool >/dev/null 2>&1; then setsebool -P httpd_can_network_connect 1; fi
 fi
 systemctl daemon-reload; systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" stepanel; systemctl reload "$APACHE_SERVICE" || true

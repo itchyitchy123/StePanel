@@ -23,6 +23,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Debian/Ubuntu and RHEL-family Apache configurations plus audit-log rotation.
 - Transactional PHP site vhosts that route domains to active per-site PHP-FPM
   sockets and reject conflicts with existing sites or Node proxies.
+- Private site backup jobs with optional ownership-scoped database dumps,
+  per-entry and whole-archive SHA-256 manifests, atomic publication, and a
+  repeatable offline verification command.
 
 ### Changed
 
@@ -61,6 +64,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Failed SQL imports drop partially imported databases instead of leaving
   inconsistent state, and orphaned upload archives are included in retention.
 - Concurrent cpmove and WordPress jobs can no longer restore into the same site.
+- Backups share the per-site job lock with restores, preventing an internally
+  initiated backup from racing a site replacement.
 - Apache proxy snippets are rendered with valid HTTP backend URLs, tested before
   reload, and rolled back when validation or reload fails.
 - PHP site vhosts and Node proxies share an Apache configuration lock and reject

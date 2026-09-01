@@ -42,9 +42,12 @@
   administration credential; compromise requires credential rotation and a
   database integrity review. Local installs instead use the restricted helper.
 - TLS and MFA/OIDC remain deployment responsibilities or roadmap items.
+- Backup checksums detect corruption but are not signatures. An actor able to
+  modify both an archive and its manifest can replace both.
 
 ## Operator requirements
 
 Run StePanel behind HTTPS, restrict the listener to a private interface or
 reverse proxy, snapshot the destination before restores, and review the audit
-log after every import.
+log after every import. Replicate completed backup directories to independently
+controlled immutable or off-host storage and verify them again there.

@@ -336,7 +336,7 @@ func restoreSQL(cfg Config, stage, user string, txn *SiteTransaction) ([]string,
 				cancel()
 				continue
 			}
-			cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore", name)
+			cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore", name, user)
 			cmd.Stdin = input
 			output, restoreErr := cmd.CombinedOutput()
 			_ = input.Close()

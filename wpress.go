@@ -243,7 +243,7 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 		return WPressResult{}, fmt.Errorf("record database recovery state: %w", err)
 	}
 	if cfg.DBCtl != "" {
-		if err := restoreWPressDatabaseWithHelper(cfg, dbName, dbUser, dbPassword, filepath.Join(source, "database.sql")); err != nil {
+		if err := restoreWPressDatabaseWithHelper(cfg, site, dbName, dbUser, dbPassword, filepath.Join(source, "database.sql")); err != nil {
 			return WPressResult{}, err
 		}
 	} else {
@@ -457,7 +457,7 @@ func cleanupWPressDatabase(cfg Config, dbName, dbUser string) error {
 	return err
 }
 
-func restoreWPressDatabaseWithHelper(cfg Config, dbName, dbUser, password, dump string) error {
+func restoreWPressDatabaseWithHelper(cfg Config, site, dbName, dbUser, password, dump string) error {
 	input, err := os.Open(dump)
 	if err != nil {
 		return err
@@ -465,7 +465,7 @@ func restoreWPressDatabaseWithHelper(cfg Config, dbName, dbUser, password, dump 
 	defer input.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore-wordpress", dbName, dbUser)
+	cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore-wordpress", dbName, dbUser, site)
 	cmd.Stdin = io.MultiReader(strings.NewReader(password+"\n"), input)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("restore WordPress database: %w: %s", err, strings.TrimSpace(string(output)))

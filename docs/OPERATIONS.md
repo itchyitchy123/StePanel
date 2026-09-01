@@ -37,6 +37,27 @@ Check `stepanel_restore_jobs_active` before package upgrades or planned reboots.
 Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
 `/var/lib/ste-panel` before upgrading.
 
+## Verified site backups
+
+Queue a filesystem-only backup, or include databases registered to the site by
+the local database helper:
+
+```sh
+curl -fsS -X POST -H 'Content-Type: application/json' \
+  --data '{"site":"ACCOUNT","include_databases":true}' \
+  http://127.0.0.1:8090/api/backups
+/opt/stepanel/stepanel verify-backup /var/backups/stepanel/TIMESTAMP-ACCOUNT
+sha256sum -c /var/backups/stepanel/TIMESTAMP-ACCOUNT/backup.tar.gz.sha256
+```
+
+API calls require the normal authenticated session and CSRF token; the command
+above illustrates the request body. A backup is published only after every tar
+entry and its whole-archive checksum verify. Copy the complete timestamped
+directory to off-host or immutable storage and perform scheduled restore drills.
+Live file writes and nontransactional database tables are not quiesced, so use
+application maintenance mode or storage/database snapshots when a point-in-time
+consistent backup is required. Backups are not deleted by staging retention.
+
 Job records are persisted in `/var/lib/ste-panel/jobs.json`. Site overwrites
 move the previous document root into a journaled transaction under
 `/var/www/sites/.stepanel-recovery`. On startup, StePanel marks interrupted jobs

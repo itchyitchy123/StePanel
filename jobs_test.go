@@ -43,6 +43,32 @@ func TestJobsPersistCompletedWork(t *testing.T) {
 	}
 }
 
+func TestJobsPersistCompletedBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobs.json")
+	jobs, err := OpenJobs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := jobs.SubmitBackup("backup-1", "site", func() (BackupResult, error) {
+		return BackupResult{Site: "site", Path: "/backups/site", ArchiveSHA256: strings.Repeat("a", 64)}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := jobs.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenJobs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, ok := reopened.Get("backup-1")
+	if !ok || job.State != "completed" || job.Backup == nil || job.Backup.Site != "site" {
+		t.Fatalf("persisted backup job = %#v, found = %v", job, ok)
+	}
+}
+
 func TestOpenJobsReconcilesInterruptedWork(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jobs.json")
 	store := jobStore{Version: 1, Jobs: []*Job{{ID: "restore-1", Kind: "cpmove.restore", State: "running", User: "site", StartedAt: time.Now().Add(-time.Minute)}}}

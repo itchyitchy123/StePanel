@@ -18,18 +18,32 @@ if [[ $action == reconcile ]]; then
     value=$(<"$record")
     case "$value" in
       pending-cpmove:*)
-        importer=${value#pending-cpmove:}
+        importer=${value##*:}
         [[ $importer =~ ^spi_[a-f0-9]{16}$ ]] || { echo "invalid importer registry for $database" >&2; exit 1; }
         "${admin[@]}" --execute "DROP DATABASE IF EXISTS \`$database\`; DROP USER IF EXISTS '$importer'@'localhost'"
         rm -f "$record"
         ;;
       pending-wordpress:*)
-        db_user=${value#pending-wordpress:}
+        db_user=${value##*:}
         [[ $db_user =~ ^[a-z0-9_]{1,32}$ ]] || { echo "invalid registry user for $database" >&2; exit 1; }
         "${admin[@]}" --execute "DROP DATABASE IF EXISTS \`$database\`; DROP USER IF EXISTS '$db_user'@'localhost'"
         rm -f "$record"
         ;;
     esac
+  done
+  exit 0
+fi
+
+if [[ $action == list ]]; then
+  (( $# == 2 )) || { echo 'usage: stepanel-dbctl list SITE' >&2; exit 64; }
+  site=$2
+  [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
+  for record in "$registry"/*; do
+    [[ -f $record ]] || continue
+    database=${record##*/}
+    [[ $database =~ ^[a-z0-9_]{1,64}$ ]] || { echo "invalid registry entry: $database" >&2; exit 1; }
+    value=$(<"$record")
+    [[ $value == "cpmove:$site" || $value == "wordpress:$site:"* ]] && printf '%s\t%s\n' "$database" "$value"
   done
   exit 0
 fi
@@ -56,7 +70,9 @@ drop_database() { "${admin[@]}" --execute "DROP DATABASE IF EXISTS \`$database\`
 
 case "$action" in
   restore)
-    (( $# == 2 )) || { echo 'usage: stepanel-dbctl restore DATABASE' >&2; exit 64; }
+    (( $# == 3 )) || { echo 'usage: stepanel-dbctl restore DATABASE SITE' >&2; exit 64; }
+    site=$3
+    [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
     database_exists && { echo 'database already exists' >&2; exit 1; }
     importer="spi_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
     password=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
@@ -72,17 +88,19 @@ case "$action" in
       exit "$status"
     }
     trap cleanup EXIT
-    register_database "pending-cpmove:$importer"
+    register_database "pending-cpmove:$site:$importer"
     "${admin[@]}" --execute "CREATE DATABASE \`$database\`"
     database_created=1
     "${admin[@]}" --execute "CREATE USER '$importer'@'localhost' IDENTIFIED BY '$password'; GRANT ALL PRIVILEGES ON \`$database\`.* TO '$importer'@'localhost';"
     MYSQL_PWD="$password" "$client" --protocol=socket --user="$importer" "$database"
-    register_database cpmove
+    register_database "cpmove:$site"
     ;;
   restore-wordpress)
-    (( $# == 3 )) || { echo 'usage: stepanel-dbctl restore-wordpress DATABASE USER' >&2; exit 64; }
+    (( $# == 4 )) || { echo 'usage: stepanel-dbctl restore-wordpress DATABASE USER SITE' >&2; exit 64; }
     db_user=$3
+    site=$4
     [[ $db_user =~ ^[a-z0-9_]{1,32}$ ]] || { echo 'invalid database user' >&2; exit 1; }
+    [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
     IFS= read -r password
     [[ $password =~ ^[A-Za-z0-9!@#%^*_=+.,:-]{16,128}$ ]] || { echo 'invalid database password' >&2; exit 1; }
     database_exists && { echo 'database already exists' >&2; exit 1; }
@@ -101,30 +119,41 @@ case "$action" in
       exit "$status"
     }
     trap cleanup EXIT
-    register_database "pending-wordpress:$db_user"
+    register_database "pending-wordpress:$site:$db_user"
     "${admin[@]}" --execute "CREATE DATABASE \`$database\`"
     database_created=1
     "${admin[@]}" --execute "CREATE USER '$db_user'@'localhost' IDENTIFIED BY '$password'"
     user_created=1
     "${admin[@]}" --execute "GRANT ALL PRIVILEGES ON \`$database\`.* TO '$db_user'@'localhost'"
     MYSQL_PWD="$password" "$client" --protocol=socket --user="$db_user" "$database"
-    register_database "wordpress:$db_user"
+    register_database "wordpress:$site:$db_user"
     ;;
   cleanup-wordpress)
     (( $# == 3 )) || { echo 'usage: stepanel-dbctl cleanup-wordpress DATABASE USER' >&2; exit 64; }
     db_user=$3
     [[ $db_user =~ ^[a-z0-9_]{1,32}$ ]] || { echo 'invalid database user' >&2; exit 1; }
     [[ -f $record ]] || exit 0
-    grep -Fxq "wordpress:$db_user" "$record" || { echo 'database is not registered to this WordPress user' >&2; exit 1; }
+    value=$(<"$record")
+    [[ $value == "wordpress:$db_user" || $value == wordpress:*:"$db_user" ]] || { echo 'database is not registered to this WordPress user' >&2; exit 1; }
     "${admin[@]}" --execute "DROP DATABASE IF EXISTS \`$database\`; DROP USER IF EXISTS '$db_user'@'localhost'"
     rm -f "$record"
     ;;
   drop)
     (( $# == 2 )) || { echo 'usage: stepanel-dbctl drop DATABASE' >&2; exit 64; }
     [[ -f $record ]] || exit 0
-    grep -Fxq cpmove "$record" || { echo 'database is not registered as a cpmove restore' >&2; exit 1; }
+    value=$(<"$record")
+    [[ $value == cpmove || $value == cpmove:* ]] || { echo 'database is not registered as a cpmove restore' >&2; exit 1; }
     drop_database
     rm -f "$record"
     ;;
-  *) echo 'usage: stepanel-dbctl reconcile|restore|restore-wordpress|cleanup-wordpress|drop ...' >&2; exit 64 ;;
+  dump)
+    (( $# == 2 )) || { echo 'usage: stepanel-dbctl dump DATABASE' >&2; exit 64; }
+    [[ -f $record ]] || { echo 'database is not registered as managed' >&2; exit 1; }
+    value=$(<"$record")
+    [[ $value == cpmove || $value == cpmove:* || $value == wordpress:* ]] || { echo 'database provisioning is incomplete' >&2; exit 1; }
+    dump_client=mysqldump
+    command -v mariadb-dump >/dev/null 2>&1 && dump_client=mariadb-dump
+    "$dump_client" --no-defaults --protocol=socket --single-transaction --quick --routines --events --triggers --hex-blob "$database"
+    ;;
+  *) echo 'usage: stepanel-dbctl reconcile|list|restore|restore-wordpress|cleanup-wordpress|drop|dump ...' >&2; exit 64 ;;
 esac
