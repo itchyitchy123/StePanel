@@ -125,3 +125,21 @@ func TestJobsRejectConcurrentRestoresForSameSite(t *testing.T) {
 	}
 	close(release)
 }
+
+func TestJobsEnforceConfiguredGlobalCapacity(t *testing.T) {
+	jobs := newJobs("", 1)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	if err := jobs.Submit("job-1", "site-one", func() (ImportResult, error) {
+		close(started)
+		<-release
+		return ImportResult{}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := jobs.Submit("job-2", "site-two", func() (ImportResult, error) { return ImportResult{}, nil }); !errors.Is(err, ErrJobBusy) {
+		t.Fatalf("capacity error = %v, want ErrJobBusy", err)
+	}
+	close(release)
+}

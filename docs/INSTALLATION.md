@@ -88,6 +88,9 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_INSTALL_TLS` | `0` or `1` | Install Certbot and the Apache certificate integration |
 | `STEPANEL_STAGE_RETENTION_HOURS` | Positive hours | Retain completed restore staging directories for audit |
 | `STEPANEL_MIN_FREE_BYTES` | Bytes | Refuse new restores below this free-space threshold |
+| `STEPANEL_MAX_UPLOAD_BYTES` | Bytes, up to 20 GiB | Maximum compressed restore request size |
+| `STEPANEL_MAX_ARCHIVE_ENTRIES` | `1`–`1000000` | Maximum filesystem entries in a restore or backup |
+| `STEPANEL_MAX_CONCURRENT_JOBS` | `1`–`32` | Global restore, backup, and certificate job slots |
 
 It also enables the Apache proxy, proxy_http, proxy_fcgi, setenvif, rewrite, and headers modules on
 Debian-family systems and writes the requested hostname into the generated
@@ -138,7 +141,8 @@ Copy `deploy/apache/stepanel.conf` to the Apache configuration directory, replac
 ```sh
 systemctl status stepanel
 journalctl -u stepanel -f
-curl http://127.0.0.1:8090/api/health
+curl -i http://127.0.0.1:8090/livez
+curl -fsS http://127.0.0.1:8090/readyz | jq
 ```
 
 ## Uninstall

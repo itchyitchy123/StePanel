@@ -8,6 +8,19 @@ servers:
 security:
   - sessionCookie: []
 paths:
+  /livez:
+    get:
+      security: []
+      summary: Process liveness only
+      responses:
+        '204': {description: Process event loop is responding}
+  /readyz:
+    get:
+      security: []
+      summary: Persistent state and storage capacity readiness
+      responses:
+        '200': {description: Control plane can safely accept work}
+        '503': {description: Job persistence or a managed filesystem is unavailable or below its free-space floor}
   /api/health:
     get:
       security: []

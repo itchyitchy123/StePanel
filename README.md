@@ -136,6 +136,8 @@ checkbox and should be backed up first.
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Version and service health |
+| `GET` | `/livez` | Process-only liveness probe |
+| `GET` | `/readyz` | Job persistence and managed-filesystem readiness probe |
 | `GET` | `/api/services` | Authenticated live Apache, PHP, database, Fail2Ban, and ModSecurity inventory |
 | `GET` | `/api/ftp` | Authenticated vsftpd status, chroot posture, and passive-port configuration |
 | `GET` | `/api/security/audit` | Authenticated configuration and security posture checks |
@@ -185,6 +187,9 @@ checkbox and should be backed up first.
 | `STEPANEL_METRICS_PUBLIC` | Set to `1` only when Prometheus metrics must be unauthenticated |
 | `STEPANEL_STAGE_RETENTION_HOURS` | Retention for completed restore staging directories; default `168` |
 | `STEPANEL_MIN_FREE_BYTES` | Minimum free space required before accepting a restore; default `1073741824` |
+| `STEPANEL_MAX_UPLOAD_BYTES` | Per-request restore upload limit, at most 20 GiB |
+| `STEPANEL_MAX_ARCHIVE_ENTRIES` | Restore/backup entry-count ceiling, at most 1,000,000 |
+| `STEPANEL_MAX_CONCURRENT_JOBS` | Global long-running job limit, `1`–`32`; per-site limit remains one |
 
 Set `STEPANEL_INSTALL_MAIL=1` during installation to install Exim, Dovecot,
 and SpamAssassin.

@@ -6,19 +6,20 @@ import (
 )
 
 type Config struct {
-	Listen, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir     string
-	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl  string
-	SiteCtl, VHostCtl, Certbot, DBCtl                             string
-	WPressExtract, WPCLI, AuditLog, JobState, RecoveryRoot, Sudo  string
-	DBHost, DBUser, DBPassword                                    string
-	Production                                                    bool
-	MaxUpload                                                     int64
-	MaxEntries, StageRetentionHours, FTPPassiveMin, FTPPassiveMax int
-	MinFreeBytes                                                  uint64
+	Listen, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir    string
+	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl string
+	SiteCtl, VHostCtl, Certbot, DBCtl                            string
+	WPressExtract, WPCLI, AuditLog, JobState, RecoveryRoot, Sudo string
+	DBHost, DBUser, DBPassword                                   string
+	Production                                                   bool
+	MaxUpload                                                    int64
+	MaxEntries, MaxConcurrentJobs, StageRetentionHours           int
+	FTPPassiveMin, FTPPassiveMax                                 int
+	MinFreeBytes                                                 uint64
 }
 
 func LoadConfig() Config {
-	c := Config{Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_LISTEN"); v != "" {
 		c.Listen = v
 	}
@@ -89,6 +90,15 @@ func LoadConfig() Config {
 	c.DBUser = os.Getenv("STEPANEL_DB_USER")
 	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
 	c.Production = os.Getenv("STEPANEL_ENV") == "production"
+	if v, err := strconv.ParseInt(os.Getenv("STEPANEL_MAX_UPLOAD_BYTES"), 10, 64); err == nil && v > 0 && v <= 20<<30 {
+		c.MaxUpload = v
+	}
+	if v, err := strconv.Atoi(os.Getenv("STEPANEL_MAX_ARCHIVE_ENTRIES")); err == nil && v > 0 && v <= 1000000 {
+		c.MaxEntries = v
+	}
+	if v, err := strconv.Atoi(os.Getenv("STEPANEL_MAX_CONCURRENT_JOBS")); err == nil && v > 0 && v <= 32 {
+		c.MaxConcurrentJobs = v
+	}
 	if v, err := strconv.Atoi(os.Getenv("STEPANEL_STAGE_RETENTION_HOURS")); err == nil && v > 0 {
 		c.StageRetentionHours = v
 	}

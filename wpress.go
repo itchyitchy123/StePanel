@@ -97,6 +97,10 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "WPress dependencies are not installed; check /api/wpress/preflight", http.StatusServiceUnavailable)
 		return
 	}
+	if err := restoreCapacity(a.Config); err != nil {
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "invalid upload: "+err.Error(), http.StatusBadRequest)
@@ -186,6 +190,13 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	extracted := filepath.Join(stage, "extracted")
 	if err := runCommand(20*time.Minute, cfg.WPressExtract, "--out", extracted, archive); err != nil {
 		return WPressResult{}, fmt.Errorf("extract archive: %w", err)
+	}
+	maxEntries := cfg.MaxEntries
+	if maxEntries <= 0 {
+		maxEntries = 1000000
+	}
+	if err := validateWPressTree(extracted, maxEntries); err != nil {
+		return WPressResult{}, err
 	}
 	source := findWordPressRoot(extracted)
 	if source == "" || !fileExists(filepath.Join(source, "database.sql")) {
@@ -299,6 +310,33 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	}
 	committed = true
 	return WPressResult{Site: site, Home: home, Database: dbName, DatabaseUser: dbUser, SourcePrefix: sourcePrefix, TargetPrefix: targetPrefix, FilesRestored: true, DatabaseRestored: true, URLReplaced: urlReplaced, StagedAt: txn.dir}, nil
+}
+
+func validateWPressTree(root string, maxEntries int) error {
+	entries := 0
+	var total int64
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		entries++
+		if entries > maxEntries {
+			return errors.New("extracted WPress backup contains too many entries")
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("extracted WPress backup contains a symlink: %s", path)
+		}
+		if !info.IsDir() && !info.Mode().IsRegular() {
+			return fmt.Errorf("extracted WPress backup contains a special file: %s", path)
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+			if info.Size() > 2<<30 || total > maxBackupBytes {
+				return errors.New("extracted WPress backup exceeds restore size limits")
+			}
+		}
+		return nil
+	})
 }
 
 func findWordPressRoot(root string) string {

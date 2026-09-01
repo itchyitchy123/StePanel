@@ -55,6 +55,9 @@ WPCLI="${STEPANEL_WPCLI:-wp}"
 PANEL_HOSTNAME="${STEPANEL_PANEL_HOSTNAME:-}"
 STAGE_RETENTION_HOURS="${STEPANEL_STAGE_RETENTION_HOURS:-168}"
 MIN_FREE_BYTES="${STEPANEL_MIN_FREE_BYTES:-1073741824}"
+MAX_UPLOAD_BYTES="${STEPANEL_MAX_UPLOAD_BYTES:-21474836480}"
+MAX_ARCHIVE_ENTRIES="${STEPANEL_MAX_ARCHIVE_ENTRIES:-1000000}"
+MAX_CONCURRENT_JOBS="${STEPANEL_MAX_CONCURRENT_JOBS:-2}"
 unset STEPANEL_ADMIN_PASSWORD STEPANEL_SESSION_SECRET STEPANEL_DB_PASSWORD
 if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then read -r -s -p "StePanel admin password: " ADMIN_PASSWORD; echo; fi
 if [[ -z "$ADMIN_PASSWORD" && -z "$EXISTING_ADMIN_PASSWORD_HASH" ]]; then echo "Set STEPANEL_ADMIN_PASSWORD or run the installer interactively." >&2; exit 1; fi
@@ -96,6 +99,9 @@ if [[ "$INSTALL_SECURITY" != "0" && "$INSTALL_SECURITY" != "1" ]]; then echo "ST
 if [[ "$INSTALL_TLS" != "0" && "$INSTALL_TLS" != "1" ]]; then echo "STEPANEL_INSTALL_TLS must be 0 or 1." >&2; exit 1; fi
 if [[ ! "$STAGE_RETENTION_HOURS" =~ ^[1-9][0-9]*$ ]]; then echo "STEPANEL_STAGE_RETENTION_HOURS must be a positive integer." >&2; exit 1; fi
 if [[ ! "$MIN_FREE_BYTES" =~ ^[1-9][0-9]*$ ]]; then echo "STEPANEL_MIN_FREE_BYTES must be a positive integer." >&2; exit 1; fi
+if [[ ! $MAX_UPLOAD_BYTES =~ ^[1-9][0-9]*$ ]] || (( MAX_UPLOAD_BYTES > 21474836480 )); then echo 'STEPANEL_MAX_UPLOAD_BYTES must be between 1 and 21474836480.' >&2; exit 1; fi
+if [[ ! $MAX_ARCHIVE_ENTRIES =~ ^[1-9][0-9]*$ ]] || (( MAX_ARCHIVE_ENTRIES > 1000000 )); then echo 'STEPANEL_MAX_ARCHIVE_ENTRIES must be between 1 and 1000000.' >&2; exit 1; fi
+if [[ ! $MAX_CONCURRENT_JOBS =~ ^[1-9][0-9]*$ ]] || (( MAX_CONCURRENT_JOBS > 32 )); then echo 'STEPANEL_MAX_CONCURRENT_JOBS must be between 1 and 32.' >&2; exit 1; fi
 [[ "$NODE_VERSIONS" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(,v?[0-9]+\.[0-9]+\.[0-9]+)*$ ]] || { echo "Invalid STEPANEL_NODE_VERSIONS." >&2; exit 1; }
 
 # shellcheck source=/etc/os-release
@@ -441,6 +447,9 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_SUDO /usr/bin/sudo
   write_env STEPANEL_STAGE_RETENTION_HOURS "$STAGE_RETENTION_HOURS"
   write_env STEPANEL_MIN_FREE_BYTES "$MIN_FREE_BYTES"
+  write_env STEPANEL_MAX_UPLOAD_BYTES "$MAX_UPLOAD_BYTES"
+  write_env STEPANEL_MAX_ARCHIVE_ENTRIES "$MAX_ARCHIVE_ENTRIES"
+  write_env STEPANEL_MAX_CONCURRENT_JOBS "$MAX_CONCURRENT_JOBS"
   write_env STEPANEL_FTP_PASSIVE_MIN "$FTP_PASSIVE_MIN"
   write_env STEPANEL_FTP_PASSIVE_MAX "$FTP_PASSIVE_MAX"
   if [[ "$INSTALL_TLS" == "1" || -x /usr/local/sbin/stepanel-certbot ]]; then write_env STEPANEL_CERTBOT /usr/local/sbin/stepanel-certbot; fi
@@ -469,7 +478,7 @@ systemctl reload "$APACHE_SERVICE"
 systemctl enable --now stepanel.service
 health_ready=0
 for _ in {1..30}; do
-  if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8090/api/health >/dev/null; then health_ready=1; break; fi
+  if curl --fail --silent --max-time 2 http://127.0.0.1:8090/readyz >/dev/null; then health_ready=1; break; fi
   sleep 1
 done
 (( health_ready == 1 )) || { echo 'StePanel failed its post-install health check.' >&2; false; }

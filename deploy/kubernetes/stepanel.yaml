@@ -97,14 +97,14 @@ spec:
                   key: session-secret
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /readyz
               port: http
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /livez
               port: http
             initialDelaySeconds: 15
             periodSeconds: 20

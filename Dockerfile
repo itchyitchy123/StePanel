@@ -7,7 +7,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.Commit=docker -X ma
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates mariadb-client \
+    && apt-get install -y --no-install-recommends ca-certificates curl mariadb-client \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --user-group --home-dir /opt/stepanel --shell /usr/sbin/nologin stepanel \
     && mkdir -p /opt/stepanel/web/static /var/lib/ste-panel/imports /var/www/sites \
@@ -20,6 +20,7 @@ WORKDIR /opt/stepanel
 ENV HOME=/opt/stepanel \
     STEPANEL_LISTEN=:8080 \
     STEPANEL_IMPORT_ROOT=/var/lib/ste-panel/imports \
+    STEPANEL_BACKUP_ROOT=/var/lib/ste-panel/backups \
     STEPANEL_WEB_ROOT=/var/www \
     STEPANEL_MAIL_ROOT=/var/lib/ste-panel/mail \
     STEPANEL_NVM_DIR=/var/lib/ste-panel/nvm \
@@ -30,4 +31,5 @@ ENV HOME=/opt/stepanel \
     STEPANEL_JOB_STATE=/var/lib/ste-panel/jobs.json \
     STEPANEL_RECOVERY_ROOT=/var/www/sites/.stepanel-recovery
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["curl", "--fail", "--silent", "http://127.0.0.1:8080/readyz"]
 ENTRYPOINT ["/opt/stepanel/stepanel"]

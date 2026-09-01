@@ -52,8 +52,13 @@ func main() {
 			log.Fatalf("reconcile interrupted database operations: %v: %s", err, strings.TrimSpace(string(output)))
 		}
 	}
-	if err := os.MkdirAll(cfg.ImportRoot, 0750); err != nil {
-		log.Fatal(err)
+	for _, directory := range []struct {
+		path string
+		mode os.FileMode
+	}{{cfg.ImportRoot, 0750}, {cfg.BackupRoot, 0750}, {filepath.Dir(cfg.JobState), 0750}, {cfg.RecoveryRoot, 0700}} {
+		if err := os.MkdirAll(directory.path, directory.mode); err != nil {
+			log.Fatalf("initialize managed directory %s: %v", directory.path, err)
+		}
 	}
 	databaseRecoveries, err := RecoverTransactionDatabases(cfg, cfg.RecoveryRoot)
 	if err != nil {
@@ -88,7 +93,7 @@ func main() {
 		log.Fatal("authentication must be configured in production")
 	}
 	view := template.Must(template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).ParseFiles("web/index.html"))
-	jobs, err := OpenJobs(cfg.JobState)
+	jobs, err := OpenJobs(cfg.JobState, cfg.MaxConcurrentJobs)
 	if err != nil {
 		log.Fatalf("open persistent job state: %v", err)
 	}
@@ -110,6 +115,8 @@ func main() {
 		}
 	}()
 	mux := http.NewServeMux()
+	mux.HandleFunc("/livez", app.livez)
+	mux.HandleFunc("/readyz", app.readyz)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	mux.HandleFunc("/login", app.Auth.Login)
 	mux.HandleFunc("/logout", app.Auth.Logout)
@@ -234,8 +241,8 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "type IMPORT to authorize restore", 400)
 		return
 	}
-	if free, err := availableBytes(a.Config.ImportRoot); err == nil && free < a.Config.MinFreeBytes {
-		http.Error(w, "insufficient free disk space for a restore", http.StatusInsufficientStorage)
+	if err := restoreCapacity(a.Config); err != nil {
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 		return
 	}
 	file, header, err := r.FormFile("backup")

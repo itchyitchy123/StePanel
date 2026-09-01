@@ -10,7 +10,7 @@ Browser
    ▼
 StePanel HTTP server
    ├── dashboard and static assets
-   ├── health endpoint
+   ├── process liveness and persistent-storage readiness endpoints
    └── cpmove inspection/import API
           ├── staging area: /var/lib/ste-panel/imports
           ├── site roots: /var/www/sites/<account>/public
@@ -69,3 +69,12 @@ This verifies artifact integrity, not application-level consistency for files
 or nontransactional database tables that change during the backup. Put
 `STEPANEL_BACKUP_ROOT` on a dedicated backup filesystem, replicate completed
 directories off-host or to immutable storage, and run periodic restore drills.
+
+## Admission and health
+
+Liveness is deliberately dependency-free so a full disk does not cause a
+restart loop. Readiness checks durable job persistence plus free space on import,
+backup, and recovery filesystems. Restore admission separately checks both the
+upload staging filesystem and the destination site filesystem. Global job slots,
+per-site serialization, upload bytes, and archive-entry counts provide bounded
+concurrency and work size.

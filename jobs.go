@@ -42,22 +42,31 @@ type Jobs struct {
 	activeTargets map[string]bool
 	wg            sync.WaitGroup
 	path          string
+	persistErr    error
 }
 
 func NewJobs() *Jobs { return newJobs("") }
 
-func OpenJobs(path string) (*Jobs, error) {
-	jobs := newJobs(path)
+func OpenJobs(path string, limits ...int) (*Jobs, error) {
+	limit := 2
+	if len(limits) > 0 && limits[0] > 0 {
+		limit = limits[0]
+	}
+	jobs := newJobs(path, limit)
 	if err := jobs.load(); err != nil {
 		return nil, err
 	}
 	return jobs, nil
 }
 
-func newJobs(path string) *Jobs {
+func newJobs(path string, limits ...int) *Jobs {
+	limit := 2
+	if len(limits) > 0 && limits[0] > 0 {
+		limit = limits[0]
+	}
 	return &Jobs{
 		items:         make(map[string]*Job),
-		slots:         make(chan struct{}, 2),
+		slots:         make(chan struct{}, limit),
 		activeDomains: make(map[string]bool),
 		activeTargets: make(map[string]bool),
 		path:          path,
@@ -170,9 +179,11 @@ func (j *Jobs) add(item *Job) error {
 	}
 	j.items[item.ID] = item
 	if err := j.persistLocked(); err != nil {
+		j.persistErr = err
 		delete(j.items, item.ID)
 		return err
 	}
+	j.persistErr = nil
 	return nil
 }
 
@@ -180,8 +191,17 @@ func (j *Jobs) complete(item *Job) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if err := j.persistLocked(); err != nil {
+		j.persistErr = err
 		log.Printf("persist completed job %s: %v", item.ID, err)
+	} else {
+		j.persistErr = nil
 	}
+}
+
+func (j *Jobs) PersistenceError() error {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.persistErr
 }
 
 func (j *Jobs) SubmitWPress(id, user string, work func() (WPressResult, error)) error {
@@ -378,7 +398,10 @@ func (j *Jobs) Cleanup(maxAge time.Duration) {
 	}
 	if changed {
 		if err := j.persistLocked(); err != nil {
+			j.persistErr = err
 			log.Printf("persist job cleanup: %v", err)
+		} else {
+			j.persistErr = nil
 		}
 	}
 }

@@ -85,7 +85,7 @@ resource "kubernetes_deployment" "stepanel" {
           }
           readiness_probe {
             http_get {
-              path = "/api/health"
+              path = "/readyz"
               port = "http"
             }
             period_seconds    = 10
@@ -94,7 +94,7 @@ resource "kubernetes_deployment" "stepanel" {
           }
           liveness_probe {
             http_get {
-              path = "/api/health"
+              path = "/livez"
               port = "http"
             }
             initial_delay_seconds = 15

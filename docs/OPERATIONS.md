@@ -3,8 +3,15 @@
 ## Health check
 
 ```sh
+curl -i http://127.0.0.1:8090/livez
+curl -fsS http://127.0.0.1:8090/readyz | jq
 curl -fsS http://127.0.0.1:8090/api/health | jq
 ```
+
+`/livez` reports only that the process can serve HTTP and should be used for
+restart decisions. `/readyz` returns `503` when persistent job state has failed
+or the import, backup, or recovery filesystem is unavailable or below
+`STEPANEL_MIN_FREE_BYTES`; use it for traffic and post-upgrade checks.
 
 ## Logs
 
@@ -28,6 +35,10 @@ Keep the configured free-space floor above the largest expected compressed
 upload plus extraction and database working space. Audit logs rotate daily,
 at 50 MiB, and retain 30 compressed rotations. Interrupted upload files and
 expired restore stages are removed by the control-plane retention loop.
+Restore admission checks both staging and destination filesystems. Configure
+`STEPANEL_MAX_UPLOAD_BYTES`, `STEPANEL_MAX_ARCHIVE_ENTRIES`, and
+`STEPANEL_MAX_CONCURRENT_JOBS` to match I/O and memory capacity; one long-running
+job per site is enforced independently of the global limit.
 
 ## Safe maintenance
 

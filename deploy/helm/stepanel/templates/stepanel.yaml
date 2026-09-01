@@ -64,8 +64,8 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: admin-password}}
             - name: STEPANEL_SESSION_SECRET
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: session-secret}}
-          readinessProbe: {httpGet: {path: /api/health, port: http}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
-          livenessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 15, periodSeconds: 20, timeoutSeconds: 2, failureThreshold: 3}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
+          livenessProbe: {httpGet: {path: /livez, port: http}, initialDelaySeconds: 15, periodSeconds: 20, timeoutSeconds: 2, failureThreshold: 3}
           resources: {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - {name: stepanel-data, mountPath: /var/lib/ste-panel}
