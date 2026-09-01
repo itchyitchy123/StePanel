@@ -142,7 +142,7 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 	}
 	force := r.FormValue("overwrite") == "on"
 	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + site + "-wpress"
-	if !a.Jobs.SubmitWPress(jobID, site, func() (WPressResult, error) {
+	if err := a.Jobs.SubmitWPress(jobID, site, func() (WPressResult, error) {
 		defer os.Remove(tempPath)
 		result, restoreErr := RestoreWPress(a.Config, tempPath, site, dbSuffix, dbUserSuffix, password, siteURL, targetPrefix, force)
 		if restoreErr != nil {
@@ -151,9 +151,13 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 			_ = Audit(a.Config.AuditLog, "wordpress.restore.completed", site, result.StagedAt)
 		}
 		return result, restoreErr
-	}) {
+	}); err != nil {
 		_ = os.Remove(tempPath)
-		http.Error(w, "too many long-running jobs", http.StatusTooManyRequests)
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+		} else {
+			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
+		}
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": filepath.Join("/api/jobs", jobID)})
@@ -188,22 +192,19 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	if err := ensureInside(cfg.WebRoot, home); err != nil {
 		return WPressResult{}, err
 	}
-	if existing, statErr := os.Lstat(home); statErr == nil {
-		if existing.Mode()&os.ModeSymlink != 0 {
-			return WPressResult{}, errors.New("destination site is a symlink")
-		}
-		if !force {
-			return WPressResult{}, errors.New("destination is not empty; enable overwrite only after taking a backup")
-		}
-		if err := os.Rename(home, filepath.Join(stage, "site-before")); err != nil {
-			return WPressResult{}, fmt.Errorf("snapshot existing site: %w", err)
-		}
+	if _, statErr := os.Lstat(home); statErr == nil && !force {
+		return WPressResult{}, errors.New("destination is not empty; enable overwrite only after taking a backup")
+	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return WPressResult{}, fmt.Errorf("inspect destination site: %w", statErr)
+	}
+	txn, err := BeginSiteTransaction(cfg.RecoveryRoot, home, "wordpress.restore", site)
+	if err != nil {
+		return WPressResult{}, err
 	}
 	committed := false
 	defer func() {
 		if !committed {
-			_ = os.RemoveAll(home)
-			_ = os.Rename(filepath.Join(stage, "site-before"), home)
+			_ = txn.Rollback()
 		}
 	}()
 	if err := os.MkdirAll(home, 0750); err != nil {
@@ -254,8 +255,11 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	}
 	_ = runWP(cfg, home, "rewrite", "flush")
 	_ = runWP(cfg, home, "cache", "flush")
+	if err := txn.Commit(); err != nil {
+		return WPressResult{}, fmt.Errorf("commit site recovery transaction: %w", err)
+	}
 	committed = true
-	return WPressResult{Site: site, Home: home, Database: dbName, DatabaseUser: dbUser, SourcePrefix: sourcePrefix, TargetPrefix: targetPrefix, FilesRestored: true, DatabaseRestored: true, URLReplaced: urlReplaced, StagedAt: stage}, nil
+	return WPressResult{Site: site, Home: home, Database: dbName, DatabaseUser: dbUser, SourcePrefix: sourcePrefix, TargetPrefix: targetPrefix, FilesRestored: true, DatabaseRestored: true, URLReplaced: urlReplaced, StagedAt: txn.dir}, nil
 }
 
 func findWordPressRoot(root string) string {

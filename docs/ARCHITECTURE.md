@@ -36,3 +36,13 @@ systemd application units cross narrowly validated, root-owned helper
 boundaries; the service account cannot edit active configuration directly.
 Database administration uses a dedicated credential stored in the
 root-readable service environment.
+
+## Durable restore state
+
+Restore and certificate jobs are recorded atomically before background work
+starts. A restart preserves completed results and marks work interrupted by an
+unclean shutdown as failed. Site overwrites use a transaction journal on the
+site filesystem: the previous document root is moved into the recovery
+transaction before deployment, and every uncommitted transaction is rolled
+back during startup. Recovery artifacts are retained for the same period as
+restore staging data.

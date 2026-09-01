@@ -8,7 +8,7 @@ import (
 type Config struct {
 	Listen, ImportRoot, WebRoot, MailRoot, NVMDir                 string
 	ProxyRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl, Certbot    string
-	WPressExtract, WPCLI, AuditLog, Sudo                          string
+	WPressExtract, WPCLI, AuditLog, JobState, RecoveryRoot, Sudo  string
 	DBHost, DBUser, DBPassword                                    string
 	Production                                                    bool
 	MaxUpload                                                     int64
@@ -17,7 +17,7 @@ type Config struct {
 }
 
 func LoadConfig() Config {
-	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", MaxUpload: 20 << 30, MaxEntries: 1000000, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{Listen: ":8080", ImportRoot: "data/imports", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_LISTEN"); v != "" {
 		c.Listen = v
 	}
@@ -59,6 +59,12 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("STEPANEL_AUDIT_LOG"); v != "" {
 		c.AuditLog = v
+	}
+	if v := os.Getenv("STEPANEL_JOB_STATE"); v != "" {
+		c.JobState = v
+	}
+	if v := os.Getenv("STEPANEL_RECOVERY_ROOT"); v != "" {
+		c.RecoveryRoot = v
 	}
 	if v := os.Getenv("STEPANEL_SUDO"); v != "" {
 		c.Sudo = v

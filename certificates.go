@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -40,7 +41,7 @@ func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + strings.ReplaceAll(input.Domain, ".", "-")
-	if !a.Jobs.SubmitCertificate(jobID, input.Domain, func() (CertificateResult, error) {
+	if err := a.Jobs.SubmitCertificate(jobID, input.Domain, func() (CertificateResult, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 		if err := helperCommandContext(ctx, a.Config, a.Config.Certbot, input.Domain, input.Email).Run(); err != nil {
@@ -48,8 +49,12 @@ func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = Audit(a.Config.AuditLog, "certificate.issued", input.Domain, "Let's Encrypt certificate requested")
 		return CertificateResult{Domain: input.Domain, Status: "issued"}, nil
-	}) {
-		http.Error(w, "too many long-running jobs", http.StatusTooManyRequests)
+	}); err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+		} else {
+			http.Error(w, "could not persist certificate job", http.StatusInternalServerError)
+		}
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status": "queued"})

@@ -42,7 +42,16 @@ func main() {
 	if err := os.MkdirAll(cfg.ImportRoot, 0750); err != nil {
 		log.Fatal(err)
 	}
+	recovered, err := RecoverSiteTransactions(cfg.RecoveryRoot)
+	if err != nil {
+		log.Fatalf("recover interrupted site transactions: %v", err)
+	}
+	for _, id := range recovered {
+		log.Printf("recovered interrupted site transaction %s", id)
+		_ = Audit(cfg.AuditLog, "restore.recovered", id, "previous site restored after unclean shutdown")
+	}
 	_ = CleanupImportStages(cfg.ImportRoot, time.Duration(cfg.StageRetentionHours)*time.Hour)
+	_ = CleanupSiteTransactions(cfg.RecoveryRoot, time.Duration(cfg.StageRetentionHours)*time.Hour)
 	auth, err := NewAuth(cfg.Production)
 	if err != nil {
 		log.Fatal(err)
@@ -51,7 +60,11 @@ func main() {
 		log.Fatal("authentication must be configured in production")
 	}
 	view := template.Must(template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).ParseFiles("web/index.html"))
-	app := &App{Config: cfg, View: view, Auth: auth, Jobs: NewJobs(), Metrics: NewMetrics()}
+	jobs, err := OpenJobs(cfg.JobState)
+	if err != nil {
+		log.Fatalf("open persistent job state: %v", err)
+	}
+	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics()}
 	if !app.Auth.Enabled {
 		log.Println("warning: authentication is disabled; set STEPANEL_ADMIN_PASSWORD and STEPANEL_SESSION_SECRET")
 	}
@@ -62,6 +75,9 @@ func main() {
 			app.Jobs.Cleanup(24 * time.Hour)
 			if err := CleanupImportStages(app.Config.ImportRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
 				log.Printf("import stage cleanup: %v", err)
+			}
+			if err := CleanupSiteTransactions(app.Config.RecoveryRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
+				log.Printf("site recovery cleanup: %v", err)
 			}
 		}
 	}()
@@ -219,7 +235,7 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	databaseRestore := r.FormValue("restore_databases") == "on"
 	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + user
 	a.Metrics.RestoreStarted()
-	if !a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
+	if err := a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
 		var restoreErr error
 		defer func() { a.Metrics.RestoreFinished(restoreErr) }()
 		defer os.Remove(tempPath)
@@ -236,10 +252,14 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 			_ = Audit(a.Config.AuditLog, "cpmove.restore.completed", user, result.StagedAt)
 		}
 		return result, restoreErr
-	}) {
+	}); err != nil {
 		_ = os.Remove(tempPath)
-		a.Metrics.RestoreFinished(errors.New("restore queue is full"))
-		http.Error(w, "too many long-running jobs", http.StatusTooManyRequests)
+		a.Metrics.RestoreFinished(err)
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+		} else {
+			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
+		}
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": filepath.Join("/api/jobs", jobID)})

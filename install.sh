@@ -282,6 +282,7 @@ if [[ -d "$APP_DIR/.nvm" ]]; then chown -R "$APP_USER:$APP_USER" "$APP_DIR/.nvm"
 chown -R "$APP_USER:$APP_USER" "$DATA_DIR"
 chown "$APP_USER:$WEB_GROUP" /var/www/sites
 chmod 2750 /var/www/sites
+install -d -m 0700 -o "$APP_USER" -g "$APP_USER" /var/www/sites/.stepanel-recovery
 write_env() {
   local key=$1 value=$2
   [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || { echo "Invalid newline in $key." >&2; exit 1; }
@@ -312,6 +313,8 @@ trap 'rm -f "$env_tmp"' EXIT
   write_env STEPANEL_APPCTL /usr/local/sbin/stepanel-appctl
   write_env STEPANEL_PROXYCTL /usr/local/sbin/stepanel-proxyctl
   write_env STEPANEL_AUDIT_LOG "$DATA_DIR/audit.jsonl"
+  write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
+  write_env STEPANEL_RECOVERY_ROOT /var/www/sites/.stepanel-recovery
   write_env STEPANEL_WPRESS_EXTRACT "$WPRESS_EXTRACT"
   write_env STEPANEL_WPCLI "$WPCLI"
   write_env STEPANEL_SUDO /usr/bin/sudo

@@ -28,6 +28,8 @@
 - Concurrent restores targeting the same site are rejected.
 - New database destinations are rolled back on restore failure; existing
   databases and database users are never silently reused.
+- Background job state and site-overwrite transactions are persisted before
+  mutations begin; interrupted site transactions are rolled back at startup.
 
 ## Residual risks
 

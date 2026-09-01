@@ -34,6 +34,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   activated; FTPS activation requires readable certificate and key paths.
 - Long-running restore jobs are allowed to finish during graceful shutdown,
   with matching systemd stop timeouts and per-target concurrency protection.
+- Restore and certificate job records are persisted atomically; uncleanly
+  interrupted work is reconciled into a visible failed state at startup.
+- Site overwrites now use restart-safe transaction journals on the destination
+  filesystem, retaining previous and partially restored document roots for the
+  configured recovery window and rolling back uncommitted work at startup.
 - Container and orchestration deployments now use numeric non-root identity
   `10001`, read-only root filesystems, dropped capabilities, bounded resources,
   persistent writable paths, and disabled service-account token mounting.

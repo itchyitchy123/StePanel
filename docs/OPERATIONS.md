@@ -37,6 +37,13 @@ Check `stepanel_restore_jobs_active` before package upgrades or planned reboots.
 Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
 `/var/lib/ste-panel` before upgrading.
 
+Job records are persisted in `/var/lib/ste-panel/jobs.json`. Site overwrites
+move the previous document root into a journaled transaction under
+`/var/www/sites/.stepanel-recovery`. On startup, StePanel marks interrupted jobs
+failed and rolls back every uncommitted site transaction. Committed and
+rolled-back transactions remain available for the configured staging-retention
+period; preserve them before that deadline when investigating an incident.
+
 Upgrades from the legacy writable proxy directory disable its Apache include.
 Re-deploy each managed proxy through the panel so the validated helper creates
 the corresponding root-owned snippet.

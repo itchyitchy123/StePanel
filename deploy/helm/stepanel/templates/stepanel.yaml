@@ -39,7 +39,8 @@ spec:
         {{- include "stepanel.labels" . | nindent 8 }}
     spec:
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 30
+      # Match the application's two-hour restore drain plus a five-minute margin.
+      terminationGracePeriodSeconds: 7500
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

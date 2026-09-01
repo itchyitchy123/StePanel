@@ -26,6 +26,8 @@ ENV HOME=/opt/stepanel \
     STEPANEL_PROXY_ROOT=/var/lib/ste-panel/proxy \
     STEPANEL_APP_ROOT=/var/lib/ste-panel/apps \
     STEPANEL_MALWARE_ROOT=/var/lib/ste-panel/quarantine \
-    STEPANEL_AUDIT_LOG=/var/lib/ste-panel/audit.jsonl
+    STEPANEL_AUDIT_LOG=/var/lib/ste-panel/audit.jsonl \
+    STEPANEL_JOB_STATE=/var/lib/ste-panel/jobs.json \
+    STEPANEL_RECOVERY_ROOT=/var/www/sites/.stepanel-recovery
 EXPOSE 8080
 ENTRYPOINT ["/opt/stepanel/stepanel"]

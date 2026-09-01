@@ -91,7 +91,7 @@ func TestRestoreCPMoveHandlesTopLevelCPanelRoot(t *testing.T) {
 	})
 	file, header := openMultipartArchive(t, archive, "cpmove-account.tar.gz")
 	defer file.Close()
-	result, err := RestoreCPMove(Config{ImportRoot: filepath.Join(root, "imports"), WebRoot: root, MailRoot: filepath.Join(root, "mail"), MaxEntries: 1000}, file, header, "account", false)
+	result, err := RestoreCPMove(Config{ImportRoot: filepath.Join(root, "imports"), WebRoot: root, MailRoot: filepath.Join(root, "mail"), RecoveryRoot: filepath.Join(root, "sites", ".stepanel-recovery"), MaxEntries: 1000}, file, header, "account", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestRestoreFailureRestoresExistingSite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, restoreErr := RestoreCPMove(Config{ImportRoot: filepath.Join(root, "imports"), WebRoot: root, MailRoot: filepath.Join(root, "mail")}, input, &multipart.FileHeader{Filename: "cpmove-account.tar.gz", Size: info.Size()}, "account", false)
+	_, restoreErr := RestoreCPMove(Config{ImportRoot: filepath.Join(root, "imports"), WebRoot: root, MailRoot: filepath.Join(root, "mail"), RecoveryRoot: filepath.Join(root, "sites", ".stepanel-recovery")}, input, &multipart.FileHeader{Filename: "cpmove-account.tar.gz", Size: info.Size()}, "account", false)
 	if restoreErr == nil || !strings.Contains(restoreErr.Error(), "restore blocked") {
 		t.Fatalf("restore error = %v", restoreErr)
 	}

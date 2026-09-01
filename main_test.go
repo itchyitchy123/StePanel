@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -81,10 +82,12 @@ func TestAuthRequireProtectsAPI(t *testing.T) {
 func TestJobsCompleteAndCleanup(t *testing.T) {
 	jobs := NewJobs()
 	done := make(chan struct{})
-	jobs.Submit("job-1", "site", func() (ImportResult, error) {
+	if err := jobs.Submit("job-1", "site", func() (ImportResult, error) {
 		close(done)
 		return ImportResult{}, nil
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	<-done
 	var job Job
 	for i := 0; i < 20; i++ {
@@ -107,18 +110,18 @@ func TestJobsRejectConcurrentRestoresForSameSite(t *testing.T) {
 	jobs := NewJobs()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	if !jobs.Submit("job-1", "site", func() (ImportResult, error) {
+	if err := jobs.Submit("job-1", "site", func() (ImportResult, error) {
 		close(started)
 		<-release
 		return ImportResult{}, nil
-	}) {
-		t.Fatal("first restore was rejected")
+	}); err != nil {
+		t.Fatalf("first restore was rejected: %v", err)
 	}
 	<-started
-	if jobs.SubmitWPress("job-2", "site", func() (WPressResult, error) {
+	if err := jobs.SubmitWPress("job-2", "site", func() (WPressResult, error) {
 		return WPressResult{}, nil
-	}) {
-		t.Fatal("concurrent restore for the same site was accepted")
+	}); !errors.Is(err, ErrJobBusy) {
+		t.Fatalf("concurrent restore error = %v, want ErrJobBusy", err)
 	}
 	close(release)
 }

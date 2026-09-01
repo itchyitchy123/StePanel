@@ -150,26 +150,16 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 		return ImportResult{}, err
 	}
 	home := filepath.Join(cfg.WebRoot, "sites", user, "public")
-	backup := filepath.Join(stage, "site-before")
-	movedExisting := false
-	if existing, statErr := os.Lstat(home); statErr == nil {
-		if existing.Mode()&os.ModeSymlink != 0 {
-			return ImportResult{}, errors.New("destination site is a symlink")
-		}
-		if err = os.Rename(home, backup); err != nil {
-			return ImportResult{}, fmt.Errorf("snapshot existing site: %w", err)
-		}
-		movedExisting = true
+	txn, err := BeginSiteTransaction(cfg.RecoveryRoot, home, "cpmove.restore", user)
+	if err != nil {
+		return ImportResult{}, err
 	}
 	committed := false
 	defer func() {
 		if committed {
 			return
 		}
-		_ = os.RemoveAll(home)
-		if movedExisting {
-			_ = os.Rename(backup, home)
-		}
+		_ = txn.Rollback()
 	}()
 	if err = os.MkdirAll(home, 0750); err != nil {
 		return ImportResult{}, err
@@ -203,6 +193,9 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 	result.MailStaged, result.MailboxesStaged, result.MailErrors = restoreMail(cfg, root, user)
 	if len(result.MailErrors) > 0 {
 		return result, fmt.Errorf("mail restore completed with %d error(s)", len(result.MailErrors))
+	}
+	if err := txn.Commit(); err != nil {
+		return result, fmt.Errorf("commit site recovery transaction: %w", err)
 	}
 	committed = true
 	return result, nil

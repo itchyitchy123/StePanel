@@ -167,6 +167,8 @@ checkbox and should be backed up first.
 | `STEPANEL_IMPORT_ROOT` | Private backup staging directory |
 | `STEPANEL_WEB_ROOT` | Site destination root |
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |
+| `STEPANEL_JOB_STATE` | Durable restore and certificate job state file |
+| `STEPANEL_RECOVERY_ROOT` | Durable site rollback transactions on the site filesystem |
 | `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; default `wpress-extract` |
 | `STEPANEL_WPCLI` | WP-CLI executable; default `wp` |
 | `STEPANEL_DB_HOST` | MySQL/MariaDB host used for SQL imports |
