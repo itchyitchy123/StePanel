@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
+(( $# == 2 )) || { echo 'usage: stepanel-sitectl prepare|seal SITE' >&2; exit 64; }
+
+action=$1
+site=$2
+[[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
+[[ $action == prepare || $action == seal ]] || { echo 'invalid action' >&2; exit 64; }
+
+if getent group www-data >/dev/null; then
+  web_group=www-data
+  socket_root=/run/php
+elif getent group apache >/dev/null; then
+  web_group=apache
+  socket_root=/run/php-fpm
+else
+  echo 'Apache group was not found' >&2
+  exit 1
+fi
+
+hash=$(printf '%s' "$site" | sha256sum)
+hash=${hash%% *}
+prefix=${site:0:18}
+prefix=${prefix//_/-}
+site_user="sp-${prefix}-${hash:0:8}"
+site_root="/var/www/sites/$site"
+public_root="$site_root/public"
+php_state="$site_root/.php"
+
+if ! id "$site_user" >/dev/null 2>&1; then
+  useradd --system --home-dir "$site_root" --shell /usr/sbin/nologin --user-group "$site_user"
+fi
+install -d -m 2750 -o "$site_user" -g "$web_group" "$site_root" "$public_root"
+install -d -m 0750 -o "$site_user" -g "$web_group" "$php_state" "$php_state/sessions" "$php_state/tmp"
+
+command -v setfacl >/dev/null 2>&1 || { echo 'setfacl is required for site isolation' >&2; exit 1; }
+setfacl -R -m u:stepanel:rwX "$site_root"
+find "$site_root" -type d -exec setfacl -m d:u:stepanel:rwx {} +
+
+write_pool() {
+  local target=$1 listen=$2 staged
+  staged=$(mktemp "${target}.XXXXXX")
+  trap 'rm -f "$staged"' RETURN
+  cat > "$staged" <<EOF
+; Managed by StePanel. Manual changes will be replaced.
+[stepanel-$site]
+user = $site_user
+group = $site_user
+listen = $listen
+listen.owner = $site_user
+listen.group = $web_group
+listen.mode = 0660
+pm = ondemand
+pm.max_children = 5
+pm.process_idle_timeout = 10s
+pm.max_requests = 500
+chdir = /
+catch_workers_output = yes
+clear_env = yes
+security.limit_extensions = .php
+php_admin_value[open_basedir] = $public_root:$php_state:/tmp
+php_admin_value[session.save_path] = $php_state/sessions
+php_admin_value[upload_tmp_dir] = $php_state/tmp
+EOF
+  chmod 0644 "$staged"
+  chown root:root "$staged"
+  mv -f "$staged" "$target"
+  trap - RETURN
+}
+
+pool_written=0
+for pool_root in /etc/php/*/fpm/pool.d; do
+  [[ -d $pool_root ]] || continue
+  version_root=$(dirname "$(dirname "$pool_root")")
+  version=${version_root##*/}
+  install -d -m 0755 "$socket_root"
+  write_pool "$pool_root/stepanel-$site.conf" "$socket_root/stepanel-$site-$version.sock"
+  pool_written=1
+done
+if [[ -d /etc/php-fpm.d ]]; then
+  install -d -m 0755 "$socket_root"
+  write_pool "/etc/php-fpm.d/stepanel-$site.conf" "$socket_root/stepanel-$site.sock"
+  pool_written=1
+fi
+if (( ! pool_written )); then
+  echo 'PHP-FPM pool directory was not found' >&2
+  exit 1
+fi
+
+if [[ $action == seal ]]; then
+  chown -R "$site_user:$web_group" "$site_root"
+  find "$site_root" -type d -exec chmod 2750 {} +
+  setfacl -R -m u:stepanel:rwX "$site_root"
+  find "$site_root" -type d -exec setfacl -m d:u:stepanel:rwx {} +
+fi
+
+systemctl daemon-reload
+while read -r unit; do
+  [[ -n $unit ]] || continue
+  systemctl reload-or-restart "$unit"
+done < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
+
+printf '%s\n' "$site_user"

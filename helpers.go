@@ -21,3 +21,10 @@ func helperCommandContext(ctx context.Context, cfg Config, path string, args ...
 	}
 	return exec.CommandContext(ctx, cfg.Sudo, append([]string{"--non-interactive", path}, args...)...)
 }
+
+func siteHelper(cfg Config, action, site string) error {
+	if cfg.SiteCtl == "" {
+		return nil
+	}
+	return helperCommand(cfg, cfg.SiteCtl, action, site).Run()
+}

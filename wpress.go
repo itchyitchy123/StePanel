@@ -205,8 +205,14 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	defer func() {
 		if !committed {
 			_ = txn.Rollback()
+			if txn.HadExisting {
+				_ = siteHelper(cfg, "seal", site)
+			}
 		}
 	}()
+	if err := siteHelper(cfg, "prepare", site); err != nil {
+		return WPressResult{}, fmt.Errorf("prepare isolated site: %w", err)
+	}
 	if err := os.MkdirAll(home, 0750); err != nil {
 		return WPressResult{}, err
 	}
@@ -255,6 +261,9 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	}
 	_ = runWP(cfg, home, "rewrite", "flush")
 	_ = runWP(cfg, home, "cache", "flush")
+	if err := siteHelper(cfg, "seal", site); err != nil {
+		return WPressResult{}, fmt.Errorf("seal isolated site: %w", err)
+	}
 	if err := txn.Commit(); err != nil {
 		return WPressResult{}, fmt.Errorf("commit site recovery transaction: %w", err)
 	}

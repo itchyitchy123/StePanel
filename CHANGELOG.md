@@ -39,6 +39,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Site overwrites now use restart-safe transaction journals on the destination
   filesystem, retaining previous and partially restored document roots for the
   configured recovery window and rolling back uncommitted work at startup.
+- Host restores now provision deterministic per-site Unix identities, private
+  PHP-FPM pools, isolated Node service users, and explicit control-plane ACLs;
+  site workloads are not members of Apache's shared filesystem group.
 - Container and orchestration deployments now use numeric non-root identity
   `10001`, read-only root filesystems, dropped capabilities, bounded resources,
   persistent writable paths, and disabled service-account token mounting.

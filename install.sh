@@ -78,8 +78,8 @@ DB_VERSION="${DB_VERSION:-default}"
 if [[ ! "$DB_VERSION" =~ ^(default|[0-9][0-9A-Za-z.+:~-]*)$ ]]; then echo "Invalid database version: $DB_VERSION" >&2; exit 1; fi
 
 if [[ "$DB_ENGINE" == "mysql" ]]; then DB_PACKAGE="mysql-server"; else DB_PACKAGE="mariadb-server"; fi
-if [[ "$PKG" == "apt" ]]; then DB_SERVICE="${DB_ENGINE/mysql/mysql}"; [[ "$DB_ENGINE" == "mariadb" ]] && DB_SERVICE="mariadb"; export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y apache2 php php-cli php-mysql php-curl php-mbstring php-xml tar gzip ca-certificates curl sudo logrotate
-else DB_SERVICE="$([[ "$DB_ENGINE" == "mysql" ]] && echo mysqld || echo mariadb)"; dnf install -y httpd php php-cli php-mysqlnd php-curl php-mbstring php-xml tar gzip ca-certificates curl sudo logrotate; fi
+if [[ "$PKG" == "apt" ]]; then DB_SERVICE="${DB_ENGINE/mysql/mysql}"; [[ "$DB_ENGINE" == "mariadb" ]] && DB_SERVICE="mariadb"; export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y apache2 php php-cli php-fpm php-mysql php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate
+else DB_SERVICE="$([[ "$DB_ENGINE" == "mysql" ]] && echo mysqld || echo mariadb)"; dnf install -y httpd php php-cli php-fpm php-mysqlnd php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate; fi
 
 if [[ "$DB_VERSION" == "default" ]]; then
   if [[ "$PKG" == "apt" ]]; then apt-get install -y "$DB_PACKAGE"; else dnf install -y "$DB_PACKAGE"; fi
@@ -255,6 +255,7 @@ unset ADMIN_PASSWORD
 install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/integrations/install-fail2ban.sh"
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-proxyctl" /usr/local/sbin/stepanel-proxyctl
+install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-sitectl" /usr/local/sbin/stepanel-sitectl
 if [[ "$INSTALL_TLS" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-certbot" /usr/local/sbin/stepanel-certbot; fi
 if [[ -n "$FPM_LENS_BINARY" ]]; then install -m 0755 "$FPM_LENS_BINARY" /usr/local/bin/fpm-lens; fi
 install -m 0644 -D "$ROOT_DIR/web/index.html" "$APP_DIR/web/index.html"
@@ -312,6 +313,7 @@ trap 'rm -f "$env_tmp"' EXIT
   write_env STEPANEL_MALWARE_ROOT "$DATA_DIR/quarantine"
   write_env STEPANEL_APPCTL /usr/local/sbin/stepanel-appctl
   write_env STEPANEL_PROXYCTL /usr/local/sbin/stepanel-proxyctl
+  write_env STEPANEL_SITECTL /usr/local/sbin/stepanel-sitectl
   write_env STEPANEL_AUDIT_LOG "$DATA_DIR/audit.jsonl"
   write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
   write_env STEPANEL_RECOVERY_ROOT /var/www/sites/.stepanel-recovery
@@ -330,7 +332,7 @@ install -m 0644 "$ROOT_DIR/deploy/stepanel.service" /etc/systemd/system/stepanel
 install -m 0644 "$ROOT_DIR/deploy/stepanel.logrotate" /etc/logrotate.d/stepanel
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
-printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-appctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-proxyctl *\n' "$APP_USER" "$APP_USER" > "$sudoers_tmp"
+printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-appctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-proxyctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-sitectl *\n' "$APP_USER" "$APP_USER" "$APP_USER" > "$sudoers_tmp"
 if [[ "$INSTALL_TLS" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-certbot *\n' "$APP_USER" >> "$sudoers_tmp"; fi
 visudo -cf "$sudoers_tmp" >/dev/null
 install -m 0440 -o root -g root "$sudoers_tmp" /etc/sudoers.d/stepanel
@@ -340,6 +342,7 @@ if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
   if command -v setsebool >/dev/null 2>&1; then setsebool -P httpd_can_network_connect 1; fi
 fi
 systemctl daemon-reload; systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" stepanel; systemctl reload "$APACHE_SERVICE" || true
+while read -r php_fpm_unit; do [[ -n "$php_fpm_unit" ]] && systemctl enable --now "$php_fpm_unit"; done < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
 if [[ "$INSTALL_SECURITY" == "1" ]]; then systemctl enable --now stepanel-malware-guard; fi
 if [[ "$INSTALL_MAIL" == "1" && "$ACTIVATE_MAIL" == "1" ]]; then
   systemctl enable --now "$([[ "$PKG" == "apt" ]] && echo exim4 || echo exim)" dovecot "$MAIL_SPAM_SERVICE"

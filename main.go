@@ -47,6 +47,13 @@ func main() {
 		log.Fatalf("recover interrupted site transactions: %v", err)
 	}
 	for _, id := range recovered {
+		txn, loadErr := loadSiteTransaction(filepath.Join(cfg.RecoveryRoot, id))
+		if loadErr != nil {
+			log.Fatalf("load recovered site transaction %s: %v", id, loadErr)
+		}
+		if sealErr := siteHelper(cfg, "seal", txn.Site); sealErr != nil {
+			log.Fatalf("seal recovered site transaction %s: %v", id, sealErr)
+		}
 		log.Printf("recovered interrupted site transaction %s", id)
 		_ = Audit(cfg.AuditLog, "restore.recovered", id, "previous site restored after unclean shutdown")
 	}

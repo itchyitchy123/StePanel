@@ -44,6 +44,16 @@ failed and rolls back every uncommitted site transaction. Committed and
 rolled-back transactions remain available for the configured staging-retention
 period; preserve them before that deadline when investigating an incident.
 
+Host restores create site identities named from the site plus a stable hash.
+Inspect their ownership, ACL, and PHP-FPM pools with:
+
+```sh
+getent passwd 'sp-*'
+getfacl /var/www/sites/ACCOUNT
+find /etc/php /etc/php-fpm.d -name 'stepanel-ACCOUNT.conf' -print 2>/dev/null
+systemctl status 'stepanel-app-ACCOUNT.service'
+```
+
 Upgrades from the legacy writable proxy directory disable its Apache include.
 Re-deploy each managed proxy through the panel so the validated helper creates
 the corresponding root-owned snippet.

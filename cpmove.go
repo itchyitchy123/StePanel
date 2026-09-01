@@ -160,7 +160,13 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 			return
 		}
 		_ = txn.Rollback()
+		if txn.HadExisting {
+			_ = siteHelper(cfg, "seal", user)
+		}
 	}()
+	if err := siteHelper(cfg, "prepare", user); err != nil {
+		return ImportResult{}, fmt.Errorf("prepare isolated site: %w", err)
+	}
 	if err = os.MkdirAll(home, 0750); err != nil {
 		return ImportResult{}, err
 	}
@@ -193,6 +199,9 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 	result.MailStaged, result.MailboxesStaged, result.MailErrors = restoreMail(cfg, root, user)
 	if len(result.MailErrors) > 0 {
 		return result, fmt.Errorf("mail restore completed with %d error(s)", len(result.MailErrors))
+	}
+	if err := siteHelper(cfg, "seal", user); err != nil {
+		return result, fmt.Errorf("seal isolated site: %w", err)
 	}
 	if err := txn.Commit(); err != nil {
 		return result, fmt.Errorf("commit site recovery transaction: %w", err)

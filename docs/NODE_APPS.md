@@ -12,6 +12,9 @@ sudo STEPANEL_INSTALL_NODE=1 \
 The panel lists versions installed in the StePanel service account's NVM
 directory. Selecting a version writes a `.nvmrc` into the managed site root;
 it does not execute an application or install packages on behalf of the user.
+Managed Node units run as the deterministic Unix identity created for that
+site, with a unique primary group and write access limited to that site's
+public root.
 
 Deploying an app asks the root-owned `stepanel-proxyctl` helper to generate a
 managed Apache virtual host under `/etc/apache2/stepanel-proxy` or

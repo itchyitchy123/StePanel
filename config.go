@@ -7,7 +7,8 @@ import (
 
 type Config struct {
 	Listen, ImportRoot, WebRoot, MailRoot, NVMDir                 string
-	ProxyRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl, Certbot    string
+	ProxyRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl, SiteCtl    string
+	Certbot                                                       string
 	WPressExtract, WPCLI, AuditLog, JobState, RecoveryRoot, Sudo  string
 	DBHost, DBUser, DBPassword                                    string
 	Production                                                    bool
@@ -44,6 +45,9 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("STEPANEL_PROXYCTL"); v != "" {
 		c.ProxyCtl = v
+	}
+	if v := os.Getenv("STEPANEL_SITECTL"); v != "" {
+		c.SiteCtl = v
 	}
 	if v := os.Getenv("STEPANEL_CERTBOT"); v != "" {
 		c.Certbot = v

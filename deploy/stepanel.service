@@ -27,7 +27,7 @@ RestrictNamespaces=true
 SystemCallArchitectures=native
 # The daemon is unprivileged. Its sudoers policy permits only the validated
 # root helpers; these paths are writable solely inside that helper boundary.
-ReadWritePaths=/var/lib/ste-panel /var/www/sites -/etc/systemd/system -/etc/letsencrypt -/etc/apache2 -/etc/httpd -/var/lib/letsencrypt -/var/log/letsencrypt -/run/sudo
+ReadWritePaths=/var/lib/ste-panel /var/www/sites -/etc/systemd/system -/etc/letsencrypt -/etc/apache2 -/etc/httpd -/etc/php -/etc/php-fpm.d -/var/lib/letsencrypt -/var/log/letsencrypt -/run/sudo
 
 [Install]
 WantedBy=multi-user.target

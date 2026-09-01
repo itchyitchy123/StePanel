@@ -4,6 +4,10 @@ if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
 action=${1:-}; site=${2:-}
 [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
 unit="stepanel-app-${site}.service"
+hash=$(printf '%s' "$site" | sha256sum); hash=${hash%% *}
+prefix=${site:0:18}; prefix=${prefix//_/-}
+site_user="sp-${prefix}-${hash:0:8}"
+id "$site_user" >/dev/null 2>&1 || { echo 'isolated site user does not exist' >&2; exit 1; }
 case "$action" in
   apply)
     (( $# == 5 )) || { echo 'usage: stepanel-appctl apply SITE VERSION ROOT PORT' >&2; exit 64; }
@@ -17,10 +21,10 @@ Description=StePanel Node app $site
 After=network-online.target
 
 [Service]
-User=stepanel
-Group=stepanel
+User=$site_user
+Group=$site_user
 WorkingDirectory=$root
-Environment=PORT=$port NODE_ENV=production
+Environment=PORT=$port NODE_ENV=production HOME=/var/www/sites/$site
 ExecStart=/bin/bash -lc 'export NVM_DIR=/opt/stepanel/.nvm; . "\$NVM_DIR/nvm.sh"; nvm use $version >/dev/null; exec npm start'
 Restart=on-failure
 RestartSec=5s

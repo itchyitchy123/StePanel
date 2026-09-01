@@ -38,9 +38,9 @@ jobs:
       - run: go build -trimpath -o stepanel .
       - run: bash -n install.sh
       - run: bash -n deploy/integrations/install-fail2ban.sh
-      - run: bash -n deploy/integrations/install-node-nvm.sh deploy/integrations/stepanel-apache-reload deploy/integrations/stepanel-appctl deploy/integrations/stepanel-proxyctl deploy/integrations/stepanel-certbot deploy/integrations/stepanel-malware-guard
+      - run: bash -n deploy/integrations/install-node-nvm.sh deploy/integrations/stepanel-apache-reload deploy/integrations/stepanel-appctl deploy/integrations/stepanel-proxyctl deploy/integrations/stepanel-sitectl deploy/integrations/stepanel-certbot deploy/integrations/stepanel-malware-guard
       - name: Lint shell scripts
-        run: shellcheck -S warning install.sh deploy/lab/run.sh deploy/integrations/install-node-nvm.sh deploy/integrations/stepanel-apache-reload deploy/integrations/stepanel-appctl deploy/integrations/stepanel-proxyctl deploy/integrations/stepanel-certbot deploy/integrations/stepanel-malware-guard
+        run: shellcheck -S warning install.sh deploy/lab/run.sh deploy/integrations/install-node-nvm.sh deploy/integrations/stepanel-apache-reload deploy/integrations/stepanel-appctl deploy/integrations/stepanel-proxyctl deploy/integrations/stepanel-sitectl deploy/integrations/stepanel-certbot deploy/integrations/stepanel-malware-guard
       - name: Vulnerability scan
         if: matrix.go-version == '1.27.x'
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...

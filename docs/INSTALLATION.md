@@ -2,7 +2,7 @@
 
 ## Supported operating systems
 
-The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Apache, MySQL/MariaDB, PHP, archive utilities, and StePanel.
+The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Apache, MySQL/MariaDB, PHP-FPM, ACL and archive utilities, and StePanel.
 
 ## Build and install
 
@@ -78,6 +78,7 @@ outbound-network policy.
 | `/etc/apache2/stepanel-proxy` or `/etc/httpd/conf.d/stepanel-proxy` | Root-owned managed Apache reverse-proxy snippets |
 | `/var/lib/ste-panel/apps` | Managed Node application manifests |
 | `/var/lib/ste-panel/quarantine` | Recoverable malware quarantine |
+| `/var/www/sites/.stepanel-recovery` | Journaled site rollback data |
 | `/etc/ste-panel.env` | Runtime configuration |
 | `/etc/systemd/system/stepanel.service` | Service definition |
 | `/etc/logrotate.d/stepanel` | Audit-log retention policy |
@@ -85,6 +86,16 @@ outbound-network policy.
 The installer enables TLS issuance only when `STEPANEL_INSTALL_TLS=1`. Metrics
 are authenticated by default; set `STEPANEL_METRICS_PUBLIC=1` only on a
 protected monitoring network.
+
+## Site isolation
+
+Before a host restore writes a document root, the root-owned site helper creates
+a deterministic system user and unique primary group, establishes inherited
+ACL access for the unprivileged control plane, and renders private PHP-FPM
+pools for installed PHP versions. Restored files are sealed to the site user
+and Apache group afterward. Site users are not added to Apache's shared group;
+Apache receives group read access to static files and PHP-FPM sockets instead.
+Apache virtual-host-to-pool selection remains part of the site lifecycle work.
 
 ## Reverse proxy
 

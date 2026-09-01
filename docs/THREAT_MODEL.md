@@ -30,6 +30,9 @@
   databases and database users are never silently reused.
 - Background job state and site-overwrite transactions are persisted before
   mutations begin; interrupted site transactions are rolled back at startup.
+- Host site workloads use deterministic per-site Unix identities and unique
+  primary groups. Apache receives group access without making site users
+  members of its shared group, and the control plane uses explicit ACLs.
 
 ## Residual risks
 
