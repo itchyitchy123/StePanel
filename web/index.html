@@ -16,7 +16,7 @@
     </header>
     <main class="content" id="main">
       <section class="hero">
-        <div><p class="eyebrow">This server / Overview</p><h1>Infrastructure overview</h1><p class="lede">Live service state, security checks, and recent control-plane jobs.</p></div>
+        <div><p class="eyebrow">This server / Overview</p><h1>Infrastructure overview</h1><p class="lede">Live service state, security checks, and recent control-plane jobs.</p><p class="import-note">Webserver: <strong>{{ .Config.WebServer }}</strong> · <a href="/api/doctor">Run operator diagnostics</a></p></div>
         <a class="primary-action button-link" href="#deploy">Provision resource</a>
       </section>
       <section class="metrics" aria-label="Fleet summary">

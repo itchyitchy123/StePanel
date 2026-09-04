@@ -108,6 +108,7 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	server.HandleFunc("/api/services", app.services)
 	server.HandleFunc("/api/ftp", app.ftpStatus)
 	server.HandleFunc("/api/security/audit", app.securityAudit)
+	server.HandleFunc("/api/doctor", app.doctor)
 
 	services := httptest.NewRecorder()
 	server.ServeHTTP(services, httptest.NewRequest(http.MethodGet, "/api/services", nil))
@@ -123,6 +124,11 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	server.ServeHTTP(audit, httptest.NewRequest(http.MethodGet, "/api/security/audit", nil))
 	if audit.Code != http.StatusOK || !strings.Contains(audit.Body.String(), `"checks"`) {
 		t.Fatalf("unexpected audit response: %d %s", audit.Code, audit.Body.String())
+	}
+	doctor := httptest.NewRecorder()
+	server.ServeHTTP(doctor, httptest.NewRequest(http.MethodGet, "/api/doctor", nil))
+	if doctor.Code != http.StatusOK || !strings.Contains(doctor.Body.String(), `"healthy"`) || !strings.Contains(doctor.Body.String(), `"web-root-disk"`) {
+		t.Fatalf("unexpected doctor response: %d %s", doctor.Code, doctor.Body.String())
 	}
 }
 

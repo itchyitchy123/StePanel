@@ -35,8 +35,12 @@ func (a *App) SecurityChecks() []SecurityCheck {
 	checks = append(checks, directoryCheck("Web root availability", a.Config.WebRoot))
 
 	services := ServiceStatus()
+	webserver := a.Config.WebServer
+	if webserver == "" {
+		webserver = "apache"
+	}
 	if services["modsecurity"] == "enabled" {
-		checks = append(checks, SecurityCheck{Name: "ModSecurity", Status: "pass", Severity: "low", Detail: "Apache reports the security module as enabled."})
+		checks = append(checks, SecurityCheck{Name: "ModSecurity", Status: "pass", Severity: "low", Detail: webserver + " reports the security module as enabled."})
 	} else {
 		checks = append(checks, SecurityCheck{Name: "ModSecurity", Status: "warning", Severity: "medium", Detail: "ModSecurity was not detected as enabled."})
 	}
