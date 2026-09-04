@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Durable scheduled site backups with interval validation, persisted next-run
+  state, the `/api/backup-schedules` API, and execution through the existing
+  audited backup job pipeline.
+
 - OpenLiteSpeed can now be selected as the installed webserver with
   `STEPANEL_WEBSERVER=openlitespeed`; Caddy is also available with the same
   installer option, service inventory recognizes `lsws` and `caddy`, and Apache

@@ -28,6 +28,8 @@ It is designed for people who want a small, understandable hosting control plane
 
 The authenticated `/api/doctor` endpoint runs read-only checks for the selected
 webserver, database, PHP-FPM, privileged helpers, and free disk capacity.
+Backup schedules are persisted beside job state and execute through the same
+validated, auditable backup pipeline as manual backups.
 
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).

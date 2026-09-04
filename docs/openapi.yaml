@@ -185,6 +185,19 @@ paths:
                 include_databases: {type: boolean, default: false}
       responses:
         '202': {description: Backup job queued}
+  /api/backup-schedules:
+    get:
+      summary: List scheduled site backups
+      responses:
+        '200': {description: Persisted backup schedules}
+    put:
+      summary: Create or replace a site backup schedule
+      responses:
+        '200': {description: Schedule saved}
+    delete:
+      summary: Delete a site backup schedule
+      responses:
+        '204': {description: Schedule deleted}
         '422': {description: Invalid site or unavailable managed-database helper}
         '429': {description: Site already has an active restore or backup job}
   /api/cpmove/inspect:

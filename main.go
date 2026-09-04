@@ -20,11 +20,12 @@ import (
 )
 
 type App struct {
-	Config  Config
-	View    *template.Template
-	Auth    Auth
-	Jobs    *Jobs
-	Metrics *Metrics
+	Config    Config
+	View      *template.Template
+	Auth      Auth
+	Jobs      *Jobs
+	Metrics   *Metrics
+	Schedules *backupSchedules
 }
 
 func main() {
@@ -130,7 +131,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("open persistent job state: %v", err)
 	}
-	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics()}
+	schedules, err := openBackupSchedules(filepath.Join(filepath.Dir(cfg.JobState), "backup-schedules.json"))
+	if err != nil {
+		log.Fatalf("open backup schedules: %v", err)
+	}
+	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules}
 	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
 		log.Printf("initialize audit chain: %v", err)
 	}
@@ -141,6 +146,7 @@ func main() {
 		ticker := time.NewTicker(15 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
+			app.runDueBackups()
 			app.Jobs.Cleanup(24 * time.Hour)
 			if err := CleanupImportStages(app.Config.ImportRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
 				log.Printf("import stage cleanup: %v", err)
@@ -176,6 +182,7 @@ func main() {
 	mux.Handle("/api/sites/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteManage)), http.MethodDelete))
 	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
+	mux.Handle("/api/backup-schedules", allowMethods(app.Auth.Require(http.HandlerFunc(app.backupSchedules)), http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete))
 	mux.Handle("/api/apps", allowMethods(app.Auth.Require(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.appDeploy)), http.MethodPost))
 	mux.Handle("/api/apps/", allowMethods(app.Auth.Require(http.HandlerFunc(app.appAction)), http.MethodPost))
