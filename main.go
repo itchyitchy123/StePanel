@@ -178,6 +178,7 @@ func main() {
 	mux.Handle("/api/cloud", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudInventory)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/cloud/action", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudAction)), http.MethodPost))
 	mux.Handle("/api/ssh", allowMethods(app.Auth.Require(http.HandlerFunc(app.sshInventory)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/ssh/action", allowMethods(app.Auth.Require(http.HandlerFunc(app.sshAction)), http.MethodPost))
 	mux.Handle("/api/capabilities", allowMethods(app.Auth.Require(http.HandlerFunc(app.capabilities)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/scan", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.malwareScan), expensive)), http.MethodPost))
 	mux.Handle("/api/certificates/issue", allowMethods(app.Auth.Require(http.HandlerFunc(app.issueCertificate)), http.MethodPost))

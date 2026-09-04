@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Asynchronous, allowlisted SSH actions for configured infrastructure servers,
+  including service restarts and host reboots with strict host-key checking,
+  bounded timeouts, persisted jobs, and audit events.
+
 - Strict-host-key, read-only SSH server health inventory at `/api/ssh`, with
   bounded connectivity checks for configured infrastructure aliases.
 

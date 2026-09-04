@@ -44,6 +44,8 @@ for completion.
 Set `STEPANEL_SSH_SERVERS` to a comma-separated list of aliases from the
 service account's SSH config to expose strict-host-key, read-only health
 inventory at `/api/ssh`.
+The protected `/api/ssh/action` endpoint queues only allowlisted service
+restarts and host reboots and returns a persisted job URL.
 
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).

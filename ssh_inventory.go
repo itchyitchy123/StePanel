@@ -22,6 +22,13 @@ type SSHServerStatus struct {
 	Error       string `json:"error,omitempty"`
 }
 
+type SSHActionResult struct {
+	Server      string    `json:"server"`
+	Action      string    `json:"action"`
+	Service     string    `json:"service,omitempty"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
 func configuredSSHServers() []string {
 	value := os.Getenv("STEPANEL_SSH_SERVERS")
 	if value == "" {
@@ -55,6 +62,74 @@ func (a *App) sshInventory(w http.ResponseWriter, _ *http.Request) {
 		results = append(results, inspectSSHServer(ctx, server))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"servers": results, "time": time.Now().UTC()})
+}
+
+func (a *App) sshAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	var in struct{ Server, Action, Service string }
+	if err := decodeJSON(w, r, 4096, &in); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	in.Server = strings.TrimSpace(in.Server)
+	in.Action = strings.TrimSpace(in.Action)
+	in.Service = strings.TrimSpace(in.Service)
+	allowed := false
+	for _, server := range configuredSSHServers() {
+		if server == in.Server {
+			allowed = true
+			break
+		}
+	}
+	if !allowed || (in.Action != "reboot" && in.Action != "restart-service") || (in.Action == "restart-service" && !sshServicePattern.MatchString(in.Service)) {
+		http.Error(w, "invalid SSH server, action, or service", 422)
+		return
+	}
+	id, err := newJobID("ssh")
+	if err != nil {
+		http.Error(w, "could not create SSH job", 500)
+		return
+	}
+	if err := a.Jobs.SubmitCloud(id, in.Server, func() (CloudActionResult, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := executeSSHAction(ctx, in.Server, in.Action, in.Service); err != nil {
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "ssh."+in.Action+".failed", in.Server, err.Error())
+			return CloudActionResult{}, err
+		}
+		result := CloudActionResult{Provider: "ssh", Action: in.Action, ID: in.Server, CompletedAt: time.Now().UTC()}
+		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "ssh."+in.Action, in.Server, in.Service); err != nil {
+			return result, err
+		}
+		return result, nil
+	}); err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), 429)
+		} else {
+			http.Error(w, "could not persist SSH job", 500)
+		}
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
+}
+
+var sshServicePattern = regexp.MustCompile(`^[a-zA-Z0-9@_.:-]{1,80}$`)
+
+func executeSSHAction(ctx context.Context, server, action, service string) error {
+	args := []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=8", server, "sudo", "--non-interactive"}
+	if action == "reboot" {
+		args = append(args, "systemctl", "reboot")
+	} else {
+		args = append(args, "systemctl", "restart", service)
+	}
+	out, err := exec.CommandContext(ctx, "ssh", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("SSH action failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func inspectSSHServer(ctx context.Context, server string) SSHServerStatus {
