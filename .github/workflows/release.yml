@@ -59,6 +59,6 @@ jobs:
           tags: |
             ghcr.io/itchyitchy123/stepanel:${{ github.ref_name }}
             ghcr.io/itchyitchy123/stepanel:latest
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
