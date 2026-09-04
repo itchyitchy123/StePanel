@@ -57,8 +57,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/itchyitchy123/stepanel:${{ github.ref_name }}
+            ghcr.io/itchyitchy123/stepanel:latest
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

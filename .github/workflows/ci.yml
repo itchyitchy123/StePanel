@@ -19,7 +19,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        go-version: ['1.26.x', '1.27.x']
+        # Keep CI on the currently released toolchain. Add a newer entry only
+        # after setup-go publishes that version for all runner architectures.
+        go-version: ['1.26.x']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -31,7 +33,6 @@ jobs:
       - run: go test ./... -coverprofile=coverage.out -covermode=atomic
       - run: go test -race ./...
       - uses: actions/upload-artifact@v4
-        if: matrix.go-version == '1.27.x'
         with:
           name: go-coverage
           path: coverage.out
@@ -42,7 +43,6 @@ jobs:
       - name: Lint shell scripts
         run: shellcheck -S warning install.sh deploy/lab/run.sh deploy/integrations/install-node-nvm.sh deploy/integrations/stepanel-apache-reload deploy/integrations/stepanel-appctl deploy/integrations/stepanel-proxyctl deploy/integrations/stepanel-sitectl deploy/integrations/stepanel-vhostctl deploy/integrations/stepanel-dbctl deploy/integrations/stepanel-certbot deploy/integrations/stepanel-malware-guard
       - name: Vulnerability scan
-        if: matrix.go-version == '1.27.x'
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
       - name: Build container
         run: docker build --tag stepanel:ci .
