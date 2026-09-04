@@ -7,5 +7,5 @@ variable "kubeconfig" {
 variable "image" {
   description = "Immutable StePanel image reference."
   type        = string
-  default     = "ghcr.io/itchyitchy123/stepanel:v0.1.0"
+  default     = "ghcr.io/itchyitchy123/stepanel:v0.2.0"
 }

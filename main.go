@@ -230,7 +230,9 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 			alerts++
 		}
 	}
-	_ = a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.Username, "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": a.SecurityChecks(), "Jobs": a.Jobs.List(8), "Capabilities": a.Capabilities()})
+	if err := a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.Username, "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": a.SecurityChecks(), "Jobs": a.Jobs.List(8), "Capabilities": a.Capabilities()}); err != nil {
+		log.Printf("dashboard render failed: %v", err)
+	}
 }
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	response := map[string]any{"ok": true, "version": Version, "commit": Commit, "time": time.Now().UTC()}

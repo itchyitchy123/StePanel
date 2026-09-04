@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: StePanel API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Authenticated server operations, service inventory, and migration API.
     Mutating requests require the `stepanel_session` cookie and the matching

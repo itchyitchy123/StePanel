@@ -34,6 +34,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Optional TOTP administrator MFA with accepted-code replay protection, plus
   actor/target-aware, sequence-linked HMAC audit records and offline verification.
 
+## [0.2.0] - 2026-09-04
+
+### Fixed
+
+- App deployment now validates and normalizes domains at the API boundary,
+  preventing malformed hostnames and audit-log injection through direct API use.
+- Password-based session fingerprints remain stable across restarts without
+  retaining the plaintext password in the in-memory authentication state.
+- Session admission is bounded with expiry-based eviction, validation uses a
+  read lock, HTTP metrics record implicit 200 responses correctly, and cPanel
+  restore staging IDs are collision-resistant.
+
+### Documentation
+
+- Added the production-readiness wiki covering architecture, operations,
+  security boundaries, backup/restore procedures, deployment, observability,
+  and known limitations.
+
 ### Changed
 
 - The dashboard now renders only live server, security, capability, and job
