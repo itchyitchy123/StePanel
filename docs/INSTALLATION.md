@@ -4,15 +4,20 @@
 
 The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Apache or OpenLiteSpeed, MySQL/MariaDB, PHP-FPM, ACL and archive utilities, and StePanel.
 
-Set `STEPANEL_WEBSERVER=apache` (the default) or
-`STEPANEL_WEBSERVER=openlitespeed` to choose the webserver. OpenLiteSpeed
+Set `STEPANEL_WEBSERVER=apache` (the default),
+`STEPANEL_WEBSERVER=openlitespeed`, or `STEPANEL_WEBSERVER=caddy` to choose the webserver. OpenLiteSpeed
 installations require the OpenLiteSpeed package repository to be configured;
 the installer verifies that `lswsctrl` is available. Apache-specific optional
 integrations (ModSecurity and the Certbot Apache plugin) are rejected for an
 OpenLiteSpeed install until equivalent OLS integrations are configured.
-OpenLiteSpeed site-vhost and reverse-proxy provisioning must be configured in
-the OLS listener/vhost configuration; the bundled Apache `stepanel-vhostctl`
-and `stepanel-proxyctl` helpers are not used for that server mode.
+OpenLiteSpeed reverse-proxy snippets are managed by the bundled helper and
+written below `/usr/local/lsws/conf/vhosts/stepanel/proxy`; include that
+directory from the target OLS listener/vhost rewrite configuration before
+serving traffic. PHP site-vhost provisioning still requires an OLS-specific
+listener/vhost template.
+Caddy installs import `/etc/caddy/stepanel.d/*.caddy`; the proxy helper writes
+validated, rollback-safe `reverse_proxy` snippets there and validates/reloads
+Caddy after each change.
 
 ## Build and install
 

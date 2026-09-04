@@ -20,6 +20,14 @@ func TestValidateConfigAcceptsOpenLiteSpeed(t *testing.T) {
 	}
 }
 
+func TestValidateConfigAcceptsCaddy(t *testing.T) {
+	cfg := LoadConfig()
+	cfg.WebServer = "caddy"
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("Caddy config rejected: %v", err)
+	}
+}
+
 func TestValidateConfigRejectsUnknownWebServer(t *testing.T) {
 	cfg := LoadConfig()
 	cfg.WebServer = "nginx"

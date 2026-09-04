@@ -9,9 +9,20 @@ important during incident response.
 
 StePanel is a Go control plane for a single Linux host. It authenticates an
 administrator, invokes narrowly scoped root-owned helpers, manages site
-metadata, and queues long-running backup and restore work. Apache, PHP-FPM,
-Node, the database server, mail, and FTP remain host services managed by the
-installer and helper scripts.
+metadata, and queues long-running backup and restore work. Apache,
+OpenLiteSpeed or Caddy, PHP-FPM, Node, the database server, mail, and FTP remain
+host services managed by the installer and helper scripts.
+
+### Webserver integrations
+
+Apache remains the default and has the broadest site-vhost integration. With
+`STEPANEL_WEBSERVER=openlitespeed`, proxy snippets are written to
+`/usr/local/lsws/conf/vhosts/stepanel/proxy` and OpenLiteSpeed is restarted
+after validation; include that directory from the relevant OLS listener/vhost
+rewrite configuration. With `STEPANEL_WEBSERVER=caddy`, snippets are written
+to `/etc/caddy/stepanel.d`, imported by `/etc/caddy/Caddyfile`, validated, and
+loaded with a Caddy reload. PHP site-vhost templates remain Apache-specific,
+so configure equivalent OLS/Caddy site routing before enabling customer sites.
 
 The container and Kubernetes packages run the control plane only. They do not
 provide access to a host's systemd, Apache, PHP-FPM, or database services.

@@ -131,8 +131,8 @@ func LoadConfig() Config {
 // callers that construct Config values directly (including tests and tools) do
 // not need an error-returning configuration API.
 func ValidateConfig(c Config) error {
-	if c.WebServer != "apache" && c.WebServer != "openlitespeed" {
-		return fmt.Errorf("STEPANEL_WEBSERVER must be apache or openlitespeed")
+	if c.WebServer != "apache" && c.WebServer != "openlitespeed" && c.WebServer != "caddy" {
+		return fmt.Errorf("STEPANEL_WEBSERVER must be apache, openlitespeed, or caddy")
 	}
 	var problems []error
 	switch environment := os.Getenv("STEPANEL_ENV"); environment {

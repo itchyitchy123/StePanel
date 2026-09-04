@@ -9,8 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - OpenLiteSpeed can now be selected as the installed webserver with
-  `STEPANEL_WEBSERVER=openlitespeed`; service inventory recognizes `lsws` and
-  the installer preserves Apache as the default.
+  `STEPANEL_WEBSERVER=openlitespeed`; Caddy is also available with the same
+  installer option, service inventory recognizes `lsws` and `caddy`, and Apache
+  remains the default. OpenLiteSpeed and Caddy receive dedicated proxy helpers
+  with backend validation, atomic updates, configuration checks, and rollback
+  on failed reload/restart.
 - Persistent, server-revocable administrator sessions, password-rotation
   invalidation, request correlation IDs, a recent-jobs API/dashboard, runtime
   capability reporting, and HTTP response-class metrics.

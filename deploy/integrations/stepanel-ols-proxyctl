@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $EUID -eq 0 ]] || { echo 'must run as root' >&2; exit 1; }
+
+root=/usr/local/lsws/conf/vhosts/stepanel/proxy
+lswsctrl=${LSWSCTRL:-/usr/local/lsws/bin/lswsctrl}
+[[ -x "$lswsctrl" ]] || lswsctrl=$(command -v lswsctrl || true)
+[[ -x "$lswsctrl" ]] || { echo 'OpenLiteSpeed control command not found' >&2; exit 1; }
+install -d -m 0755 -o root -g root "$root"
+exec 9>/run/lock/stepanel-ols.lock
+flock -x 9
+
+valid_backend() {
+  [[ "$1" =~ ^https?://(127\.0\.0\.1|localhost|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[0-9A-Za-z:._-]+$ ]]
+}
+
+restart() { "$lswsctrl" restart >/dev/null; }
+
+case "${1:-}" in
+  apply)
+    (( $# == 4 )) || { echo 'usage: stepanel-ols-proxyctl apply SITE DOMAIN BACKEND' >&2; exit 64; }
+    site=$2; domain=${3,,}; backend=$4
+    [[ $site =~ ^[a-z0-9_-]{1,32}$ && $domain =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo 'invalid site or domain' >&2; exit 1; }
+    valid_backend "$backend" || { echo 'invalid backend' >&2; exit 1; }
+    path="$root/${site}-${domain//./_}.conf"
+    backup=''
+    if [[ -f "$path" ]]; then backup=$(mktemp); cp -p "$path" "$backup"; fi
+    tmp=$(mktemp "$root/.stepanel.XXXXXX")
+    trap 'rm -f "$tmp" "$backup"' EXIT
+    printf '# StePanel managed OpenLiteSpeed proxy for %s\nRewriteRule ^(.*)$ %s/$1 [P,L]\n' "$domain" "$backend" > "$tmp"
+    chmod 0644 "$tmp"; chown root:root "$tmp"; mv -f "$tmp" "$path"
+    if ! restart; then
+      if [[ -n "$backup" ]]; then mv -f "$backup" "$path"; else rm -f "$path"; fi
+      exit 1
+    fi
+    ;;
+  delete)
+    (( $# == 2 )) || { echo 'usage: stepanel-ols-proxyctl delete NAME' >&2; exit 64; }
+    [[ $2 =~ ^[a-z0-9_-]{1,32}-[a-z0-9_-]+\.conf$ ]] || { echo 'invalid proxy name' >&2; exit 1; }
+    path="$root/$2"; [[ -f "$path" ]] || { echo 'proxy not found' >&2; exit 1; }
+    backup=$(mktemp); cp -p "$path" "$backup"; rm -f "$path"
+    if ! restart; then mv -f "$backup" "$path"; exit 1; fi
+    rm -f "$backup"
+    ;;
+  *) echo 'usage: stepanel-ols-proxyctl apply SITE DOMAIN BACKEND | delete NAME' >&2; exit 64 ;;
+esac

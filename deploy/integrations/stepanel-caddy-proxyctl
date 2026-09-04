@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $EUID -eq 0 ]] || { echo 'must run as root' >&2; exit 1; }
+root=/etc/caddy/stepanel.d
+service=caddy
+install -d -m 0755 -o root -g root "$root"
+exec 9>/run/lock/stepanel-caddy.lock; flock -x 9
+valid_backend() { [[ "$1" =~ ^https?://(127\.0\.0\.1|localhost|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[0-9A-Za-z:._-]+$ ]]; }
+case "${1:-}" in
+apply)
+  (( $# == 4 )) || { echo 'usage: stepanel-caddy-proxyctl apply SITE DOMAIN BACKEND' >&2; exit 64; }
+  site=$2; domain=${3,,}; backend=$4
+  [[ $site =~ ^[a-z0-9_-]{1,32}$ && $domain =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo 'invalid site or domain' >&2; exit 1; }
+  valid_backend "$backend" || { echo 'invalid backend' >&2; exit 1; }
+  path="$root/${site}-${domain//./_}.caddy"; backup=''; [[ -f "$path" ]] && backup=$(mktemp) && cp -p "$path" "$backup"
+  tmp=$(mktemp "$root/.stepanel.XXXXXX"); trap 'rm -f "$tmp" "$backup"' EXIT
+  printf '%s {\n\treverse_proxy %s\n}\n' "$domain" "$backend" > "$tmp"; chmod 0644 "$tmp"; chown root:root "$tmp"; mv -f "$tmp" "$path"
+  if ! caddy validate --config /etc/caddy/Caddyfile >/dev/null || ! systemctl reload "$service"; then
+    if [[ -n "$backup" ]]; then mv -f "$backup" "$path"; else rm -f "$path"; fi
+    exit 1
+  fi
+  ;;
+delete)
+  (( $# == 2 )) || { echo 'usage: stepanel-caddy-proxyctl delete NAME' >&2; exit 64; }
+  [[ $2 =~ ^[a-z0-9_-]{1,32}-[a-z0-9_-]+\.caddy$ ]] || { echo 'invalid proxy name' >&2; exit 1; }
+  path="$root/$2"; [[ -f $path ]] || { echo 'proxy not found' >&2; exit 1; }; backup=$(mktemp); cp -p "$path" "$backup"; rm -f "$path"
+  caddy validate --config /etc/caddy/Caddyfile >/dev/null && systemctl reload "$service" || { mv -f "$backup" "$path"; exit 1; }
+  rm -f "$backup"; ;;
+*) echo 'usage: stepanel-caddy-proxyctl apply SITE DOMAIN BACKEND | delete NAME' >&2; exit 64;;
+esac

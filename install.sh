@@ -92,13 +92,14 @@ if [[ -z "$PANEL_HOSTNAME" ]]; then
   done
 fi
 if [[ -z "$WEB_SERVER" && -t 0 ]]; then
-  read -r -p "Web server [apache/openlitespeed] (apache): " WEB_SERVER
+  read -r -p "Web server [apache/openlitespeed/caddy] (apache): " WEB_SERVER
 fi
 WEB_SERVER="${WEB_SERVER:-apache}"
 WEB_SERVER="${WEB_SERVER,,}"
-if [[ "$WEB_SERVER" != "apache" && "$WEB_SERVER" != "openlitespeed" ]]; then echo "STEPANEL_WEBSERVER must be apache or openlitespeed." >&2; exit 1; fi
-if [[ "$WEB_SERVER" == "openlitespeed" && "$INSTALL_TLS" == "1" ]]; then echo 'STEPANEL_INSTALL_TLS is currently supported only with Apache; configure ACME/webroot integration separately for OpenLiteSpeed.' >&2; exit 1; fi
+if [[ "$WEB_SERVER" != "apache" && "$WEB_SERVER" != "openlitespeed" && "$WEB_SERVER" != "caddy" ]]; then echo "STEPANEL_WEBSERVER must be apache, openlitespeed, or caddy." >&2; exit 1; fi
+if [[ "$WEB_SERVER" != "apache" && "$INSTALL_TLS" == "1" ]]; then echo 'STEPANEL_INSTALL_TLS is currently supported only with Apache; configure ACME integration separately for this webserver.' >&2; exit 1; fi
 if [[ "$WEB_SERVER" == "openlitespeed" && "$INSTALL_MODSEC" == "1" ]]; then echo 'STEPANEL_INSTALL_MODSEC is currently supported only with Apache.' >&2; exit 1; fi
+if [[ "$WEB_SERVER" == "caddy" && "$INSTALL_MODSEC" == "1" ]]; then echo 'STEPANEL_INSTALL_MODSEC is currently supported only with Apache.' >&2; exit 1; fi
 if [[ ! "$PANEL_HOSTNAME" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then echo "Set STEPANEL_PANEL_HOSTNAME to the panel's fully qualified domain name." >&2; exit 1; fi
 if [[ "$ADMIN_PASSWORD" == *$'\n'* || "$ADMIN_PASSWORD" == *$'\r'* || "$SESSION_SECRET" == *$'\n'* || "$SESSION_SECRET" == *$'\r'* || "$DB_PASSWORD" == *$'\n'* || "$DB_PASSWORD" == *$'\r'* ]]; then echo "Credentials may not contain newlines." >&2; exit 1; fi
 if [[ "$DB_HOST" == *$'\n'* || "$DB_HOST" == *$'\r'* ]]; then echo "STEPANEL_DB_HOST may not contain newlines." >&2; exit 1; fi
@@ -153,13 +154,17 @@ if [[ "$PKG" == "apt" ]]; then DB_SERVICE="${DB_ENGINE/mysql/mysql}"; [[ "$DB_EN
 else DB_SERVICE="$([[ "$DB_ENGINE" == "mysql" ]] && echo mysqld || echo mariadb)"; dnf install -y php php-cli php-fpm php-mysqlnd php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate; fi
 if [[ "$WEB_SERVER" == "apache" ]]; then
   if [[ "$PKG" == "apt" ]]; then apt-get install -y apache2; APACHE_SERVICE=apache2; else dnf install -y httpd; APACHE_SERVICE=httpd; fi
-else
+elif [[ "$WEB_SERVER" == "openlitespeed" ]]; then
   LSWSCTRL="$(command -v lswsctrl 2>/dev/null || printf /usr/local/lsws/bin/lswsctrl)"
   if [[ ! -x "$LSWSCTRL" ]]; then
     if [[ "$PKG" == "apt" ]]; then apt-get install -y openlitespeed; else dnf install -y openlitespeed; fi
   fi
   [[ -x "$LSWSCTRL" ]] || { echo 'OpenLiteSpeed was selected but lswsctrl is unavailable; configure the OpenLiteSpeed repository first.' >&2; exit 1; }
   APACHE_SERVICE=lsws
+else
+  if [[ "$PKG" == "apt" ]]; then apt-get install -y caddy; else dnf install -y caddy; fi
+  command -v caddy >/dev/null 2>&1 || { echo 'Caddy was selected but the caddy executable is unavailable; configure the Caddy repository first.' >&2; exit 1; }
+  APACHE_SERVICE=caddy
 fi
 
 if [[ "$DB_VERSION" == "default" ]]; then
@@ -174,8 +179,9 @@ fi
 
 WEB_GROUP="$([[ "$PKG" == "apt" ]] && printf www-data || printf apache)"
 if [[ "$WEB_SERVER" == "openlitespeed" ]]; then WEB_GROUP="$(id -gn nobody 2>/dev/null || printf nogroup)"; fi
+if [[ "$WEB_SERVER" == "caddy" ]]; then WEB_GROUP="$(id -gn caddy 2>/dev/null || printf caddy)"; fi
 getent group "$WEB_GROUP" >/dev/null || { echo "Web server group $WEB_GROUP was not created by the package installation." >&2; exit 1; }
-if [[ "$WEB_SERVER" == "openlitespeed" ]]; then PROXY_ROOT=/usr/local/lsws/conf/vhosts/stepanel/proxy; VHOST_ROOT=/usr/local/lsws/conf/vhosts/stepanel/sites; elif [[ "$PKG" == "apt" ]]; then PROXY_ROOT=/etc/apache2/stepanel-proxy; VHOST_ROOT=/etc/apache2/stepanel-sites; else PROXY_ROOT=/etc/httpd/conf.d/stepanel-proxy; VHOST_ROOT=/etc/httpd/conf.d/stepanel-sites; fi
+if [[ "$WEB_SERVER" == "openlitespeed" ]]; then PROXY_ROOT=/usr/local/lsws/conf/vhosts/stepanel/proxy; VHOST_ROOT=/usr/local/lsws/conf/vhosts/stepanel/sites; elif [[ "$WEB_SERVER" == "caddy" ]]; then PROXY_ROOT=/etc/caddy/stepanel.d; VHOST_ROOT=/etc/caddy/stepanel.d; elif [[ "$PKG" == "apt" ]]; then PROXY_ROOT=/etc/apache2/stepanel-proxy; VHOST_ROOT=/etc/apache2/stepanel-sites; else PROXY_ROOT=/etc/httpd/conf.d/stepanel-proxy; VHOST_ROOT=/etc/httpd/conf.d/stepanel-sites; fi
 
 systemctl enable --now "$DB_SERVICE"
 mapfile -t FPM_UNITS < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
@@ -386,6 +392,8 @@ if [[ "$WEB_SERVER" == "apache" && "$PKG" == "apt" ]]; then
   managed_targets+=(/etc/apache2/sites-available/stepanel.conf /etc/apache2/sites-enabled/stepanel.conf /etc/apache2/conf-enabled/stepanel-proxy.conf)
 elif [[ "$WEB_SERVER" == "apache" ]]; then
   managed_targets+=(/etc/httpd/conf.d/stepanel.conf /etc/httpd/conf.d/stepanel-proxy.conf)
+elif [[ "$WEB_SERVER" == "caddy" ]]; then
+  managed_targets+=(/etc/caddy/stepanel.d/panel.caddy)
 fi
 if [[ "$INSTALL_TLS" == "1" ]]; then managed_targets+=(/usr/local/sbin/stepanel-certbot); fi
 if [[ -n "$FPM_LENS_BINARY" ]]; then managed_targets+=(/usr/local/bin/fpm-lens); fi
@@ -413,7 +421,13 @@ printf '%s\n' "$AUDIT_KEY" > "$INSTALL_TXN/audit.key"
 install -m 0600 -o root -g root "$INSTALL_TXN/audit.key" /etc/stepanel-audit.key
 install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/integrations/install-fail2ban.sh"
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
-install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-proxyctl" /usr/local/sbin/stepanel-proxyctl
+if [[ "$WEB_SERVER" == "caddy" ]]; then
+  install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-caddy-proxyctl" /usr/local/sbin/stepanel-proxyctl
+elif [[ "$WEB_SERVER" == "openlitespeed" ]]; then
+  install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-ols-proxyctl" /usr/local/sbin/stepanel-proxyctl
+else
+  install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-proxyctl" /usr/local/sbin/stepanel-proxyctl
+fi
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-sitectl" /usr/local/sbin/stepanel-sitectl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-vhostctl" /usr/local/sbin/stepanel-vhostctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-dbctl" /usr/local/sbin/stepanel-dbctl
@@ -427,16 +441,26 @@ install -m 0644 -D "$ROOT_DIR/web/static/deploy.js" "$APP_DIR/web/static/deploy.
 install -m 0644 -D "$ROOT_DIR/web/static/certificates.js" "$APP_DIR/web/static/certificates.js"
 install -m 0644 -D "$ROOT_DIR/web/static/wpress.js" "$APP_DIR/web/static/wpress.js"
 install -m 0644 -D "$ROOT_DIR/web/static/favicon.svg" "$APP_DIR/web/static/favicon.svg"
-if [[ "$PKG" == "apt" ]]; then
+if [[ "$WEB_SERVER" == "apache" && "$PKG" == "apt" ]]; then
   install -m 0644 "$ROOT_DIR/deploy/apache/stepanel.conf" /etc/apache2/sites-available/stepanel.conf
   sed -i "s/panel\.example\.com/$PANEL_HOSTNAME/g" /etc/apache2/sites-available/stepanel.conf
   a2enmod proxy proxy_http proxy_fcgi setenvif rewrite headers >/dev/null
   if [[ -e /etc/apache2/conf-enabled/stepanel-proxy.conf ]]; then a2disconf stepanel-proxy >/dev/null; fi
   a2ensite stepanel >/dev/null
-else
+elif [[ "$WEB_SERVER" == "apache" ]]; then
   install -m 0644 "$ROOT_DIR/deploy/apache/stepanel-rhel.conf" /etc/httpd/conf.d/stepanel.conf
   sed -i "s/panel\.example\.com/$PANEL_HOSTNAME/g" /etc/httpd/conf.d/stepanel.conf
   if [[ -f /etc/httpd/conf.d/stepanel-proxy.conf ]]; then printf '%s\n' '# Superseded by the root-owned stepanel-proxy directory.' > /etc/httpd/conf.d/stepanel-proxy.conf; fi
+fi
+if [[ "$WEB_SERVER" == "caddy" ]]; then
+  install -d -m 0755 /etc/caddy/stepanel.d
+  printf '%s\n' "$PANEL_HOSTNAME {" $'\treverse_proxy 127.0.0.1:8080' '}' > /etc/caddy/stepanel.d/panel.caddy
+  if [[ ! -f /etc/caddy/Caddyfile ]]; then
+    printf 'import /etc/caddy/stepanel.d/*.caddy\n' > /etc/caddy/Caddyfile
+  elif ! grep -Fqx 'import /etc/caddy/stepanel.d/*.caddy' /etc/caddy/Caddyfile; then
+    printf '\nimport /etc/caddy/stepanel.d/*.caddy\n' >> /etc/caddy/Caddyfile
+  fi
+  caddy validate --config /etc/caddy/Caddyfile
 fi
 chown -R root:root "$APP_DIR"
 chmod 0755 "$APP_DIR"
@@ -514,7 +538,11 @@ visudo -cf "$sudoers_tmp" >/dev/null
 install -m 0440 -o root -g root "$sudoers_tmp" /etc/sudoers.d/stepanel
 if [[ "$INSTALL_SECURITY" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-malware-guard" /usr/local/sbin/stepanel-malware-guard; install -m 0644 "$ROOT_DIR/deploy/stepanel-malware-guard.service" /etc/systemd/system/stepanel-malware-guard.service; fi
 if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
-  command -v restorecon >/dev/null 2>&1 && restorecon -RF /opt/stepanel /var/lib/ste-panel /var/lib/stepanel-privileged /var/backups/stepanel /var/www/sites /etc/httpd/conf.d/stepanel.conf "$PROXY_ROOT" "$VHOST_ROOT"
+  if command -v restorecon >/dev/null 2>&1; then
+    restorecon_paths=(/opt/stepanel /var/lib/ste-panel /var/lib/stepanel-privileged /var/backups/stepanel /var/www/sites "$PROXY_ROOT" "$VHOST_ROOT")
+    [[ "$WEB_SERVER" == "apache" ]] && restorecon_paths+=(/etc/httpd/conf.d/stepanel.conf)
+    restorecon -RF "${restorecon_paths[@]}"
+  fi
   if command -v setsebool >/dev/null 2>&1; then setsebool -P httpd_can_network_connect 1; fi
 fi
 systemctl daemon-reload
@@ -522,7 +550,13 @@ if [[ "$WEB_SERVER" == "apache" ]]; then
   if command -v apachectl >/dev/null 2>&1; then apachectl -t; else httpd -t; fi
 fi
 systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" "${FPM_UNITS[@]}"
-if [[ "$WEB_SERVER" == "apache" ]]; then systemctl reload "$APACHE_SERVICE"; else "$LSWSCTRL" restart; fi
+if [[ "$WEB_SERVER" == "apache" ]]; then
+  systemctl reload "$APACHE_SERVICE"
+elif [[ "$WEB_SERVER" == "openlitespeed" ]]; then
+  "$LSWSCTRL" restart
+else
+  systemctl reload "$APACHE_SERVICE"
+fi
 systemctl enable --now stepanel.service
 health_ready=0
 for _ in {1..30}; do
