@@ -243,6 +243,56 @@ func (a *App) cloudLoadBalancer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
 }
 
+func (a *App) cloudSnapshots(w http.ResponseWriter, r *http.Request) {
+	if a.Config.CloudProvider != "linode" {
+		http.Error(w, "Linode snapshot integration requires STEPANEL_CLOUD_PROVIDER=linode", 422)
+		return
+	}
+	if r.Method == http.MethodGet {
+		value, err := linodeAPIRequest(r.Context(), http.MethodGet, "/account/linode/backups", nil)
+		if err != nil {
+			http.Error(w, err.Error(), 503)
+			return
+		}
+		writeJSON(w, 200, value)
+		return
+	}
+	if r.Method != http.MethodDelete || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", 403)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if !cloudNumericID.MatchString(id) {
+		http.Error(w, "invalid snapshot id", 422)
+		return
+	}
+	jobID, err := newJobID("snapshot")
+	if err != nil {
+		http.Error(w, "could not create snapshot job", 500)
+		return
+	}
+	err = a.Jobs.SubmitCloud(jobID, id, func() (CloudActionResult, error) {
+		if _, err := linodeAPIRequest(context.Background(), http.MethodDelete, "/account/linode/backups/"+id, nil); err != nil {
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.snapshot.delete.failed", id, err.Error())
+			return CloudActionResult{}, err
+		}
+		result := CloudActionResult{Provider: "linode", Action: "snapshot.delete", ID: id, CompletedAt: time.Now().UTC()}
+		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.snapshot.delete", id, "linode"); err != nil {
+			return result, err
+		}
+		return result, nil
+	})
+	if err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), 429)
+		} else {
+			http.Error(w, "could not persist snapshot job", 500)
+		}
+		return
+	}
+	writeJSON(w, 202, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID})
+}
+
 var cloudNumericID = regexp.MustCompile(`^[0-9]{1,12}$`)
 var dnsTypePattern = regexp.MustCompile(`^(A|AAAA|CNAME|MX|TXT|NS|SRV)$`)
 var dnsNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.*@-]{1,253}$`)

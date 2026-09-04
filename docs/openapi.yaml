@@ -125,6 +125,15 @@ paths:
       summary: Queue a Linode load-balancer backend add or removal
       responses:
         '202': {description: Load-balancer change queued}
+  /api/cloud/snapshots:
+    get:
+      summary: List Linode snapshots
+      responses:
+        '200': {description: Snapshots}
+    delete:
+      summary: Queue deletion of a Linode snapshot
+      responses:
+        '202': {description: Snapshot deletion queued}
     delete:
       summary: Queue a Linode DNS record deletion
       responses:

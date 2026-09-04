@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Linode snapshot listing and asynchronous deletion with strict snapshot ID
+  validation and audit events.
+
 - Asynchronous Linode load-balancer backend management with strict address,
   port, weight, and resource validation.
 

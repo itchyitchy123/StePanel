@@ -50,6 +50,8 @@ For Linode installations, `/api/cloud/dns` lists records and queues validated
 DNS record creation, update, and deletion operations.
 Linode load-balancer backend additions and removals are available through the
 asynchronous `/api/cloud/loadbalancer` endpoint.
+Linode snapshots can be listed and safely deleted through
+`/api/cloud/snapshots`; deletion is asynchronous and audited.
 
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
