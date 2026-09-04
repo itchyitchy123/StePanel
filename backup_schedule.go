@@ -154,6 +154,9 @@ func (a *App) runDueBackups() {
 		s.NextRun = now.Add(time.Duration(s.IntervalMinutes) * time.Minute)
 		err = a.Jobs.SubmitBackup(id, site, func() (BackupResult, error) {
 			result, err := CreateSiteBackup(a.Config, site, s.IncludeDatabases)
+			if err == nil {
+				err = uploadOffsite(a.Config, result)
+			}
 			if err != nil {
 				_ = AuditAs(a.Config.AuditLog, "scheduler", "site.backup.failed", site, err.Error())
 			} else if auditErr := AuditAs(a.Config.AuditLog, "scheduler", "site.backup.completed", site, result.ArchiveSHA256); auditErr != nil {

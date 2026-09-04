@@ -17,6 +17,7 @@ type Config struct {
 	SiteCtl, VHostCtl, Certbot, DBCtl                                          string
 	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo string
 	DBHost, DBUser, DBPassword                                                 string
+	OffsiteTarget                                                              string
 	Production                                                                 bool
 	MaxUpload                                                                  int64
 	MaxEntries, MaxConcurrentJobs, StageRetentionHours                         int
@@ -101,6 +102,7 @@ func LoadConfig() Config {
 	c.DBHost = os.Getenv("STEPANEL_DB_HOST")
 	c.DBUser = os.Getenv("STEPANEL_DB_USER")
 	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
+	c.OffsiteTarget = strings.TrimSpace(os.Getenv("STEPANEL_OFFSITE_TARGET"))
 	c.Production = os.Getenv("STEPANEL_ENV") == "production"
 	if v, err := strconv.ParseInt(os.Getenv("STEPANEL_MAX_UPLOAD_BYTES"), 10, 64); err == nil && v > 0 && v <= 20<<30 {
 		c.MaxUpload = v
@@ -135,6 +137,9 @@ func ValidateConfig(c Config) error {
 		return fmt.Errorf("STEPANEL_WEBSERVER must be apache, openlitespeed, or caddy")
 	}
 	var problems []error
+	if err := validateOffsiteTarget(c.OffsiteTarget); err != nil {
+		problems = append(problems, err)
+	}
 	switch environment := os.Getenv("STEPANEL_ENV"); environment {
 	case "", "development", "lab", "test", "production":
 	default:

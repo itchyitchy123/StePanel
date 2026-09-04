@@ -103,7 +103,10 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 					err = fmt.Errorf("%w; audit persistence failed: %v", err, auditErr)
 				}
 			} else {
-				if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.completed", input.Site, result.ArchiveSHA256); auditErr != nil {
+				err = uploadOffsite(a.Config, result)
+				if err != nil {
+					_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.offsite_failed", input.Site, err.Error())
+				} else if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.completed", input.Site, result.ArchiveSHA256); auditErr != nil {
 					err = auditErr
 				}
 			}

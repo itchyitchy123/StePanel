@@ -30,6 +30,10 @@ The authenticated `/api/doctor` endpoint runs read-only checks for the selected
 webserver, database, PHP-FPM, privileged helpers, and free disk capacity.
 Backup schedules are persisted beside job state and execute through the same
 validated, auditable backup pipeline as manual backups.
+Set `STEPANEL_OFFSITE_TARGET` to an existing rclone destination such as
+`s3:my-bucket/stepanel` to upload each verified archive after local backup
+creation. Credentials remain in rclone's protected host configuration and are
+never stored in StePanel state.
 
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).

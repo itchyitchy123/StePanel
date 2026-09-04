@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 )
@@ -35,6 +36,15 @@ func (a *App) doctor(w http.ResponseWriter, _ *http.Request) {
 	}
 	checks = append(checks, doctorService("database", dbState))
 	checks = append(checks, doctorService("php-fpm", services["php-fpm"]))
+	if cfg.OffsiteTarget != "" {
+		if err := validateOffsiteTarget(cfg.OffsiteTarget); err != nil {
+			checks = append(checks, DoctorCheck{"offsite-backup", "fail", "high", err.Error()})
+		} else if _, err := exec.LookPath("rclone"); err != nil {
+			checks = append(checks, DoctorCheck{"offsite-backup", "fail", "high", "rclone is not installed"})
+		} else {
+			checks = append(checks, DoctorCheck{"offsite-backup", "pass", "low", "rclone is available and an offsite target is configured"})
+		}
+	}
 	for _, path := range []string{cfg.AppCtl, cfg.ProxyCtl, cfg.SiteCtl, cfg.VHostCtl} {
 		if path == "" {
 			continue
