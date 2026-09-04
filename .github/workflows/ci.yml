@@ -23,7 +23,7 @@ jobs:
         # after setup-go publishes that version for all runner architectures.
         go_version: ['1.26.x']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go_version }}
