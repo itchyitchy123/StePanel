@@ -143,16 +143,22 @@ func main() {
 		log.Println("warning: authentication is disabled; set STEPANEL_ADMIN_PASSWORD and STEPANEL_SESSION_SECRET")
 	}
 	go func() {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			app.runDueBackups()
-			app.Jobs.Cleanup(24 * time.Hour)
-			if err := CleanupImportStages(app.Config.ImportRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
-				log.Printf("import stage cleanup: %v", err)
-			}
-			if err := CleanupSiteTransactions(app.Config.RecoveryRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
-				log.Printf("site recovery cleanup: %v", err)
+		scheduleTicker := time.NewTicker(time.Minute)
+		cleanupTicker := time.NewTicker(15 * time.Minute)
+		defer scheduleTicker.Stop()
+		defer cleanupTicker.Stop()
+		for {
+			select {
+			case <-scheduleTicker.C:
+				app.runDueBackups()
+			case <-cleanupTicker.C:
+				app.Jobs.Cleanup(24 * time.Hour)
+				if err := CleanupImportStages(app.Config.ImportRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
+					log.Printf("import stage cleanup: %v", err)
+				}
+				if err := CleanupSiteTransactions(app.Config.RecoveryRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
+					log.Printf("site recovery cleanup: %v", err)
+				}
 			}
 		}
 	}()

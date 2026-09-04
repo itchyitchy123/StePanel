@@ -40,9 +40,13 @@ func (a *App) doctor(w http.ResponseWriter, _ *http.Request) {
 			continue
 		}
 		name := filepath.Base(path)
-		info, err := os.Stat(path)
+		info, err := os.Lstat(path)
 		if err != nil {
 			checks = append(checks, DoctorCheck{name, "fail", "high", fmt.Sprintf("helper unavailable: %v", err)})
+			continue
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			checks = append(checks, DoctorCheck{name, "fail", "critical", "helper is not a regular file"})
 			continue
 		}
 		if info.Mode()&022 != 0 {

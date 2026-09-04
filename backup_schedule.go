@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -41,6 +42,11 @@ func openBackupSchedules(path string) (*backupSchedules, error) {
 	if err := json.Unmarshal(b, &s.items); err != nil {
 		return nil, fmt.Errorf("decode backup schedules: %w", err)
 	}
+	for site, item := range s.items {
+		if safeUser(site) == "" || item.Site != site || item.IntervalMinutes < 5 || item.IntervalMinutes > 10080 || item.NextRun.IsZero() {
+			return nil, fmt.Errorf("invalid backup schedule for site %q", site)
+		}
+	}
 	return s, nil
 }
 func (s *backupSchedules) persistLocked() error {
@@ -57,6 +63,7 @@ func (s *backupSchedules) list() []BackupSchedule {
 	for _, v := range s.items {
 		out = append(out, v)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Site < out[j].Site })
 	return out
 }
 
@@ -87,7 +94,7 @@ func (a *App) backupSchedules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "managed database backup requires the local database helper", 422)
 			return
 		}
-		if _, err := os.Stat(filepath.Join(a.Config.WebRoot, "sites", in.Site, "public")); err != nil {
+		if info, err := os.Stat(filepath.Join(a.Config.WebRoot, "sites", in.Site, "public")); err != nil || !info.IsDir() {
 			http.Error(w, "site document root does not exist", 422)
 			return
 		}
@@ -145,14 +152,21 @@ func (a *App) runDueBackups() {
 		}
 		s.LastRun = &now
 		s.NextRun = now.Add(time.Duration(s.IntervalMinutes) * time.Minute)
-		a.Schedules.items[site] = s
-		_ = a.Jobs.SubmitBackup(id, site, func() (BackupResult, error) {
+		err = a.Jobs.SubmitBackup(id, site, func() (BackupResult, error) {
 			result, err := CreateSiteBackup(a.Config, site, s.IncludeDatabases)
-			if err == nil {
-				_ = AuditAs(a.Config.AuditLog, "scheduler", "site.backup.completed", site, result.ArchiveSHA256)
+			if err != nil {
+				_ = AuditAs(a.Config.AuditLog, "scheduler", "site.backup.failed", site, err.Error())
+			} else if auditErr := AuditAs(a.Config.AuditLog, "scheduler", "site.backup.completed", site, result.ArchiveSHA256); auditErr != nil {
+				err = auditErr
 			}
 			return result, err
 		})
-		_ = a.Schedules.persistLocked()
+		if err != nil {
+			continue
+		}
+		a.Schedules.items[site] = s
+		if err := a.Schedules.persistLocked(); err != nil {
+			_ = AuditAs(a.Config.AuditLog, "scheduler", "backup.schedule.persistence_failed", site, err.Error())
+		}
 	}
 }

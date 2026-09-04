@@ -102,10 +102,10 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 422)
 		return
 	}
-	name := input.Site + "-" + strings.ReplaceAll(strings.ToLower(input.Domain), ".", "_") + ".conf"
+	name := proxyConfigName(a.Config.WebServer, input.Site, input.Domain)
 	path := filepath.Join(a.Config.ProxyRoot, name)
 	if a.Config.ProxyCtl == "" || helperCommand(a.Config, a.Config.ProxyCtl, "apply", input.Site, strings.ToLower(input.Domain), backend).Run() != nil {
-		http.Error(w, "proxy helper rejected the configuration or Apache reload failed", http.StatusServiceUnavailable)
+		http.Error(w, "proxy helper rejected the configuration or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deployed", input.Site, input.Domain+" -> "+backend); err != nil {
@@ -119,10 +119,10 @@ func (a *App) proxyList(w http.ResponseWriter, r *http.Request) {
 	entries, _ := os.ReadDir(a.Config.ProxyRoot)
 	items := []proxyInfo{}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+		if entry.IsDir() || (!strings.HasSuffix(entry.Name(), ".conf") && !strings.HasSuffix(entry.Name(), ".caddy")) {
 			continue
 		}
-		items = append(items, proxyInfo{Name: strings.TrimSuffix(entry.Name(), ".conf"), Config: filepath.Join(a.Config.ProxyRoot, entry.Name())})
+		items = append(items, proxyInfo{Name: strings.TrimSuffix(strings.TrimSuffix(entry.Name(), ".conf"), ".caddy"), Config: filepath.Join(a.Config.ProxyRoot, entry.Name())})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	writeJSON(w, http.StatusOK, map[string]any{"proxies": items})
@@ -159,7 +159,7 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/api/proxy/")
-	if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".conf") {
+	if name == "" || strings.Contains(name, "/") || (!strings.HasSuffix(name, ".conf") && !strings.HasSuffix(name, ".caddy")) {
 		http.Error(w, "invalid proxy", 422)
 		return
 	}
@@ -169,7 +169,7 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.Config.ProxyCtl == "" || helperCommand(a.Config, a.Config.ProxyCtl, "delete", name).Run() != nil {
-		http.Error(w, "proxy was not removed because the helper or Apache reload failed", http.StatusServiceUnavailable)
+		http.Error(w, "proxy was not removed because the helper or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deleted", name, "managed proxy removed"); err != nil {
@@ -177,6 +177,14 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "reloaded": true})
+}
+
+func proxyConfigName(webserver, site, domain string) string {
+	ext := ".conf"
+	if webserver == "caddy" {
+		ext = ".caddy"
+	}
+	return site + "-" + strings.ReplaceAll(strings.ToLower(domain), ".", "_") + ext
 }
 
 func localBackend(value string) (string, error) {

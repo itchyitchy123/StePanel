@@ -58,7 +58,7 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.Config.VHostCtl == "" || helperCommand(a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain).Run() != nil {
-		http.Error(w, "site helper rejected the route or Apache reload failed", http.StatusServiceUnavailable)
+		http.Error(w, "site helper rejected the route or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}
 	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + ".conf"
@@ -85,7 +85,7 @@ func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.Config.VHostCtl == "" || helperCommand(a.Config, a.Config.VHostCtl, "delete", name).Run() != nil {
-		http.Error(w, "site route was not removed because validation or Apache reload failed", http.StatusServiceUnavailable)
+		http.Error(w, "site route was not removed because validation or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deleted", name, "managed PHP vhost removed"); err != nil {

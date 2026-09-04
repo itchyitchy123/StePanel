@@ -50,3 +50,12 @@ func TestProxyDeleteRestoresConfigWhenReloadFails(t *testing.T) {
 		t.Fatalf("proxy helper failure changed the config: %q, %v", restored, err)
 	}
 }
+
+func TestProxyConfigNameUsesWebserverExtension(t *testing.T) {
+	if got := proxyConfigName("caddy", "demo", "App.Example.com"); got != "demo-app_example_com.caddy" {
+		t.Fatalf("caddy proxy name = %q", got)
+	}
+	if got := proxyConfigName("apache", "demo", "App.Example.com"); got != "demo-app_example_com.conf" {
+		t.Fatalf("apache proxy name = %q", got)
+	}
+}
