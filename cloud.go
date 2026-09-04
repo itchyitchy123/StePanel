@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -157,17 +158,55 @@ func (a *App) cloudDNS(w http.ResponseWriter, r *http.Request) {
 		a.queueDNSJob(w, in, "delete")
 		return
 	}
-	if r.Method != http.MethodPost || !dnsTypePattern.MatchString(strings.ToUpper(in.Type)) || !dnsNamePattern.MatchString(in.Name) || len(in.Target) == 0 || len(in.Target) > 512 || in.TTL < 30 || in.TTL > 604800 {
+	if r.Method != http.MethodPost || !cloudDNSRecordValid(in) {
 		http.Error(w, "invalid DNS record", 422)
 		return
 	}
 	in.Type = strings.ToUpper(in.Type)
-	a.queueDNSJob(w, in, "create")
+	action := "create"
+	if in.RecordID != "" {
+		action = "update"
+	}
+	a.queueDNSJob(w, in, action)
 }
 
 var cloudNumericID = regexp.MustCompile(`^[0-9]{1,12}$`)
 var dnsTypePattern = regexp.MustCompile(`^(A|AAAA|CNAME|MX|TXT|NS|SRV)$`)
 var dnsNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.*@-]{1,253}$`)
+
+func cloudDNSRecordValid(in cloudDNSRequest) bool {
+	typ := strings.ToUpper(in.Type)
+	if !dnsTypePattern.MatchString(typ) || !dnsNamePattern.MatchString(in.Name) || len(in.Target) == 0 || len(in.Target) > 512 || in.TTL < 30 || in.TTL > 604800 {
+		return false
+	}
+	switch typ {
+	case "A":
+		return net.ParseIP(in.Target) != nil && strings.Count(in.Target, ".") == 3
+	case "AAAA":
+		return net.ParseIP(in.Target) != nil
+	case "CNAME", "NS":
+		return dnsNamePattern.MatchString(strings.TrimSuffix(in.Target, "."))
+	case "MX":
+		parts := strings.Fields(in.Target)
+		return len(parts) == 2 && numeric(parts[0]) && dnsNamePattern.MatchString(strings.TrimSuffix(parts[1], "."))
+	case "SRV":
+		parts := strings.Fields(in.Target)
+		return len(parts) == 4 && numeric(parts[0]) && numeric(parts[1]) && numeric(parts[2]) && dnsNamePattern.MatchString(strings.TrimSuffix(parts[3], "."))
+	default:
+		return true
+	}
+}
+func numeric(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
 
 func (a *App) queueDNSJob(w http.ResponseWriter, in cloudDNSRequest, action string) error {
 	id, err := newJobID("dns")
@@ -184,6 +223,10 @@ func (a *App) queueDNSJob(w http.ResponseWriter, in cloudDNSRequest, action stri
 		} else {
 			path = "/domains/" + in.DomainID + "/records"
 			method = http.MethodPost
+			if action == "update" {
+				path += "/" + in.RecordID
+				method = http.MethodPut
+			}
 			body = map[string]any{"type": in.Type, "name": in.Name, "target": in.Target, "ttl_sec": in.TTL}
 		}
 		if _, err := linodeAPIRequest(context.Background(), method, path, body); err != nil {

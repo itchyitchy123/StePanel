@@ -117,7 +117,7 @@ paths:
       responses:
         '200': {description: DNS records}
     post:
-      summary: Queue a Linode DNS record creation
+      summary: Queue a Linode DNS record creation or update
       responses:
         '202': {description: DNS change queued}
     delete:
