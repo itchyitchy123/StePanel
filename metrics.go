@@ -18,6 +18,7 @@ type Metrics struct {
 	httpRequests      atomic.Uint64
 	httpErrors        atomic.Uint64
 	httpDurationNanos atomic.Uint64
+	httpStatus        [6]atomic.Uint64
 }
 
 func (m *Metrics) ObserveHTTP(status int, duration time.Duration) {
@@ -26,6 +27,10 @@ func (m *Metrics) ObserveHTTP(status int, duration time.Duration) {
 		m.httpErrors.Add(1)
 	}
 	m.httpDurationNanos.Add(uint64(duration))
+	bucket := status / 100
+	if bucket >= 1 && bucket <= 5 {
+		m.httpStatus[bucket].Add(1)
+	}
 }
 
 func NewMetrics() *Metrics { return &Metrics{} }
@@ -50,4 +55,8 @@ func (m *Metrics) Write(w io.Writer) {
 	_, _ = fmt.Fprintf(w, "# HELP stepanel_http_requests_total HTTP requests served\n# TYPE stepanel_http_requests_total counter\nstepanel_http_requests_total %d\n", m.httpRequests.Load())
 	_, _ = fmt.Fprintf(w, "# HELP stepanel_http_errors_total HTTP 5xx responses\n# TYPE stepanel_http_errors_total counter\nstepanel_http_errors_total %d\n", m.httpErrors.Load())
 	_, _ = fmt.Fprintf(w, "# HELP stepanel_http_request_duration_seconds_total Cumulative HTTP request duration\n# TYPE stepanel_http_request_duration_seconds_total counter\nstepanel_http_request_duration_seconds_total %.6f\n", float64(m.httpDurationNanos.Load())/float64(time.Second))
+	_, _ = fmt.Fprintf(w, "# HELP stepanel_http_responses_total HTTP responses by status class\n# TYPE stepanel_http_responses_total counter\n")
+	for bucket := 1; bucket <= 5; bucket++ {
+		_, _ = fmt.Fprintf(w, "stepanel_http_responses_total{class=\"%dxx\"} %d\n", bucket, m.httpStatus[bucket].Load())
+	}
 }

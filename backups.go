@@ -91,7 +91,11 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "insufficient free space for backup", http.StatusInsufficientStorage)
 			return
 		}
-		jobID := "backup-" + time.Now().UTC().Format("20060102-150405.000000000") + "-" + input.Site
+		jobID, err := newJobID("backup")
+		if err != nil {
+			http.Error(w, "could not create backup job", http.StatusInternalServerError)
+			return
+		}
 		if err := a.Jobs.SubmitBackup(jobID, input.Site, func() (BackupResult, error) {
 			result, err := CreateSiteBackup(a.Config, input.Site, input.IncludeDatabases)
 			if err != nil {

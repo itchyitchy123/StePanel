@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -68,7 +70,7 @@ func main() {
 	for _, directory := range []struct {
 		path string
 		mode os.FileMode
-	}{{cfg.ImportRoot, 0750}, {cfg.BackupRoot, 0750}, {filepath.Dir(cfg.JobState), 0750}, {cfg.RecoveryRoot, 0700}} {
+	}{{cfg.ImportRoot, 0700}, {cfg.BackupRoot, 0700}, {filepath.Dir(cfg.JobState), 0750}, {filepath.Dir(cfg.SessionState), 0750}, {cfg.RecoveryRoot, 0700}} {
 		if err := os.MkdirAll(directory.path, directory.mode); err != nil {
 			log.Fatalf("initialize managed directory %s: %v", directory.path, err)
 		}
@@ -78,6 +80,9 @@ func main() {
 		log.Fatalf("acquire process lock: %v", err)
 	}
 	defer processLock.Close()
+	if err := auth.ConfigureSessionStore(cfg.SessionState); err != nil {
+		log.Fatalf("open persistent session state: %v", err)
+	}
 	if cfg.DBCtl != "" {
 		if output, err := helperCommand(cfg, cfg.DBCtl, "reconcile").CombinedOutput(); err != nil {
 			log.Fatalf("reconcile interrupted database operations: %v: %s", err, strings.TrimSpace(string(output)))
@@ -112,7 +117,15 @@ func main() {
 	if err := CleanupSiteTransactions(cfg.RecoveryRoot, time.Duration(cfg.StageRetentionHours)*time.Hour); err != nil {
 		log.Printf("site recovery cleanup during startup: %v", err)
 	}
-	view := template.Must(template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).ParseFiles("web/index.html"))
+	viewData, err := webAssets.ReadFile("web/index.html")
+	if err != nil {
+		log.Fatalf("load embedded dashboard: %v", err)
+	}
+	view := template.Must(template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).Parse(string(viewData)))
+	staticAssets, err := fs.Sub(webAssets, "web/static")
+	if err != nil {
+		log.Fatalf("load embedded static assets: %v", err)
+	}
 	jobs, err := OpenJobs(cfg.JobState, cfg.MaxConcurrentJobs)
 	if err != nil {
 		log.Fatalf("open persistent job state: %v", err)
@@ -141,7 +154,7 @@ func main() {
 	expensive := make(chan struct{}, 4)
 	mux.Handle("/livez", allowMethods(http.HandlerFunc(app.livez), http.MethodGet, http.MethodHead))
 	mux.Handle("/readyz", allowMethods(http.HandlerFunc(app.readyz), http.MethodGet, http.MethodHead))
-	mux.Handle("/static/", allowMethods(http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))), http.MethodGet, http.MethodHead))
+	mux.Handle("/static/", allowMethods(http.StripPrefix("/static/", http.FileServer(http.FS(staticAssets))), http.MethodGet, http.MethodHead))
 	mux.Handle("/login", allowMethods(http.HandlerFunc(app.Auth.Login), http.MethodGet, http.MethodPost))
 	mux.Handle("/logout", allowMethods(http.HandlerFunc(app.Auth.Logout), http.MethodPost))
 	mux.Handle("/", allowMethods(app.Auth.Require(http.HandlerFunc(app.dashboard)), http.MethodGet, http.MethodHead))
@@ -149,6 +162,7 @@ func main() {
 	mux.Handle("/api/services", allowMethods(app.Auth.Require(http.HandlerFunc(app.services)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/ftp", allowMethods(app.Auth.Require(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/audit", allowMethods(app.Auth.Require(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/capabilities", allowMethods(app.Auth.Require(http.HandlerFunc(app.capabilities)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/scan", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.malwareScan), expensive)), http.MethodPost))
 	mux.Handle("/api/certificates/issue", allowMethods(app.Auth.Require(http.HandlerFunc(app.issueCertificate)), http.MethodPost))
 	mux.Handle("/api/node/versions", allowMethods(app.Auth.Require(http.HandlerFunc(app.nodeVersions)), http.MethodGet, http.MethodHead))
@@ -169,12 +183,13 @@ func main() {
 	mux.Handle("/api/wpress/preflight", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressPreflight)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/wpress/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressImport)), http.MethodPost))
 	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/jobs", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobList)), http.MethodGet, http.MethodHead))
 	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))
 	if os.Getenv("STEPANEL_METRICS_PUBLIC") != "1" {
 		metricsHandler = app.Auth.Require(metricsHandler)
 	}
 	mux.Handle("/metrics", allowMethods(metricsHandler, http.MethodGet, http.MethodHead))
-	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux, app.Metrics, cfg.Production), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
+	server := &http.Server{Addr: cfg.Listen, Handler: logging(normalizeAPIErrors(mux), app.Metrics, cfg.Production), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	go func() {
 		log.Printf("StePanel listening on %s", cfg.Listen)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -205,7 +220,17 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("stepanel_csrf"); err == nil {
 		csrf = cookie.Value
 	}
-	_ = a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Servers": ServiceSummaries(), "Security": a.SecurityChecks()})
+	servers := ServiceSummaries()
+	healthy, alerts := 0, 0
+	for _, server := range servers {
+		switch server.Status {
+		case "active", "enabled", "installed":
+			healthy++
+		default:
+			alerts++
+		}
+	}
+	_ = a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.Username, "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": a.SecurityChecks(), "Jobs": a.Jobs.List(8), "Capabilities": a.Capabilities()})
 }
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	response := map[string]any{"ok": true, "version": Version, "commit": Commit, "time": time.Now().UTC()}
@@ -223,6 +248,24 @@ func (a *App) services(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) securityAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"checks": a.SecurityChecks(), "time": time.Now().UTC()})
+}
+func (a *App) Capabilities() map[string]bool {
+	nodeVersions, _ := os.ReadDir(filepath.Join(a.Config.NVMDir, "versions", "node"))
+	hasNode := false
+	for _, entry := range nodeVersions {
+		if entry.IsDir() && nodeVersionPattern.MatchString(entry.Name()) {
+			hasNode = true
+			break
+		}
+	}
+	return map[string]bool{
+		"certificates": commandAvailable(a.Config.Certbot),
+		"node_apps":    hasNode && commandAvailable(a.Config.AppCtl) && commandAvailable(a.Config.ProxyCtl),
+		"wpress":       allReady(WPressPreflight(a.Config)),
+	}
+}
+func (a *App) capabilities(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"capabilities": a.Capabilities(), "time": time.Now().UTC()})
 }
 func (a *App) inspect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -301,7 +344,12 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	databaseRestore := r.FormValue("restore_databases") == "on"
-	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + user
+	jobID, err := newJobID("cpmove")
+	if err != nil {
+		_ = os.Remove(tempPath)
+		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		return
+	}
 	a.Metrics.RestoreStarted()
 	if err := a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
 		var restoreErr error
@@ -349,10 +397,21 @@ func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, job)
 }
+func (a *App) jobList(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": a.Jobs.List(100), "time": time.Now().UTC()})
+}
 func logging(next http.Handler, metrics *Metrics, production bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
+		requestID, err := randomSecret()
+		if err != nil {
+			requestID = fmt.Sprintf("fallback-%d", started.UnixNano())
+		} else if len(requestID) > 20 {
+			requestID = requestID[:20]
+		}
+		r = r.WithContext(context.WithValue(r.Context(), requestIDContextKey{}, requestID))
 		wrapped := &statusWriter{ResponseWriter: w}
+		w.Header().Set("X-Request-ID", requestID)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "same-origin")
@@ -363,6 +422,8 @@ func logging(next http.Handler, metrics *Metrics, production bool) http.Handler 
 		}
 		if !strings.HasPrefix(r.URL.Path, "/static/") {
 			w.Header().Set("Cache-Control", "no-store")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
 		}
 		next.ServeHTTP(wrapped, r)
 		if metrics != nil {
@@ -445,8 +506,63 @@ func logJSON(r *http.Request, status int, duration time.Duration) {
 	if status == 0 {
 		status = http.StatusOK
 	}
-	log.Printf(`{"level":"info","method":%q,"path":%q,"status":%d,"duration_ms":%.3f}`, r.Method, r.URL.Path, status, float64(duration.Microseconds())/1000)
+	requestID, _ := r.Context().Value(requestIDContextKey{}).(string)
+	log.Printf(`{"level":"info","request_id":%q,"method":%q,"path":%q,"status":%d,"duration_ms":%.3f}`, requestID, r.Method, r.URL.Path, status, float64(duration.Microseconds())/1000)
 }
+
+type requestIDContextKey struct{}
+
+type bufferedResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func (w *bufferedResponse) Header() http.Header { return w.header }
+func (w *bufferedResponse) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+func (w *bufferedResponse) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(body)
+}
+
+// normalizeAPIErrors preserves existing handlers while giving clients one
+// predictable JSON error envelope. API responses are small and never streamed.
+func normalizeAPIErrors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		captured := &bufferedResponse{header: make(http.Header)}
+		next.ServeHTTP(captured, r)
+		status := captured.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		for name, values := range captured.header {
+			for _, value := range values {
+				w.Header().Add(name, value)
+			}
+		}
+		if status >= 400 && strings.HasPrefix(captured.header.Get("Content-Type"), "text/plain") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": strings.TrimSpace(captured.body.String())})
+			return
+		}
+		w.WriteHeader(status)
+		if r.Method != http.MethodHead {
+			_, _ = w.Write(captured.body.Bytes())
+		}
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

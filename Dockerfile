@@ -26,10 +26,12 @@ ENV HOME=/opt/stepanel \
     STEPANEL_MAIL_ROOT=/var/lib/ste-panel/mail \
     STEPANEL_NVM_DIR=/var/lib/ste-panel/nvm \
     STEPANEL_PROXY_ROOT=/var/lib/ste-panel/proxy \
+    STEPANEL_VHOST_ROOT=/var/lib/ste-panel/vhosts \
     STEPANEL_APP_ROOT=/var/lib/ste-panel/apps \
     STEPANEL_MALWARE_ROOT=/var/lib/ste-panel/quarantine \
     STEPANEL_AUDIT_LOG=/var/lib/ste-panel/audit.jsonl \
     STEPANEL_JOB_STATE=/var/lib/ste-panel/jobs.json \
+    STEPANEL_SESSION_STATE=/var/lib/ste-panel/sessions.json \
     STEPANEL_RECOVERY_ROOT=/var/www/sites/.stepanel-recovery
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["curl", "--fail", "--silent", "http://127.0.0.1:8080/readyz"]

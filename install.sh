@@ -464,6 +464,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_AUDIT_KEY "$AUDIT_KEY"
   write_env STEPANEL_BACKUP_ROOT /var/backups/stepanel
   write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
+  write_env STEPANEL_SESSION_STATE "$DATA_DIR/sessions.json"
   write_env STEPANEL_RECOVERY_ROOT /var/www/sites/.stepanel-recovery
   write_env STEPANEL_WPRESS_EXTRACT "$WPRESS_EXTRACT"
   write_env STEPANEL_WPCLI "$WPCLI"

@@ -14,3 +14,9 @@ image digest, select an appropriate persistent storage class, enable and
 configure the ingress with TLS, and add a network policy appropriate to the
 cluster ingress controller. The chart enforces one replica because restore
 jobs and managed site state are local to the control plane.
+
+The chart packages the control plane only. It does not grant access to a
+Kubernetes node's Apache, PHP-FPM, systemd, accounts, or StePanel privileged
+helpers, so host-provisioning endpoints are unavailable unless a separate,
+explicit integration is supplied. The systemd deployment remains the full
+host-management topology.

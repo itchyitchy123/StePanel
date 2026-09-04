@@ -9,6 +9,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,6 +29,14 @@ type Auth struct {
 	totpSecret                               []byte
 	totpReplay                               *totpReplayState
 	loginLimiter                             *loginLimiter
+	sessions                                 *sessionRegistry
+}
+
+type sessionRegistry struct {
+	mu      sync.Mutex
+	path    string
+	entries map[string]int64
+	err     error
 }
 
 type totpReplayState struct {
@@ -68,7 +77,91 @@ func NewAuth(secureCookies bool) (Auth, error) {
 	if len(secret) < 32 {
 		return Auth{}, errors.New("STEPANEL_SESSION_SECRET must be at least 32 characters")
 	}
-	return Auth{Username: username, PasswordHash: hash, Secret: secret, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{}, loginLimiter: newLoginLimiter()}, nil
+	return Auth{Username: username, PasswordHash: hash, Secret: secret, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{}, loginLimiter: newLoginLimiter(), sessions: &sessionRegistry{entries: make(map[string]int64)}}, nil
+}
+
+func (a *Auth) ConfigureSessionStore(path string) error {
+	if !a.Enabled {
+		return nil
+	}
+	registry := &sessionRegistry{path: path, entries: make(map[string]int64)}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if len(data) > 1<<20 {
+			return errors.New("session state exceeds 1 MiB")
+		}
+		if err := json.Unmarshal(data, &registry.entries); err != nil {
+			return fmt.Errorf("decode session state: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read session state: %w", err)
+	}
+	now := time.Now().Unix()
+	for id, expiry := range registry.entries {
+		if id == "" || expiry <= now {
+			delete(registry.entries, id)
+		}
+	}
+	if err := registry.persistLocked(); err != nil {
+		return err
+	}
+	a.sessions = registry
+	return nil
+}
+
+func (s *sessionRegistry) persistLocked() error {
+	if s == nil || s.path == "" {
+		return nil
+	}
+	data, err := json.Marshal(s.entries)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(s.path, append(data, '\n'), 0600)
+}
+
+func (s *sessionRegistry) add(id string, expiry int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().Unix()
+	for candidate, candidateExpiry := range s.entries {
+		if candidateExpiry <= now {
+			delete(s.entries, candidate)
+		}
+	}
+	s.entries[id] = expiry
+	if err := s.persistLocked(); err != nil {
+		delete(s.entries, id)
+		s.err = err
+		return err
+	}
+	s.err = nil
+	return nil
+}
+
+func (s *sessionRegistry) valid(id string, expiry int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stored, ok := s.entries[id]
+	return ok && stored == expiry && expiry > time.Now().Unix()
+}
+
+func (s *sessionRegistry) revoke(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.entries, id)
+	err := s.persistLocked()
+	s.err = err
+	return err
+}
+
+func (a Auth) SessionPersistenceError() error {
+	if a.sessions == nil {
+		return nil
+	}
+	a.sessions.mu.Lock()
+	defer a.sessions.mu.Unlock()
+	return a.sessions.err
 }
 
 func hashPassword(password string) (string, error) {
@@ -123,14 +216,25 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expiry := time.Now().Add(12 * time.Hour).Unix()
-	payload := a.Username + "|" + strconv.FormatInt(expiry, 10)
-	token := payload + "|" + a.sign(payload)
-	http.SetCookie(w, &http.Cookie{Name: "stepanel_session", Value: base64.RawURLEncoding.EncodeToString([]byte(token)), Path: "/", Expires: time.Unix(expiry, 0), HttpOnly: true, Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
+	sessionID, err := randomSecret()
+	if err != nil {
+		http.Error(w, "could not create a secure session", http.StatusInternalServerError)
+		return
+	}
 	csrf, err := randomSecret()
 	if err != nil {
 		http.Error(w, "could not create a secure session", http.StatusInternalServerError)
 		return
 	}
+	payload := a.Username + "|" + strconv.FormatInt(expiry, 10) + "|" + sessionID + "|" + a.credentialFingerprint()
+	token := payload + "|" + a.sign(payload)
+	if a.sessions != nil {
+		if err := a.sessions.add(sessionID, expiry); err != nil {
+			http.Error(w, "session persistence is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	http.SetCookie(w, &http.Cookie{Name: "stepanel_session", Value: base64.RawURLEncoding.EncodeToString([]byte(token)), Path: "/", Expires: time.Unix(expiry, 0), HttpOnly: true, Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
 	http.SetCookie(w, &http.Cookie{Name: "stepanel_csrf", Value: csrf, Path: "/", Expires: time.Unix(expiry, 0), Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -143,9 +247,17 @@ func (a Auth) Logout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
+	if a.sessions != nil {
+		if id := a.sessionID(r); id != "" {
+			if err := a.sessions.revoke(id); err != nil {
+				http.Error(w, "session persistence is unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
+	}
 	_ = AuditAs(a.AuditLog, a.Username, "auth.logout", clientIP(r), "administrator session ended")
-	http.SetCookie(w, &http.Cookie{Name: "stepanel_session", MaxAge: -1, Path: "/"})
-	http.SetCookie(w, &http.Cookie{Name: "stepanel_csrf", MaxAge: -1, Path: "/"})
+	http.SetCookie(w, &http.Cookie{Name: "stepanel_session", MaxAge: -1, Path: "/", HttpOnly: true, Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: "stepanel_csrf", MaxAge: -1, Path: "/", Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 func (a Auth) Require(next http.Handler) http.Handler {
@@ -195,11 +307,38 @@ func (a Auth) validSession(r *http.Request) bool {
 		return false
 	}
 	parts := strings.Split(string(raw), "|")
-	if len(parts) != 3 || parts[0] != a.Username || !hmac.Equal([]byte(a.sign(parts[0]+"|"+parts[1])), []byte(parts[2])) {
+	if len(parts) == 3 && a.sessions == nil {
+		if parts[0] != a.Username || !hmac.Equal([]byte(a.sign(parts[0]+"|"+parts[1])), []byte(parts[2])) {
+			return false
+		}
+		expiry, err := strconv.ParseInt(parts[1], 10, 64)
+		return err == nil && time.Now().Unix() < expiry
+	}
+	if len(parts) != 5 || parts[0] != a.Username || !hmac.Equal([]byte(parts[3]), []byte(a.credentialFingerprint())) || !hmac.Equal([]byte(a.sign(strings.Join(parts[:4], "|"))), []byte(parts[4])) {
 		return false
 	}
 	expiry, err := strconv.ParseInt(parts[1], 10, 64)
-	return err == nil && time.Now().Unix() < expiry
+	return err == nil && a.sessions != nil && a.sessions.valid(parts[2], expiry)
+}
+
+func (a Auth) sessionID(r *http.Request) string {
+	cookie, err := r.Cookie("stepanel_session")
+	if err != nil {
+		return ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(string(raw), "|")
+	if len(parts) != 5 {
+		return ""
+	}
+	return parts[2]
+}
+func (a Auth) credentialFingerprint() string {
+	digest := sha256.Sum256([]byte(a.Username + "\x00" + a.PasswordHash))
+	return hex.EncodeToString(digest[:16])
 }
 func (a Auth) sign(value string) string {
 	mac := hmac.New(sha256.New, []byte(a.Secret))

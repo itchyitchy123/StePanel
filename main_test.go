@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,6 +32,24 @@ func TestHealthAndMetricsEndpoints(t *testing.T) {
 	}
 }
 
+func TestEmbeddedDashboardTemplate(t *testing.T) {
+	data, err := webAssets.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).Parse(string(data))
+	if err != nil {
+		t.Fatalf("parse embedded dashboard: %v", err)
+	}
+	var rendered bytes.Buffer
+	if err := view.Execute(&rendered, map[string]any{"Title": "StePanel", "Now": time.Now(), "Servers": []ServiceSummary{{Name: "apache2", Status: "active"}}, "Healthy": 1, "Alerts": 0, "Security": []SecurityCheck{}, "Jobs": []Job{}, "Capabilities": map[string]bool{}}); err != nil {
+		t.Fatalf("render embedded dashboard: %v", err)
+	}
+	if strings.Contains(rendered.String(), "Stephan") || !strings.Contains(rendered.String(), "Infrastructure overview") {
+		t.Fatal("dashboard contains simulated content or is missing its live overview")
+	}
+}
+
 func TestLoggingAddsBrowserSecurityHeaders(t *testing.T) {
 	handler := logging(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -42,6 +62,9 @@ func TestLoggingAddsBrowserSecurityHeaders(t *testing.T) {
 	if got := response.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
+	if response.Header().Get("X-Request-ID") == "" {
+		t.Fatal("X-Request-ID header is missing")
+	}
 }
 
 func TestAllowMethodsRejectsUnexpectedMethod(t *testing.T) {
@@ -51,6 +74,17 @@ func TestAllowMethodsRejectsUnexpectedMethod(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/health", nil))
 	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet || called {
 		t.Fatalf("status = %d, Allow = %q, called = %v", response.Code, response.Header().Get("Allow"), called)
+	}
+}
+
+func TestNormalizeAPIErrors(t *testing.T) {
+	handler := normalizeAPIErrors(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/example", nil))
+	if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != "application/json" || !strings.Contains(response.Body.String(), `"error":"invalid request"`) {
+		t.Fatalf("unexpected normalized error: %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -126,6 +160,16 @@ func TestJobsCompleteAndCleanup(t *testing.T) {
 	}
 	if _, ok := jobs.Get("missing"); ok {
 		t.Fatal("missing job unexpectedly found")
+	}
+}
+
+func TestJobsListNewestFirst(t *testing.T) {
+	jobs := NewJobs()
+	jobs.items["old"] = &Job{ID: "old", StartedAt: time.Unix(1, 0)}
+	jobs.items["new"] = &Job{ID: "new", StartedAt: time.Unix(2, 0)}
+	items := jobs.List(1)
+	if len(items) != 1 || items[0].ID != "new" {
+		t.Fatalf("jobs = %#v, want newest job", items)
 	}
 }
 

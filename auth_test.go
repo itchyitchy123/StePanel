@@ -1,12 +1,10 @@
 package main
 
 import (
-	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +85,65 @@ func TestAuthSessionAndCSRF(t *testing.T) {
 	}
 }
 
+func TestLogoutRevokesPersistedSession(t *testing.T) {
+	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
+	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")
+	t.Setenv("STEPANEL_SESSION_SECRET", "12345678901234567890123456789012")
+	auth, err := NewAuth(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.ConfigureSessionStore(filepath.Join(t.TempDir(), "sessions.json")); err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=correct+horse+battery+staple"))
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginResponse := httptest.NewRecorder()
+	auth.Login(loginResponse, login)
+	cookies := loginResponse.Result().Cookies()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+	}
+	if !auth.validSession(request) {
+		t.Fatal("new session is invalid")
+	}
+	logout := httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader("csrf="+cookies[1].Value))
+	logout.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, cookie := range cookies {
+		logout.AddCookie(cookie)
+	}
+	auth.Logout(httptest.NewRecorder(), logout)
+	if auth.validSession(request) {
+		t.Fatal("logged-out session remained valid")
+	}
+}
+
+func TestPasswordRotationInvalidatesSession(t *testing.T) {
+	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
+	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")
+	t.Setenv("STEPANEL_SESSION_SECRET", "12345678901234567890123456789012")
+	auth, err := NewAuth(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=correct+horse+battery+staple"))
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	auth.Login(response, login)
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, cookie := range response.Result().Cookies() {
+		request.AddCookie(cookie)
+	}
+	if !auth.validSession(request) {
+		t.Fatal("new session is invalid")
+	}
+	auth.PasswordHash = "$2a$10$rotated-password-hash-invalidates-existing-session"
+	if auth.validSession(request) {
+		t.Fatal("session survived password rotation")
+	}
+}
+
 func TestTOTPValidationRejectsReplay(t *testing.T) {
 	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
 	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")
@@ -130,16 +187,26 @@ func TestAuthenticatedMutationFailsClosedWhenAuditIsUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	login := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=correct+horse+battery+staple"))
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginResponse := httptest.NewRecorder()
+	auth.Login(loginResponse, login)
+	var session *http.Cookie
+	for _, cookie := range loginResponse.Result().Cookies() {
+		if cookie.Name == "stepanel_session" {
+			session = cookie
+		}
+	}
+	if session == nil {
+		t.Fatal("login did not issue a session")
+	}
 	blocked := filepath.Join(t.TempDir(), "blocked")
 	if err := os.WriteFile(blocked, []byte("not a directory"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	auth.AuditLog = filepath.Join(blocked, "audit.jsonl")
-	expiry := time.Now().Add(time.Hour).Unix()
-	payload := auth.Username + "|" + strconv.FormatInt(expiry, 10)
-	token := payload + "|" + auth.sign(payload)
 	request := httptest.NewRequest(http.MethodPost, "/api/change", nil)
-	request.AddCookie(&http.Cookie{Name: "stepanel_session", Value: base64.RawURLEncoding.EncodeToString([]byte(token))})
+	request.AddCookie(session)
 	called := false
 	handler := auth.Require(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
 	response := httptest.NewRecorder()

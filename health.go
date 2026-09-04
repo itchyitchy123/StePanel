@@ -17,8 +17,13 @@ func (a *App) livez(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
+func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
 	checks := readinessChecks(a.Config, a.Jobs)
+	if err := a.Auth.SessionPersistenceError(); err != nil {
+		checks["session_state"] = ReadinessCheck{Ready: false, Detail: err.Error()}
+	} else {
+		checks["session_state"] = ReadinessCheck{Ready: true}
+	}
 	ready := true
 	for _, check := range checks {
 		if !check.Ready {
@@ -29,6 +34,12 @@ func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
 	status := http.StatusOK
 	if !ready {
 		status = http.StatusServiceUnavailable
+	}
+	if a.Auth.Enabled && !a.Auth.validSession(r) {
+		for name, check := range checks {
+			check.Detail = ""
+			checks[name] = check
+		}
 	}
 	writeJSON(w, status, map[string]any{"ready": ready, "checks": checks, "time": time.Now().UTC()})
 }

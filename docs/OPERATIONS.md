@@ -94,7 +94,9 @@ Live file writes and nontransactional database tables are not quiesced, so use
 application maintenance mode or storage/database snapshots when a point-in-time
 consistent backup is required. Backups are not deleted by staging retention.
 
-Job records are persisted in `/var/lib/ste-panel/jobs.json`. Site overwrites
+Job records are persisted in `/var/lib/ste-panel/jobs.json`. Revocable administrator
+sessions are persisted in `/var/lib/ste-panel/sessions.json`; include this file in
+protected control-plane state backups and never publish it. Site overwrites
 move the previous document root into a journaled transaction under
 `/var/www/sites/.stepanel-recovery`. On startup, StePanel marks interrupted jobs
 failed, removes databases recorded by uncommitted restore transactions, and

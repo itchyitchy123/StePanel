@@ -18,3 +18,10 @@ uses one replica with a `Recreate` rollout because restore jobs and persistent
 state are process-local. The pod runs as UID/GID 10001 with a read-only root
 filesystem and no service-account token. Add an ingress, TLS, database
 connection, and environment-specific network policy before production use.
+
+This container is a control-plane packaging target, not a host-management
+agent. Kubernetes pods do not have the host's Apache, PHP-FPM, systemd, local
+accounts, or privileged StePanel helpers. Endpoints that provision host
+services therefore remain unavailable in this topology. Use the systemd
+installation for full host management; use Kubernetes only for explicitly
+integrated remote services and persistent migration storage.

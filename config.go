@@ -11,20 +11,20 @@ import (
 )
 
 type Config struct {
-	Listen, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir    string
-	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl string
-	SiteCtl, VHostCtl, Certbot, DBCtl                            string
-	WPressExtract, WPCLI, AuditLog, JobState, RecoveryRoot, Sudo string
-	DBHost, DBUser, DBPassword                                   string
-	Production                                                   bool
-	MaxUpload                                                    int64
-	MaxEntries, MaxConcurrentJobs, StageRetentionHours           int
-	FTPPassiveMin, FTPPassiveMax                                 int
-	MinFreeBytes                                                 uint64
+	Listen, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir                  string
+	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl               string
+	SiteCtl, VHostCtl, Certbot, DBCtl                                          string
+	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo string
+	DBHost, DBUser, DBPassword                                                 string
+	Production                                                                 bool
+	MaxUpload                                                                  int64
+	MaxEntries, MaxConcurrentJobs, StageRetentionHours                         int
+	FTPPassiveMin, FTPPassiveMax                                               int
+	MinFreeBytes                                                               uint64
 }
 
 func LoadConfig() Config {
-	c := Config{Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_LISTEN"); v != "" {
 		c.Listen = v
 	}
@@ -84,6 +84,9 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("STEPANEL_JOB_STATE"); v != "" {
 		c.JobState = v
+	}
+	if v := os.Getenv("STEPANEL_SESSION_STATE"); v != "" {
+		c.SessionState = v
 	}
 	if v := os.Getenv("STEPANEL_RECOVERY_ROOT"); v != "" {
 		c.RecoveryRoot = v
@@ -156,8 +159,15 @@ func ValidateConfig(c Config) error {
 		"STEPANEL_IMPORT_ROOT":   c.ImportRoot,
 		"STEPANEL_BACKUP_ROOT":   c.BackupRoot,
 		"STEPANEL_WEB_ROOT":      c.WebRoot,
+		"STEPANEL_MAIL_ROOT":     c.MailRoot,
+		"STEPANEL_NVM_DIR":       c.NVMDir,
+		"STEPANEL_PROXY_ROOT":    c.ProxyRoot,
+		"STEPANEL_VHOST_ROOT":    c.VHostRoot,
+		"STEPANEL_APP_ROOT":      c.AppRoot,
+		"STEPANEL_MALWARE_ROOT":  c.MalwareRoot,
 		"STEPANEL_AUDIT_LOG":     c.AuditLog,
 		"STEPANEL_JOB_STATE":     c.JobState,
+		"STEPANEL_SESSION_STATE": c.SessionState,
 		"STEPANEL_RECOVERY_ROOT": c.RecoveryRoot,
 	}
 	for name, path := range paths {
@@ -165,6 +175,15 @@ func ValidateConfig(c Config) error {
 			problems = append(problems, fmt.Errorf("%s must be a non-empty filesystem path", name))
 		} else if c.Production && !filepath.IsAbs(path) {
 			problems = append(problems, fmt.Errorf("%s must be absolute in production", name))
+		} else if c.Production && filepath.Clean(path) == string(os.PathSeparator) {
+			problems = append(problems, fmt.Errorf("%s must not be the filesystem root", name))
+		}
+	}
+	if c.Production {
+		for name, path := range map[string]string{"STEPANEL_APPCTL": c.AppCtl, "STEPANEL_PROXYCTL": c.ProxyCtl, "STEPANEL_SITECTL": c.SiteCtl, "STEPANEL_VHOSTCTL": c.VHostCtl, "STEPANEL_DBCTL": c.DBCtl, "STEPANEL_CERTBOT": c.Certbot, "STEPANEL_SUDO": c.Sudo} {
+			if path != "" && (!filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n")) {
+				problems = append(problems, fmt.Errorf("%s must be an absolute executable path in production", name))
+			}
 		}
 	}
 	if c.Production {

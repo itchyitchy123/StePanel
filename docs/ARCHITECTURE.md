@@ -29,7 +29,8 @@ StePanel HTTP server
    restore fails.
 
 When configured, StePanel provides administrator authentication with signed,
-expiring sessions, CSRF tokens for mutating forms, login rate limiting,
+expiring, server-revocable sessions persisted in private control-plane state.
+Password-hash rotation invalidates previously issued sessions. CSRF tokens for mutating forms, login rate limiting,
 optional replay-resistant TOTP, security response headers, and JSONL audit
 events with explicit actor and target identity. Unsafe authenticated requests
 must persist a preflight audit event before reaching their handler. TLS and a reverse proxy are

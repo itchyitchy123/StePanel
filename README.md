@@ -181,6 +181,7 @@ checkbox and should be backed up first.
 | `STEPANEL_VHOST_ROOT` | Root-owned Apache snippets for managed PHP sites |
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |
 | `STEPANEL_JOB_STATE` | Durable restore and certificate job state file |
+| `STEPANEL_SESSION_STATE` | Durable revocable administrator session state file |
 | `STEPANEL_RECOVERY_ROOT` | Durable site rollback transactions on the site filesystem |
 | `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; default `wpress-extract` |
 | `STEPANEL_WPCLI` | WP-CLI executable; default `wp` |

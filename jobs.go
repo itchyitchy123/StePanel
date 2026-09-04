@@ -15,6 +15,14 @@ import (
 
 var ErrJobBusy = errors.New("too many long-running jobs or target is already active")
 
+func newJobID(kind string) (string, error) {
+	random, err := randomSecret()
+	if err != nil {
+		return "", err
+	}
+	return kind + "-" + random, nil
+}
+
 type Job struct {
 	ID          string             `json:"id"`
 	Kind        string             `json:"kind"`
@@ -247,6 +255,25 @@ func (j *Jobs) Get(id string) (Job, bool) {
 	}
 	copy := *item
 	return copy, true
+}
+
+func (j *Jobs) List(limit int) []Job {
+	if limit < 1 {
+		limit = 50
+	}
+	j.mu.RLock()
+	items := make([]Job, 0, len(j.items))
+	for _, item := range j.items {
+		if item != nil {
+			items = append(items, *item)
+		}
+	}
+	j.mu.RUnlock()
+	sort.Slice(items, func(i, k int) bool { return items[i].StartedAt.After(items[k].StartedAt) })
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return items
 }
 
 func (j *Jobs) Submit(id, user string, work func() (ImportResult, error)) error {

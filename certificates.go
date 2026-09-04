@@ -40,7 +40,11 @@ func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "certificate helper is not installed", 503)
 		return
 	}
-	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + strings.ReplaceAll(input.Domain, ".", "-")
+	jobID, err := newJobID("certificate")
+	if err != nil {
+		http.Error(w, "could not create certificate job", http.StatusInternalServerError)
+		return
+	}
 	if err := a.Jobs.SubmitCertificate(jobID, input.Domain, func() (CertificateResult, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()

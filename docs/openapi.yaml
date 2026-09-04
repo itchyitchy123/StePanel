@@ -2,7 +2,11 @@ openapi: 3.0.3
 info:
   title: StePanel API
   version: 0.1.0
-  description: Authenticated server operations, service inventory, and cPanel migration API. The service inventory includes optional vsftpd when installed.
+  description: |
+    Authenticated server operations, service inventory, and migration API.
+    Mutating requests require the `stepanel_session` cookie and the matching
+    `stepanel_csrf` value in the `X-CSRF-Token` header or `csrf` form field.
+    Responses include an `X-Request-ID` correlation identifier.
 servers:
   - url: http://127.0.0.1:8090
 security:
@@ -32,6 +36,56 @@ paths:
       summary: Service inventory
       responses:
         '200': {description: Service inventory}
+  /api/node/versions:
+    get:
+      summary: List installed NVM Node versions
+      responses:
+        '200': {description: Installed versions}
+  /api/node/select:
+    post:
+      summary: Select the Node version for a managed site
+      responses:
+        '200': {description: Version selected}
+  /api/proxy:
+    get:
+      summary: List managed reverse proxies
+      responses:
+        '200': {description: Managed reverse proxies}
+  /api/proxy/deploy:
+    post:
+      summary: Deploy and reload a validated reverse proxy
+      responses:
+        '202': {description: Proxy deployed}
+  /api/proxy/test:
+    post:
+      summary: Test a local or private backend
+      responses:
+        '200': {description: Backend reachability result}
+  /api/proxy/{name}:
+    delete:
+      summary: Remove a managed reverse proxy
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Proxy removed}
+  /api/apps:
+    get:
+      summary: List managed Node applications
+      responses:
+        '200': {description: Managed applications}
+  /api/apps/deploy:
+    post:
+      summary: Deploy a managed Node application
+      responses:
+        '202': {description: Application deployed}
+  /api/apps/{site}/{action}:
+    post:
+      summary: Start, stop, restart, or roll back an application
+      parameters:
+        - {name: site, in: path, required: true, schema: {type: string}}
+        - {name: action, in: path, required: true, schema: {type: string, enum: [start, stop, restart, rollback]}}
+      responses:
+        '202': {description: Action accepted}
   /api/ftp:
     get:
       summary: FTP service setup status
@@ -42,6 +96,11 @@ paths:
       summary: Security posture checks
       responses:
         '200': {description: Security checks}
+  /api/capabilities:
+    get:
+      summary: Report features available in the current deployment
+      responses:
+        '200': {description: Capability flags derived from installed helpers and dependencies}
   /api/security/scan:
     post:
       summary: Scan a managed site for suspicious PHP
@@ -189,6 +248,11 @@ paths:
       responses:
         '200': {description: Job state}
         '404': {description: Job not found}
+  /api/jobs:
+    get:
+      summary: List recent persistent jobs
+      responses:
+        '200': {description: Up to 100 jobs, newest first}
   /metrics:
     get:
       summary: Prometheus metrics

@@ -171,7 +171,12 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	force := r.FormValue("overwrite") == "on"
-	jobID := time.Now().UTC().Format("20060102-150405.000000000") + "-" + site + "-wpress"
+	jobID, err := newJobID("wpress")
+	if err != nil {
+		_ = os.Remove(tempPath)
+		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		return
+	}
 	if err := a.Jobs.SubmitWPress(jobID, site, func() (WPressResult, error) {
 		defer os.Remove(tempPath)
 		result, restoreErr := RestoreWPress(a.Config, tempPath, site, dbSuffix, dbUserSuffix, password, siteURL, targetPrefix, force)

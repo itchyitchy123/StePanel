@@ -60,6 +60,7 @@ spec:
           env:
             - {name: STEPANEL_ENV, value: "production"}
             - {name: STEPANEL_LISTEN, value: ":8080"}
+            - {name: STEPANEL_SESSION_STATE, value: "/var/lib/ste-panel/sessions.json"}
             - name: STEPANEL_ADMIN_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: admin-password}}
             - name: STEPANEL_SESSION_SECRET

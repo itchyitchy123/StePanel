@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Persistent, server-revocable administrator sessions, password-rotation
+  invalidation, request correlation IDs, a recent-jobs API/dashboard, runtime
+  capability reporting, and HTTP response-class metrics.
 - Authenticated administration with bcrypt password hashes, signed sessions,
   login throttling, audit logging, and protected metrics.
 - Asynchronous cpmove and WordPress restore workflows with archive inspection,
@@ -33,6 +36,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- The dashboard now renders only live server, security, capability, and job
+  data; simulated activity and inert controls were removed. Assets are embedded
+  in the binary, external fonts were removed, and keyboard, reduced-motion,
+  form-label, loading, and unavailable-feature states were improved.
+- API handler errors use a consistent JSON envelope, production validates every
+  managed path and privileged executable path, and unauthenticated readiness
+  responses omit internal filesystem details.
 - The installer now requires a panel FQDN and a 12-character administrator
   password, stores only its bcrypt hash, generates a session secret, validates
   options before host mutations, and writes configuration atomically. In-place
