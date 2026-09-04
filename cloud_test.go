@@ -16,3 +16,10 @@ func TestCloudDNSRecordValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestDNSRecordExists(t *testing.T) {
+	value := map[string]any{"data": []any{map[string]any{"type": "A", "name": "www.example.com.", "target": "192.0.2.10"}}}
+	if !dnsRecordExists(value, cloudDNSRequest{Type: "a", Name: "www.example.com", Target: "192.0.2.10"}) {
+		t.Fatal("identical DNS record was not detected")
+	}
+}

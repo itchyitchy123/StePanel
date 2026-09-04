@@ -221,6 +221,11 @@ func (a *App) queueDNSJob(w http.ResponseWriter, in cloudDNSRequest, action stri
 			path = "/domains/" + in.DomainID + "/records/" + in.RecordID
 			method = http.MethodDelete
 		} else {
+			if action == "create" {
+				if existing, err := linodeAPIRequest(context.Background(), http.MethodGet, "/domains/"+in.DomainID+"/records", nil); err == nil && dnsRecordExists(existing, in) {
+					return CloudActionResult{}, errors.New("an identical DNS record already exists")
+				}
+			}
 			path = "/domains/" + in.DomainID + "/records"
 			method = http.MethodPost
 			if action == "update" {
@@ -248,6 +253,30 @@ func (a *App) queueDNSJob(w http.ResponseWriter, in cloudDNSRequest, action stri
 	}
 	writeJSON(w, 202, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
 	return nil
+}
+
+func dnsRecordExists(value any, in cloudDNSRequest) bool {
+	root, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	data, ok := root["data"].([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range data {
+		record, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _ := record["type"].(string)
+		name, _ := record["name"].(string)
+		target, _ := record["target"].(string)
+		if strings.EqualFold(typ, in.Type) && strings.EqualFold(strings.TrimSuffix(name, "."), strings.TrimSuffix(in.Name, ".")) && strings.EqualFold(strings.TrimSuffix(target, "."), strings.TrimSuffix(in.Target, ".")) {
+			return true
+		}
+	}
+	return false
 }
 
 func linodeAPIRequest(ctx context.Context, method, path string, payload any) (any, error) {
