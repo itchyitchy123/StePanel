@@ -33,7 +33,7 @@ func TestHealthAndMetricsEndpoints(t *testing.T) {
 func TestLoggingAddsBrowserSecurityHeaders(t *testing.T) {
 	handler := logging(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
-	}), nil)
+	}), nil, false)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/health", nil))
 	if response.Header().Get("Content-Security-Policy") == "" {

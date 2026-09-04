@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -112,4 +113,49 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 		return syncErr
 	}
 	return closeErr
+}
+
+func rejectSymlinkParents(path, root string) error {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if err := ensureInside(root, path); err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	current := root
+	if rel != "." {
+		for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+			current = filepath.Join(current, part)
+			info, statErr := os.Lstat(current)
+			if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+				return statErr
+			}
+			if statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+				return errors.New("destination contains a symlinked parent")
+			}
+		}
+	}
+	return nil
+}
+
+func acquireProcessLock(path string) (*os.File, error) {
+	fd, err := syscall.Open(path, syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return nil, err
+	}
+	lock := os.NewFile(uintptr(fd), path)
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = lock.Close()
+		return nil, errors.New("another StePanel instance is already running")
+	}
+	return lock, nil
 }

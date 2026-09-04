@@ -34,6 +34,12 @@ local database user through the restricted local helper (or the explicitly
 configured remote administrative connection), imports `database.sql`, and uses WP-CLI for serialized-safe table
 prefix and URL replacement.
 
+When present, `package.json` metadata is applied after the database and files
+are restored: the archived active plugin list, theme, and stylesheet are
+updated through WP-CLI, and the base64-encoded `Server[".htaccess"]` payload is
+decoded into the site's document root. Invalid metadata is rejected and the
+site transaction is rolled back.
+
 Archives are extracted into a private staging directory. Symlinks are rejected,
 the database dump is not copied into the public site, and a failed overwrite
 attempt restores the previous site directory. WordPress code and plugins are

@@ -65,17 +65,22 @@ func main() {
 		log.Fatal("authentication must be configured in production")
 	}
 	auth.AuditLog = cfg.AuditLog
-	if cfg.DBCtl != "" {
-		if output, err := helperCommand(cfg, cfg.DBCtl, "reconcile").CombinedOutput(); err != nil {
-			log.Fatalf("reconcile interrupted database operations: %v: %s", err, strings.TrimSpace(string(output)))
-		}
-	}
 	for _, directory := range []struct {
 		path string
 		mode os.FileMode
 	}{{cfg.ImportRoot, 0750}, {cfg.BackupRoot, 0750}, {filepath.Dir(cfg.JobState), 0750}, {cfg.RecoveryRoot, 0700}} {
 		if err := os.MkdirAll(directory.path, directory.mode); err != nil {
 			log.Fatalf("initialize managed directory %s: %v", directory.path, err)
+		}
+	}
+	processLock, err := acquireProcessLock(cfg.JobState + ".lock")
+	if err != nil {
+		log.Fatalf("acquire process lock: %v", err)
+	}
+	defer processLock.Close()
+	if cfg.DBCtl != "" {
+		if output, err := helperCommand(cfg, cfg.DBCtl, "reconcile").CombinedOutput(); err != nil {
+			log.Fatalf("reconcile interrupted database operations: %v: %s", err, strings.TrimSpace(string(output)))
 		}
 	}
 	databaseRecoveries, err := RecoverTransactionDatabases(cfg, cfg.RecoveryRoot)
@@ -101,8 +106,12 @@ func main() {
 		log.Printf("recovered interrupted site transaction %s", id)
 		_ = Audit(cfg.AuditLog, "restore.recovered", id, "previous site restored after unclean shutdown")
 	}
-	_ = CleanupImportStages(cfg.ImportRoot, time.Duration(cfg.StageRetentionHours)*time.Hour)
-	_ = CleanupSiteTransactions(cfg.RecoveryRoot, time.Duration(cfg.StageRetentionHours)*time.Hour)
+	if err := CleanupImportStages(cfg.ImportRoot, time.Duration(cfg.StageRetentionHours)*time.Hour); err != nil {
+		log.Printf("import stage cleanup during startup: %v", err)
+	}
+	if err := CleanupSiteTransactions(cfg.RecoveryRoot, time.Duration(cfg.StageRetentionHours)*time.Hour); err != nil {
+		log.Printf("site recovery cleanup during startup: %v", err)
+	}
 	view := template.Must(template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).ParseFiles("web/index.html"))
 	jobs, err := OpenJobs(cfg.JobState, cfg.MaxConcurrentJobs)
 	if err != nil {
@@ -129,6 +138,7 @@ func main() {
 		}
 	}()
 	mux := http.NewServeMux()
+	expensive := make(chan struct{}, 4)
 	mux.Handle("/livez", allowMethods(http.HandlerFunc(app.livez), http.MethodGet, http.MethodHead))
 	mux.Handle("/readyz", allowMethods(http.HandlerFunc(app.readyz), http.MethodGet, http.MethodHead))
 	mux.Handle("/static/", allowMethods(http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))), http.MethodGet, http.MethodHead))
@@ -139,7 +149,7 @@ func main() {
 	mux.Handle("/api/services", allowMethods(app.Auth.Require(http.HandlerFunc(app.services)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/ftp", allowMethods(app.Auth.Require(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/audit", allowMethods(app.Auth.Require(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/security/scan", allowMethods(app.Auth.Require(http.HandlerFunc(app.malwareScan)), http.MethodPost))
+	mux.Handle("/api/security/scan", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.malwareScan), expensive)), http.MethodPost))
 	mux.Handle("/api/certificates/issue", allowMethods(app.Auth.Require(http.HandlerFunc(app.issueCertificate)), http.MethodPost))
 	mux.Handle("/api/node/versions", allowMethods(app.Auth.Require(http.HandlerFunc(app.nodeVersions)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/node/select", allowMethods(app.Auth.Require(http.HandlerFunc(app.selectNode)), http.MethodPost))
@@ -154,7 +164,7 @@ func main() {
 	mux.Handle("/api/apps", allowMethods(app.Auth.Require(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.appDeploy)), http.MethodPost))
 	mux.Handle("/api/apps/", allowMethods(app.Auth.Require(http.HandlerFunc(app.appAction)), http.MethodPost))
-	mux.Handle("/api/cpmove/inspect", allowMethods(app.Auth.Require(http.HandlerFunc(app.inspect)), http.MethodPost))
+	mux.Handle("/api/cpmove/inspect", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.inspect), expensive)), http.MethodPost))
 	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.importBackup)), http.MethodPost))
 	mux.Handle("/api/wpress/preflight", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressPreflight)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/wpress/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressImport)), http.MethodPost))
@@ -164,7 +174,7 @@ func main() {
 		metricsHandler = app.Auth.Require(metricsHandler)
 	}
 	mux.Handle("/metrics", allowMethods(metricsHandler, http.MethodGet, http.MethodHead))
-	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux, app.Metrics), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
+	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux, app.Metrics, cfg.Production), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	go func() {
 		log.Printf("StePanel listening on %s", cfg.Listen)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -339,7 +349,7 @@ func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, job)
 }
-func logging(next http.Handler, metrics *Metrics) http.Handler {
+func logging(next http.Handler, metrics *Metrics, production bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		wrapped := &statusWriter{ResponseWriter: w}
@@ -348,6 +358,9 @@ func logging(next http.Handler, metrics *Metrics) http.Handler {
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'")
 		w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+		if production {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		if !strings.HasPrefix(r.URL.Path, "/static/") {
 			w.Header().Set("Cache-Control", "no-store")
 		}
@@ -368,6 +381,19 @@ func allowMethods(next http.Handler, methods ...string) http.Handler {
 		if _, ok := allowed[r.Method]; !ok {
 			w.Header().Set("Allow", strings.Join(methods, ", "))
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func limitConcurrent(next http.Handler, slots chan struct{}) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+		default:
+			http.Error(w, "server is busy; retry shortly", http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)

@@ -481,10 +481,16 @@ func copyTree(src, dst string) error {
 			return err
 		}
 		target := filepath.Join(dst, rel)
+		if err := rejectSymlinkParents(target, dst); err != nil {
+			return err
+		}
 		if existing, statErr := os.Lstat(target); statErr == nil && existing.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("destination symlink is not allowed: %s", target)
 		}
 		if info.IsDir() {
+			if existing, statErr := os.Lstat(target); statErr == nil && existing.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("destination symlink is not allowed: %s", target)
+			}
 			return os.MkdirAll(target, 0750)
 		}
 		in, _, err := openRegularNoFollow(path, info)

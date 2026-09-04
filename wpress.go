@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +21,19 @@ import (
 var wpressNamePattern = regexp.MustCompile(`^[a-z0-9_]{1,40}$`)
 var wpressPrefixPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,31}$`)
 var databasePasswordPattern = regexp.MustCompile(`^[A-Za-z0-9!@#%^*_=+.,:-]{16,128}$`)
+var wordpressPluginPathPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,255}$`)
+var wordpressThemeSlugPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,255}$`)
+
+type wpressPackageMetadata struct {
+	PluginsPresent    bool
+	Plugins           []string
+	TemplatePresent   bool
+	Template          string
+	StylesheetPresent bool
+	Stylesheet        string
+	HTAccess          []byte
+	HTAccessPresent   bool
+}
 
 type WPressResult struct {
 	Site             string `json:"site"`
@@ -30,6 +45,8 @@ type WPressResult struct {
 	FilesRestored    bool   `json:"files_restored"`
 	DatabaseRestored bool   `json:"database_restored"`
 	URLReplaced      bool   `json:"url_replaced"`
+	MetadataApplied  bool   `json:"metadata_applied"`
+	HTAccessRestored bool   `json:"htaccess_restored"`
 	StagedAt         string `json:"staged_at"`
 }
 
@@ -163,7 +180,8 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 				restoreErr = fmt.Errorf("%w; audit persistence failed: %v", restoreErr, auditErr)
 			}
 		} else {
-			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.completed", site, result.StagedAt); auditErr != nil {
+			detail := fmt.Sprintf("%s; metadata=%t; htaccess=%t", result.StagedAt, result.MetadataApplied, result.HTAccessRestored)
+			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.completed", site, detail); auditErr != nil {
 				restoreErr = auditErr
 			}
 		}
@@ -245,8 +263,22 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	if err := os.MkdirAll(home, 0750); err != nil {
 		return WPressResult{}, err
 	}
+	metadata, err := readWPressPackageMetadata(filepath.Join(source, "package.json"))
+	if err != nil {
+		return WPressResult{}, fmt.Errorf("read package metadata: %w", err)
+	}
 	if err := copyWPressTree(source, home); err != nil {
 		return WPressResult{}, fmt.Errorf("restore WordPress files: %w", err)
+	}
+	if metadata.HTAccessPresent {
+		if err := writeAtomic(filepath.Join(home, ".htaccess"), metadata.HTAccess, 0644); err != nil {
+			return WPressResult{}, fmt.Errorf("restore .htaccess: %w", err)
+		}
+	}
+	if findings, err := scanPHP(home); err != nil {
+		return WPressResult{}, fmt.Errorf("scan restored WordPress files: %w", err)
+	} else if len(findings) > 0 {
+		return WPressResult{}, fmt.Errorf("restore blocked: malware scan detected %d suspicious PHP file(s)", len(findings))
 	}
 	if cfg.DBCtl == "" {
 		databaseExists, checkErr := mysqlObjectExists(cfg, "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME="+sqlString(dbName))
@@ -295,6 +327,9 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	if err := configureWordPress(cfg, home, dbName, dbUser, dbPassword, targetPrefix); err != nil {
 		return WPressResult{}, err
 	}
+	if err := applyWPressPackageMetadata(cfg, home, metadata); err != nil {
+		return WPressResult{}, err
+	}
 	urlReplaced := false
 	if siteURL != "" {
 		oldURL, getErr := runWPOutput(cfg, home, "option", "get", "siteurl")
@@ -302,13 +337,21 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 			if err := runWP(cfg, home, "search-replace", strings.TrimSpace(oldURL), siteURL, "--all-tables-with-prefix", "--precise", "--recurse-objects", "--skip-columns=guid", "--quiet"); err != nil {
 				return WPressResult{}, fmt.Errorf("replace site URL: %w", err)
 			}
-			_ = runWP(cfg, home, "option", "update", "home", siteURL)
-			_ = runWP(cfg, home, "option", "update", "siteurl", siteURL)
+			if err := runWP(cfg, home, "option", "update", "home", siteURL); err != nil {
+				return WPressResult{}, fmt.Errorf("update home URL: %w", err)
+			}
+			if err := runWP(cfg, home, "option", "update", "siteurl", siteURL); err != nil {
+				return WPressResult{}, fmt.Errorf("update site URL: %w", err)
+			}
 			urlReplaced = true
 		}
 	}
-	_ = runWP(cfg, home, "rewrite", "flush")
-	_ = runWP(cfg, home, "cache", "flush")
+	if err := runWP(cfg, home, "rewrite", "flush"); err != nil {
+		return WPressResult{}, fmt.Errorf("flush rewrite rules: %w", err)
+	}
+	if err := runWP(cfg, home, "cache", "flush"); err != nil {
+		return WPressResult{}, fmt.Errorf("flush WordPress cache: %w", err)
+	}
 	if err := siteHelper(cfg, "seal", site); err != nil {
 		return WPressResult{}, fmt.Errorf("seal isolated site: %w", err)
 	}
@@ -316,7 +359,96 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 		return WPressResult{}, fmt.Errorf("commit site recovery transaction: %w", err)
 	}
 	committed = true
-	return WPressResult{Site: site, Home: home, Database: dbName, DatabaseUser: dbUser, SourcePrefix: sourcePrefix, TargetPrefix: targetPrefix, FilesRestored: true, DatabaseRestored: true, URLReplaced: urlReplaced, StagedAt: txn.dir}, nil
+	return WPressResult{Site: site, Home: home, Database: dbName, DatabaseUser: dbUser, SourcePrefix: sourcePrefix, TargetPrefix: targetPrefix, FilesRestored: true, DatabaseRestored: true, URLReplaced: urlReplaced, MetadataApplied: metadata.PluginsPresent || metadata.TemplatePresent || metadata.StylesheetPresent, HTAccessRestored: metadata.HTAccessPresent, StagedAt: txn.dir}, nil
+}
+
+func readWPressPackageMetadata(path string) (wpressPackageMetadata, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return wpressPackageMetadata{}, nil
+	}
+	if err != nil {
+		return wpressPackageMetadata{}, err
+	}
+	if len(data) > 4<<20 {
+		return wpressPackageMetadata{}, errors.New("package.json exceeds the 4 MiB limit")
+	}
+	var raw struct {
+		Plugins    json.RawMessage `json:"Plugins"`
+		Template   json.RawMessage `json:"Template"`
+		Stylesheet json.RawMessage `json:"Stylesheet"`
+		Server     struct {
+			HTAccess json.RawMessage `json:".htaccess"`
+		} `json:"Server"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return wpressPackageMetadata{}, err
+	}
+	metadata := wpressPackageMetadata{}
+	if raw.Plugins != nil {
+		metadata.PluginsPresent = true
+		if string(raw.Plugins) == "null" {
+			metadata.Plugins = []string{}
+		} else if err := json.Unmarshal(raw.Plugins, &metadata.Plugins); err != nil {
+			return wpressPackageMetadata{}, errors.New("Plugins must be an array of strings")
+		}
+		for _, plugin := range metadata.Plugins {
+			if !wordpressPluginPathPattern.MatchString(plugin) || strings.HasPrefix(plugin, "/") || strings.Contains(plugin, "..") {
+				return wpressPackageMetadata{}, errors.New("Plugins contains an invalid plugin path")
+			}
+		}
+	}
+	if raw.Template != nil {
+		metadata.TemplatePresent = true
+		if err := json.Unmarshal(raw.Template, &metadata.Template); err != nil || metadata.Template != "" && !wordpressThemeSlugPattern.MatchString(metadata.Template) || strings.Contains(metadata.Template, "..") {
+			return wpressPackageMetadata{}, errors.New("Template must be a valid theme slug")
+		}
+	}
+	if raw.Stylesheet != nil {
+		metadata.StylesheetPresent = true
+		if err := json.Unmarshal(raw.Stylesheet, &metadata.Stylesheet); err != nil || metadata.Stylesheet != "" && !wordpressThemeSlugPattern.MatchString(metadata.Stylesheet) || strings.Contains(metadata.Stylesheet, "..") {
+			return wpressPackageMetadata{}, errors.New("Stylesheet must be a valid theme slug")
+		}
+	}
+	if raw.Server.HTAccess != nil && string(raw.Server.HTAccess) != "null" {
+		var encoded string
+		if err := json.Unmarshal(raw.Server.HTAccess, &encoded); err != nil {
+			return wpressPackageMetadata{}, errors.New("Server .htaccess must be a base64 string")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			decoded, err = base64.RawStdEncoding.DecodeString(encoded)
+		}
+		if err != nil || len(decoded) > 1<<20 {
+			return wpressPackageMetadata{}, errors.New("Server .htaccess is invalid or exceeds the 1 MiB limit")
+		}
+		metadata.HTAccess = decoded
+		metadata.HTAccessPresent = true
+	}
+	return metadata, nil
+}
+
+func applyWPressPackageMetadata(cfg Config, home string, metadata wpressPackageMetadata) error {
+	if metadata.PluginsPresent {
+		data, err := json.Marshal(metadata.Plugins)
+		if err != nil {
+			return fmt.Errorf("encode active plugins: %w", err)
+		}
+		if err := runWP(cfg, home, "option", "update", "active_plugins", string(data), "--format=json"); err != nil {
+			return fmt.Errorf("restore active plugins: %w", err)
+		}
+	}
+	if metadata.TemplatePresent && metadata.Template != "" {
+		if err := runWP(cfg, home, "option", "update", "template", metadata.Template); err != nil {
+			return fmt.Errorf("restore active theme: %w", err)
+		}
+	}
+	if metadata.StylesheetPresent && metadata.Stylesheet != "" {
+		if err := runWP(cfg, home, "option", "update", "stylesheet", metadata.Stylesheet); err != nil {
+			return fmt.Errorf("restore active stylesheet: %w", err)
+		}
+	}
+	return nil
 }
 
 func validateWPressTree(root string, maxEntries int) error {
@@ -371,6 +503,9 @@ func copyWPressTree(src, dst string) error {
 		if path == filepath.Join(src, "database.sql") {
 			return nil
 		}
+		if path == filepath.Join(src, "package.json") {
+			return nil
+		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("symlink is not allowed: %s", path)
 		}
@@ -379,7 +514,13 @@ func copyWPressTree(src, dst string) error {
 			return err
 		}
 		target := filepath.Join(dst, rel)
+		if err := rejectSymlinkParents(target, dst); err != nil {
+			return err
+		}
 		if info.IsDir() {
+			if existing, statErr := os.Lstat(target); statErr == nil && existing.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("destination symlink is not allowed: %s", target)
+			}
 			return os.MkdirAll(target, 0750)
 		}
 		return copyFile(path, target, 0640)

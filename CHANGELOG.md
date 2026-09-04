@@ -69,6 +69,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Added a single-instance process lock, bounded admission for expensive scan
+  and inspection endpoints, stronger destination symlink checks, and HSTS in
+  production mode.
+- Startup now acquires a process lock to prevent multiple panel instances from
+  concurrently mutating the same local job, recovery, and helper state.
+- Expensive malware scans and cpmove inspections have bounded concurrent
+  admission, and restore copies reject symlinked destination parents.
+- Startup cleanup failures are now logged instead of silently discarded, and
+  WordPress URL/cache/rewrite update failures abort the restore transaction.
+- Production responses now include HSTS, while restore metadata and active
+  plugin/theme configuration continue to be applied only after a malware scan.
+- WordPress WPress restores now read validated `package.json` metadata, restore
+  the archived active plugin/theme/stylesheet selections, and decode the
+  archive's base64 `.htaccess` payload into the restored document root.
 - Malformed WPress multipart requests no longer panic when upload metadata is
   missing, and cpmove inspection now enforces per-entry and total decompressed
   size limits to resist archive-bomb denial of service.
