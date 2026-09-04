@@ -26,6 +26,9 @@ It is designed for people who want a small, understandable hosting control plane
 | Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |
 | Delivery | Dockerfile, ARM64/AMD64 release workflow, checksums, CI, vulnerability scanning |
 
+The authenticated `/api/doctor` endpoint runs read-only checks for the selected
+webserver, database, PHP-FPM, privileged helpers, and free disk capacity.
+
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
 

@@ -11,7 +11,7 @@
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="StePanel home"><span class="brand-mark">S</span><span>StePanel</span></a>
-      <nav class="topnav" aria-label="Primary"><a href="#resources">Resources</a><a href="#jobs">Jobs</a><a href="#migrations">Migrations</a><a href="#deploy">Deploy</a><a href="#security">Security</a></nav>
+      <nav class="topnav" aria-label="Primary"><a href="#resources">Resources</a><a href="#jobs">Jobs</a><a href="#migrations">Migrations</a><a href="#deploy">Deploy</a><a href="#security">Security</a><a href="/api/doctor">Doctor</a></nav>
       <div class="topbar-meta"><span class="pulse" aria-hidden="true"></span> Connected <span class="divider"></span> <time datetime="{{ .Now.Format "2006-01-02" }}">{{ .Now.Format "02 Jan 2006" }}</time>{{ if .AuthEnabled }}<form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ .CSRF }}"><button class="avatar" type="submit" aria-label="Sign out {{ .Username }}">{{ if .Username }}{{ .Username }}{{ else }}admin{{ end }} · Sign out</button></form>{{ end }}</div>
     </header>
     <main class="content" id="main">

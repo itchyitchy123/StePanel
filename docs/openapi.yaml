@@ -96,6 +96,11 @@ paths:
       summary: Security posture checks
       responses:
         '200': {description: Security checks}
+  /api/doctor:
+    get:
+      summary: Run read-only operator diagnostics
+      responses:
+        '200': {description: Webserver, database, PHP-FPM, helper, and disk checks}
   /api/capabilities:
     get:
       summary: Report features available in the current deployment
