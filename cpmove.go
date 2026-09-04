@@ -136,7 +136,11 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return ImportResult{}, err
 	}
-	id := time.Now().UTC().Format("20060102-150405") + "-" + user
+	randomID, err := randomSecret()
+	if err != nil {
+		return ImportResult{}, fmt.Errorf("create import staging ID: %w", err)
+	}
+	id := time.Now().UTC().Format("20060102-150405") + "-" + user + "-" + randomID[:12]
 	stage := filepath.Join(cfg.ImportRoot, id)
 	if err := os.MkdirAll(stage, 0700); err != nil {
 		return ImportResult{}, err

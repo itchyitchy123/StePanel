@@ -426,6 +426,9 @@ func logging(next http.Handler, metrics *Metrics, production bool) http.Handler 
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 		}
 		next.ServeHTTP(wrapped, r)
+		if wrapped.status == 0 {
+			wrapped.status = http.StatusOK
+		}
 		if metrics != nil {
 			metrics.ObserveHTTP(wrapped.status, time.Since(started))
 		}

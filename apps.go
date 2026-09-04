@@ -49,7 +49,8 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
-	if safeUser(app.Site) == "" || !nodeVersionPattern.MatchString(app.Version) || app.Port < 1024 || app.Port > 65535 {
+	app.Domain = strings.ToLower(strings.TrimSpace(app.Domain))
+	if safeUser(app.Site) == "" || len(app.Domain)+len(app.Site) > 220 || !domainPattern.MatchString(app.Domain) || !nodeVersionPattern.MatchString(app.Version) || app.Port < 1024 || app.Port > 65535 {
 		http.Error(w, "invalid site, Node version, or port", 422)
 		return
 	}

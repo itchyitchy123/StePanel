@@ -24,6 +24,8 @@ import (
 
 type Auth struct {
 	Username, PasswordHash, Secret, AuditLog string
+	credentialKey                            string
+	credentialHash                           string
 	Enabled, SecureCookies                   bool
 	TOTPEnabled                              bool
 	totpSecret                               []byte
@@ -33,7 +35,7 @@ type Auth struct {
 }
 
 type sessionRegistry struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	path    string
 	entries map[string]int64
 	err     error
@@ -77,7 +79,14 @@ func NewAuth(secureCookies bool) (Auth, error) {
 	if len(secret) < 32 {
 		return Auth{}, errors.New("STEPANEL_SESSION_SECRET must be at least 32 characters")
 	}
-	return Auth{Username: username, PasswordHash: hash, Secret: secret, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{}, loginLimiter: newLoginLimiter(), sessions: &sessionRegistry{entries: make(map[string]int64)}}, nil
+	credentialKey := hash
+	if password != "" {
+		// A supplied plaintext password is stable across restarts, unlike a newly
+		// generated bcrypt hash (which includes a random salt).
+		passwordDigest := sha256.Sum256([]byte(password))
+		credentialKey = "password-digest:" + hex.EncodeToString(passwordDigest[:])
+	}
+	return Auth{Username: username, PasswordHash: hash, Secret: secret, credentialKey: credentialKey, credentialHash: hash, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{}, loginLimiter: newLoginLimiter(), sessions: &sessionRegistry{entries: make(map[string]int64)}}, nil
 }
 
 func (a *Auth) ConfigureSessionStore(path string) error {
@@ -129,6 +138,19 @@ func (s *sessionRegistry) add(id string, expiry int64) error {
 			delete(s.entries, candidate)
 		}
 	}
+	if len(s.entries) >= 10000 {
+		// Evict the earliest-expiring session before admitting a new one.
+		var oldestID string
+		var oldest int64
+		for candidate, candidateExpiry := range s.entries {
+			if oldestID == "" || candidateExpiry < oldest {
+				oldestID, oldest = candidate, candidateExpiry
+			}
+		}
+		if oldestID != "" {
+			delete(s.entries, oldestID)
+		}
+	}
 	s.entries[id] = expiry
 	if err := s.persistLocked(); err != nil {
 		delete(s.entries, id)
@@ -140,8 +162,8 @@ func (s *sessionRegistry) add(id string, expiry int64) error {
 }
 
 func (s *sessionRegistry) valid(id string, expiry int64) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	stored, ok := s.entries[id]
 	return ok && stored == expiry && expiry > time.Now().Unix()
 }
@@ -337,7 +359,11 @@ func (a Auth) sessionID(r *http.Request) string {
 	return parts[2]
 }
 func (a Auth) credentialFingerprint() string {
-	digest := sha256.Sum256([]byte(a.Username + "\x00" + a.PasswordHash))
+	key := a.credentialKey
+	if key == "" || (strings.HasPrefix(key, "password-digest:") && a.credentialHash != a.PasswordHash) {
+		key = a.PasswordHash
+	}
+	digest := sha256.Sum256([]byte(a.Username + "\x00" + key))
 	return hex.EncodeToString(digest[:16])
 }
 func (a Auth) sign(value string) string {
