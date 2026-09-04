@@ -33,7 +33,7 @@ resource "kubernetes_deployment" "stepanel" {
     template {
       metadata { labels = { "app.kubernetes.io/name" = "stepanel" } }
       spec {
-        automount_service_account_token  = false
+        automount_service_account_token = false
         # Match the application's two-hour restore drain plus a five-minute margin.
         termination_grace_period_seconds = 7500
         security_context {
