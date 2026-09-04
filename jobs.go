@@ -32,9 +32,43 @@ type Job struct {
 	WPress      *WPressResult      `json:"wpress,omitempty"`
 	Certificate *CertificateResult `json:"certificate,omitempty"`
 	Backup      *BackupResult      `json:"backup,omitempty"`
+	Cloud       *CloudActionResult `json:"cloud,omitempty"`
 	Error       string             `json:"error,omitempty"`
 	StartedAt   time.Time          `json:"started_at"`
 	FinishedAt  *time.Time         `json:"finished_at,omitempty"`
+}
+
+func (j *Jobs) SubmitCloud(id, target string, work func() (CloudActionResult, error)) error {
+	j.admission.RLock()
+	defer j.admission.RUnlock()
+	if !j.reserve(target) {
+		return ErrJobBusy
+	}
+	j.wg.Add(1)
+	item := &Job{ID: id, Kind: "cloud.action", State: "running", User: target, StartedAt: time.Now().UTC()}
+	if err := j.add(item); err != nil {
+		j.wg.Done()
+		j.release(target)
+		return fmt.Errorf("persist queued job: %w", err)
+	}
+	go func() {
+		defer j.wg.Done()
+		defer j.release(target)
+		result, err := work()
+		now := time.Now().UTC()
+		j.mu.Lock()
+		item.FinishedAt = &now
+		if err != nil {
+			item.State = "failed"
+			item.Error = err.Error()
+		} else {
+			item.State = "completed"
+			item.Cloud = &result
+		}
+		j.mu.Unlock()
+		j.complete(item)
+	}()
+	return nil
 }
 
 type jobStore struct {

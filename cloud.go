@@ -22,6 +22,13 @@ type CloudInventory struct {
 	Warnings      []string `json:"warnings,omitempty"`
 }
 
+type CloudActionResult struct {
+	Provider    string    `json:"provider"`
+	Action      string    `json:"action"`
+	ID          string    `json:"id"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
 func (a *App) cloudInventory(w http.ResponseWriter, _ *http.Request) {
 	provider := strings.ToLower(strings.TrimSpace(a.Config.CloudProvider))
 	if provider == "" {
@@ -71,17 +78,32 @@ func (a *App) cloudAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid provider, action, or resource ID", http.StatusUnprocessableEntity)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := executeCloudAction(ctx, in.Provider, in.Action, in.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	id, err := newJobID("cloud")
+	if err != nil {
+		http.Error(w, "could not create cloud job", http.StatusInternalServerError)
 		return
 	}
-	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud."+in.Action, in.ID, in.Provider); err != nil {
-		http.Error(w, "cloud action completed but audit persistence is unavailable", http.StatusServiceUnavailable)
+	if err := a.Jobs.SubmitCloud(id, in.ID, func() (CloudActionResult, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := executeCloudAction(ctx, in.Provider, in.Action, in.ID); err != nil {
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud."+in.Action+".failed", in.ID, err.Error())
+			return CloudActionResult{}, err
+		}
+		result := CloudActionResult{Provider: in.Provider, Action: in.Action, ID: in.ID, CompletedAt: time.Now().UTC()}
+		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud."+in.Action, in.ID, in.Provider); err != nil {
+			return result, err
+		}
+		return result, nil
+	}); err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+		} else {
+			http.Error(w, "could not persist cloud job", http.StatusInternalServerError)
+		}
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"provider": in.Provider, "action": in.Action, "id": in.ID})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
 }
 
 var cloudIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)

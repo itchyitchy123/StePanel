@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Cloud lifecycle actions now run as persisted asynchronous jobs with bounded
+  provider timeouts, failure audits, and job-status polling.
+
 - Authenticated cloud actions for configured Linode, AWS, and OpenStack
   providers, including start, stop, reboot, and snapshot operations with
   strict resource validation and audit events.

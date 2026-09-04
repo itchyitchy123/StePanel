@@ -110,7 +110,7 @@ paths:
     post:
       summary: Start, stop, reboot, or snapshot an existing cloud resource
       responses:
-        '202': {description: Provider action accepted}
+        '202': {description: Provider action queued; poll the returned job URL}
   /api/capabilities:
     get:
       summary: Report features available in the current deployment
