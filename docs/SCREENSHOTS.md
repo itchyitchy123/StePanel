@@ -21,7 +21,8 @@ available for presentations and product materials.
 </tr>
 </table>
 
-This illustration mirrors the dashboard structure using representative values.
+This illustration mirrors the current dashboard structure using representative
+values, including the selected webserver and direct operator-diagnostics link.
 At runtime, all service counts, health states, load, security checks, and jobs
 come from the current server; the application does not ship simulated activity.
 
