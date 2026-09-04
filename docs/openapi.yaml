@@ -120,6 +120,10 @@ paths:
       summary: Queue a Linode DNS record creation or update
       responses:
         '202': {description: DNS change queued}
+    delete:
+      summary: Queue a Linode DNS record deletion
+      responses:
+        '202': {description: DNS change queued}
   /api/cloud/loadbalancer:
     post:
       summary: Queue a Linode load-balancer backend add or removal
@@ -134,10 +138,6 @@ paths:
       summary: Queue deletion of a Linode snapshot
       responses:
         '202': {description: Snapshot deletion queued}
-    delete:
-      summary: Queue a Linode DNS record deletion
-      responses:
-        '202': {description: DNS change queued}
   /api/ssh:
     get:
       summary: Inspect configured SSH servers with strict host-key checking

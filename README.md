@@ -168,14 +168,24 @@ checkbox and should be backed up first.
 | `GET` | `/livez` | Process-only liveness probe |
 | `GET` | `/readyz` | Job persistence and managed-filesystem readiness probe |
 | `GET` | `/api/services` | Authenticated live Apache, PHP, database, Fail2Ban, and ModSecurity inventory |
+| `GET` | `/api/cloud` | Authenticated Linode/AWS/OpenStack inventory for servers, DNS, load balancers, and snapshots |
+| `POST` | `/api/cloud/action` | Queue a cloud server start, stop, reboot, or snapshot action |
+| `GET` | `/api/cloud/dns` | List Linode DNS records |
+| `POST` | `/api/cloud/dns` | Queue a validated Linode DNS create or update |
+| `DELETE` | `/api/cloud/dns` | Queue a Linode DNS record deletion |
+| `POST` | `/api/cloud/loadbalancer` | Queue a Linode load-balancer backend add/remove |
+| `GET` | `/api/cloud/snapshots` | List Linode snapshots |
+| `DELETE` | `/api/cloud/snapshots` | Queue Linode snapshot deletion |
+| `GET` | `/api/ssh` | Read-only SSH health inventory for configured aliases |
+| `POST` | `/api/ssh/action` | Queue an allowlisted SSH service restart or reboot |
 | `GET` | `/api/ftp` | Authenticated vsftpd status, chroot posture, and passive-port configuration |
 | `GET` | `/api/security/audit` | Authenticated configuration and security posture checks |
 | `GET` | `/api/node/versions` | List installed NVM Node versions |
 | `POST` | `/api/node/select` | Select an installed Node version for a managed site |
-| `POST` | `/api/proxy/deploy` | Generate and reload a validated Apache reverse proxy |
+| `POST` | `/api/proxy/deploy` | Generate and reload a validated reverse proxy for the selected webserver |
 | `GET` | `/api/proxy` | List managed reverse proxies |
 | `POST` | `/api/proxy/test` | Test a local/private application backend |
-| `DELETE` | `/api/proxy/<config>` | Remove a managed reverse proxy and reload Apache |
+| `DELETE` | `/api/proxy/<config>` | Remove a managed reverse proxy and reload the selected webserver |
 | `GET` | `/api/sites` | List managed PHP site vhosts |
 | `POST` | `/api/sites/deploy` | Validate and route a domain to its isolated PHP-FPM pool |
 | `DELETE` | `/api/sites/<config>` | Remove a managed PHP site vhost |

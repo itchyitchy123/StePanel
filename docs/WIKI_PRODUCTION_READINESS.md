@@ -89,6 +89,17 @@ configuration is managed separately. Treat a proxy-helper failure after an app
 deployment as a partial deployment and reconcile the app and proxy state before
 retrying.
 
+## Cloud and SSH operations
+
+Configure one provider with `STEPANEL_CLOUD_PROVIDER` for authenticated cloud
+inventory and audited asynchronous lifecycle actions. Linode additionally
+supports DNS records, load-balancer backends, and snapshot lifecycle operations;
+AWS and OpenStack currently provide inventory and server lifecycle actions.
+Configure `STEPANEL_SSH_SERVERS` with aliases from the service account's SSH
+configuration for strict-host-key health checks and allowlisted service
+restarts/reboots. Keep provider credentials and SSH keys in protected host
+credential stores, never in site-controlled files.
+
 ## Observability and incident response
 
 Capture structured request logs, `X-Request-ID`, job IDs, audit events, service

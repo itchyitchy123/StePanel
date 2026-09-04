@@ -125,8 +125,8 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_NODE_VERSIONS` | Comma-separated versions | Node versions to install through NVM |
 | `STEPANEL_INSTALL_SECURITY` | `0` or `1` | Install ClamAV and the PHP malware guard |
 | `STEPANEL_OFFSITE_TARGET` | rclone destination | Optional offsite copy target, for example `s3:bucket/stepanel` |
-| `STEPANEL_CLOUD_PROVIDER` | `linode`, `aws`, or `openstack` | Optional provider for read-only cloud inventory |
-| `STEPANEL_SSH_SERVERS` | comma-separated SSH aliases | Optional strict-host-key server health inventory |
+| `STEPANEL_CLOUD_PROVIDER` | `linode`, `aws`, or `openstack` | Optional provider for cloud inventory and lifecycle actions |
+| `STEPANEL_SSH_SERVERS` | comma-separated SSH aliases | Optional strict-host-key inventory and allowlisted actions |
 | `STEPANEL_INSTALL_TLS` | `0` or `1` | Install Certbot and the Apache certificate integration |
 | `STEPANEL_STAGE_RETENTION_HOURS` | Positive hours | Retain completed restore staging directories for audit |
 | `STEPANEL_MIN_FREE_BYTES` | Bytes | Refuse new restores below this free-space threshold |
