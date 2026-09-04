@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Strict-host-key, read-only SSH server health inventory at `/api/ssh`, with
+  bounded connectivity checks for configured infrastructure aliases.
+
 - Cloud lifecycle actions now run as persisted asynchronous jobs with bounded
   provider timeouts, failure audits, and job-status polling.
 

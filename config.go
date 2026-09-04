@@ -145,6 +145,9 @@ func ValidateConfig(c Config) error {
 	if c.CloudProvider != "" && c.CloudProvider != "linode" && c.CloudProvider != "aws" && c.CloudProvider != "openstack" {
 		problems = append(problems, errors.New("STEPANEL_CLOUD_PROVIDER must be linode, aws, or openstack"))
 	}
+	if err := validateSSHServers(); err != nil {
+		problems = append(problems, err)
+	}
 	switch environment := os.Getenv("STEPANEL_ENV"); environment {
 	case "", "development", "lab", "test", "production":
 	default:

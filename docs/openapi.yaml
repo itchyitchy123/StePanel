@@ -111,6 +111,11 @@ paths:
       summary: Start, stop, reboot, or snapshot an existing cloud resource
       responses:
         '202': {description: Provider action queued; poll the returned job URL}
+  /api/ssh:
+    get:
+      summary: Inspect configured SSH servers with strict host-key checking
+      responses:
+        '200': {description: Reachability, OS, failed units, and root filesystem status}
   /api/capabilities:
     get:
       summary: Report features available in the current deployment

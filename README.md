@@ -41,6 +41,9 @@ OpenStack use their standard CLI credential environments.
 The protected `/api/cloud/action` endpoint queues start, stop, reboot, and
 snapshot actions using provider-native operations; poll the returned job URL
 for completion.
+Set `STEPANEL_SSH_SERVERS` to a comma-separated list of aliases from the
+service account's SSH config to expose strict-host-key, read-only health
+inventory at `/api/ssh`.
 
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
