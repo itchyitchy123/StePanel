@@ -137,12 +137,15 @@ func truncateAuditValue(value string, limit int) string {
 func auditSigningKey() ([]byte, error) {
 	key := os.Getenv("STEPANEL_AUDIT_KEY")
 	if key == "" {
-		key = os.Getenv("STEPANEL_SESSION_SECRET")
-	}
-	if key == "" {
 		if data, err := os.ReadFile(auditKeyPath); err == nil {
 			key = strings.TrimSpace(string(data))
 		}
+	}
+	// The session secret is retained only as a development fallback. Prefer the
+	// dedicated key file before considering it so production installs that keep
+	// the audit key out of the environment remain correctly verifiable.
+	if key == "" {
+		key = os.Getenv("STEPANEL_SESSION_SECRET")
 	}
 	if len(key) < 32 {
 		return nil, errors.New("STEPANEL_AUDIT_KEY or STEPANEL_SESSION_SECRET must contain at least 32 characters")

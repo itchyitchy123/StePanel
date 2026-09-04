@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,7 +21,20 @@ type ServiceSummary struct {
 	Uptime string
 }
 
+var serviceStatusCache struct {
+	sync.RWMutex
+	at    time.Time
+	items map[string]string
+}
+
 func ServiceStatus() map[string]string {
+	serviceStatusCache.RLock()
+	if time.Since(serviceStatusCache.at) < 5*time.Second {
+		result := cloneServiceStatus(serviceStatusCache.items)
+		serviceStatusCache.RUnlock()
+		return result
+	}
+	serviceStatusCache.RUnlock()
 	result := map[string]string{}
 	for _, service := range []string{"apache2", "httpd", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
 		if _, err := exec.LookPath(service); err == nil {
@@ -31,12 +45,27 @@ func ServiceStatus() map[string]string {
 		if _, err := exec.LookPath(apache); err != nil {
 			continue
 		}
-		if output, err := exec.Command(apache, "-M").CombinedOutput(); err == nil && (bytes.Contains(output, []byte("security2_module")) || bytes.Contains(output, []byte("security3_module"))) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		output, err := exec.CommandContext(ctx, apache, "-M").CombinedOutput()
+		cancel()
+		if err == nil && (bytes.Contains(output, []byte("security2_module")) || bytes.Contains(output, []byte("security3_module"))) {
 			result["modsecurity"] = "enabled"
 			break
 		}
 	}
+	serviceStatusCache.Lock()
+	serviceStatusCache.items = cloneServiceStatus(result)
+	serviceStatusCache.at = time.Now()
+	serviceStatusCache.Unlock()
 	return result
+}
+
+func cloneServiceStatus(source map[string]string) map[string]string {
+	copy := make(map[string]string, len(source))
+	for key, value := range source {
+		copy[key] = value
+	}
+	return copy
 }
 
 func serviceUnitState(service string) string {
@@ -53,7 +82,10 @@ func serviceUnitState(service string) string {
 	if state == "failed" {
 		return "failed"
 	}
-	return "installed"
+	if state != "" {
+		return state
+	}
+	return "unknown"
 }
 
 func ServiceSummaries() []ServiceSummary {

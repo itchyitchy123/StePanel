@@ -16,16 +16,32 @@ type loginAttempt struct {
 type loginLimiter struct {
 	mu      sync.Mutex
 	attempt map[string]loginAttempt
+	lastGC  time.Time
 }
 
-func newLoginLimiter() *loginLimiter { return &loginLimiter{attempt: make(map[string]loginAttempt)} }
+const maxLoginLimiterKeys = 10_000
+
+func newLoginLimiter() *loginLimiter {
+	return &loginLimiter{attempt: make(map[string]loginAttempt), lastGC: time.Now()}
+}
 
 func (l *loginLimiter) Allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
+	if now.Sub(l.lastGC) >= time.Minute {
+		for candidate, attempt := range l.attempt {
+			if now.Sub(attempt.start) >= 15*time.Minute {
+				delete(l.attempt, candidate)
+			}
+		}
+		l.lastGC = now
+	}
 	attempt := l.attempt[key]
 	if attempt.start.IsZero() || now.Sub(attempt.start) >= 15*time.Minute {
+		if len(l.attempt) >= maxLoginLimiterKeys {
+			return false
+		}
 		l.attempt[key] = loginAttempt{count: 1, start: now}
 		return true
 	}

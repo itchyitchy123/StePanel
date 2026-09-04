@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/mail"
@@ -21,7 +20,7 @@ func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct{ Domain, Email string }
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil {
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}

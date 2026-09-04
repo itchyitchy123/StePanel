@@ -1,8 +1,13 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -112,4 +117,83 @@ func LoadConfig() Config {
 		c.FTPPassiveMax = v
 	}
 	return c
+}
+
+// ValidateConfig rejects unsafe or malformed settings instead of allowing a
+// typo to silently select a default. LoadConfig remains deliberately simple so
+// callers that construct Config values directly (including tests and tools) do
+// not need an error-returning configuration API.
+func ValidateConfig(c Config) error {
+	var problems []error
+	switch environment := os.Getenv("STEPANEL_ENV"); environment {
+	case "", "development", "lab", "test", "production":
+	default:
+		problems = append(problems, fmt.Errorf("STEPANEL_ENV %q is invalid; use development, lab, test, or production", environment))
+	}
+	if host, port, err := net.SplitHostPort(c.Listen); err != nil {
+		problems = append(problems, fmt.Errorf("STEPANEL_LISTEN: %w", err))
+	} else if value, err := strconv.Atoi(port); err != nil || value < 1 || value > 65535 {
+		problems = append(problems, errors.New("STEPANEL_LISTEN must contain a port from 1 to 65535"))
+	} else if strings.ContainsAny(host, "\r\n") {
+		problems = append(problems, errors.New("STEPANEL_LISTEN contains invalid characters"))
+	}
+
+	validateIntegerEnvironment(&problems, "STEPANEL_MAX_UPLOAD_BYTES", 1, 20<<30)
+	validateIntegerEnvironment(&problems, "STEPANEL_MAX_ARCHIVE_ENTRIES", 1, 1_000_000)
+	validateIntegerEnvironment(&problems, "STEPANEL_MAX_CONCURRENT_JOBS", 1, 32)
+	validateIntegerEnvironment(&problems, "STEPANEL_STAGE_RETENTION_HOURS", 1, 87_600)
+	validateIntegerEnvironment(&problems, "STEPANEL_MIN_FREE_BYTES", 1, int64(^uint64(0)>>1))
+	validateIntegerEnvironment(&problems, "STEPANEL_FTP_PASSIVE_MIN", 1024, 65534)
+	validateIntegerEnvironment(&problems, "STEPANEL_FTP_PASSIVE_MAX", 1025, 65535)
+	if c.MaxUpload < 1 || c.MaxUpload > 20<<30 || c.MaxEntries < 1 || c.MaxEntries > 1_000_000 || c.MaxConcurrentJobs < 1 || c.MaxConcurrentJobs > 32 || c.StageRetentionHours < 1 || c.StageRetentionHours > 87_600 || c.MinFreeBytes < 1 {
+		problems = append(problems, errors.New("configured resource limits are outside their supported ranges"))
+	}
+	if c.FTPPassiveMax <= c.FTPPassiveMin {
+		problems = append(problems, errors.New("STEPANEL_FTP_PASSIVE_MAX must be greater than STEPANEL_FTP_PASSIVE_MIN"))
+	}
+
+	paths := map[string]string{
+		"STEPANEL_IMPORT_ROOT":   c.ImportRoot,
+		"STEPANEL_BACKUP_ROOT":   c.BackupRoot,
+		"STEPANEL_WEB_ROOT":      c.WebRoot,
+		"STEPANEL_AUDIT_LOG":     c.AuditLog,
+		"STEPANEL_JOB_STATE":     c.JobState,
+		"STEPANEL_RECOVERY_ROOT": c.RecoveryRoot,
+	}
+	for name, path := range paths {
+		if strings.TrimSpace(path) == "" || strings.ContainsAny(path, "\x00\r\n") {
+			problems = append(problems, fmt.Errorf("%s must be a non-empty filesystem path", name))
+		} else if c.Production && !filepath.IsAbs(path) {
+			problems = append(problems, fmt.Errorf("%s must be absolute in production", name))
+		}
+	}
+	if c.Production {
+		key := strings.TrimSpace(os.Getenv("STEPANEL_AUDIT_KEY"))
+		if key == "" {
+			if data, err := os.ReadFile(auditKeyPath); err == nil {
+				key = strings.TrimSpace(string(data))
+			}
+		}
+		if len(key) < 32 {
+			problems = append(problems, errors.New("production requires a dedicated STEPANEL_AUDIT_KEY of at least 32 characters"))
+		}
+		if strings.ContainsAny(os.Getenv("STEPANEL_AUDIT_KEY"), "\r\n") {
+			problems = append(problems, errors.New("STEPANEL_AUDIT_KEY must not contain newlines"))
+		}
+		if key != "" && key == os.Getenv("STEPANEL_SESSION_SECRET") {
+			problems = append(problems, errors.New("STEPANEL_AUDIT_KEY must differ from STEPANEL_SESSION_SECRET"))
+		}
+	}
+	return errors.Join(problems...)
+}
+
+func validateIntegerEnvironment(problems *[]error, name string, minimum, maximum int64) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < minimum || value > maximum {
+		*problems = append(*problems, fmt.Errorf("%s must be an integer from %d to %d", name, minimum, maximum))
+	}
 }

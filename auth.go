@@ -126,7 +126,11 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 	payload := a.Username + "|" + strconv.FormatInt(expiry, 10)
 	token := payload + "|" + a.sign(payload)
 	http.SetCookie(w, &http.Cookie{Name: "stepanel_session", Value: base64.RawURLEncoding.EncodeToString([]byte(token)), Path: "/", Expires: time.Unix(expiry, 0), HttpOnly: true, Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
-	csrf := randomSecret()
+	csrf, err := randomSecret()
+	if err != nil {
+		http.Error(w, "could not create a secure session", http.StatusInternalServerError)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{Name: "stepanel_csrf", Value: csrf, Path: "/", Expires: time.Unix(expiry, 0), Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -202,12 +206,12 @@ func (a Auth) sign(value string) string {
 	_, _ = mac.Write([]byte(value))
 	return hex.EncodeToString(mac.Sum(nil))
 }
-func randomSecret() string {
+func randomSecret() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return ""
+		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(b)
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func (a Auth) consumeTOTP(code string, now time.Time) bool {

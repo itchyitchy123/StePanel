@@ -45,7 +45,7 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var app AppManifest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&app); err != nil {
+	if err := decodeJSON(w, r, 8192, &app); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
@@ -73,18 +73,29 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	manifestPath := filepath.Join(a.Config.AppRoot, app.Site+".json")
 	previous, previousErr := os.ReadFile(manifestPath)
+	if previousErr != nil && !os.IsNotExist(previousErr) {
+		http.Error(w, "unable to read existing app manifest", 500)
+		return
+	}
 	hadPrevious := previousErr == nil
 	if hadPrevious {
-		_ = os.WriteFile(manifestPath+".bak", previous, 0600)
+		if err := writeAtomic(manifestPath+".bak", previous, 0600); err != nil {
+			http.Error(w, "unable to save app rollback state", 500)
+			return
+		}
 	}
-	data, _ := json.MarshalIndent(app, "", "  ")
-	if err := os.WriteFile(manifestPath, append(data, '\n'), 0600); err != nil {
+	data, err := json.MarshalIndent(app, "", "  ")
+	if err != nil {
+		http.Error(w, "unable to encode app manifest", 500)
+		return
+	}
+	if err := writeAtomic(manifestPath, append(data, '\n'), 0600); err != nil {
 		http.Error(w, "unable to save app manifest", 500)
 		return
 	}
 	if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, "apply", app.Site, strings.TrimPrefix(app.Version, "v"), app.Root, strconv.Itoa(app.Port)).Run() != nil {
 		if hadPrevious {
-			_ = os.WriteFile(manifestPath, previous, 0600)
+			_ = writeAtomic(manifestPath, previous, 0600)
 		} else {
 			_ = os.Remove(manifestPath)
 		}
@@ -92,8 +103,14 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	app.State = "running"
-	if running, err := json.MarshalIndent(app, "", "  "); err == nil {
-		_ = os.WriteFile(manifestPath, append(running, '\n'), 0600)
+	running, err := json.MarshalIndent(app, "", "  ")
+	if err != nil {
+		http.Error(w, "app is running but its manifest could not be finalized", 500)
+		return
+	}
+	if err := writeAtomic(manifestPath, append(running, '\n'), 0600); err != nil {
+		http.Error(w, "app is running but its manifest could not be finalized", 500)
+		return
 	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "app.deployed", app.Site, app.Domain+" on port "+strconv.Itoa(app.Port))
 	writeJSON(w, http.StatusAccepted, app)
@@ -127,9 +144,15 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if current, readErr := os.ReadFile(manifestPath); readErr == nil {
-			_ = os.WriteFile(manifestPath+".bak", current, 0600)
+			if err := writeAtomic(manifestPath+".bak", current, 0600); err != nil {
+				http.Error(w, "unable to save current app rollback state", 500)
+				return
+			}
 		}
-		_ = os.WriteFile(manifestPath, backup, 0600)
+		if err := writeAtomic(manifestPath, backup, 0600); err != nil {
+			http.Error(w, "rollback applied but manifest could not be saved", 500)
+			return
+		}
 	} else if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, parts[1], parts[0]).Run() != nil {
 		http.Error(w, "app action failed", 502)
 		return

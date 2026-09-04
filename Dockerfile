@@ -18,6 +18,7 @@ COPY web/static/ /opt/stepanel/web/static/
 USER 10001:10001
 WORKDIR /opt/stepanel
 ENV HOME=/opt/stepanel \
+    STEPANEL_ENV=production \
     STEPANEL_LISTEN=:8080 \
     STEPANEL_IMPORT_ROOT=/var/lib/ste-panel/imports \
     STEPANEL_BACKUP_ROOT=/var/lib/ste-panel/backups \

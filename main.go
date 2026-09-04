@@ -54,6 +54,17 @@ func main() {
 		return
 	}
 	cfg := LoadConfig()
+	if err := ValidateConfig(cfg); err != nil {
+		log.Fatalf("invalid configuration: %v", err)
+	}
+	auth, err := NewAuth(cfg.Production)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if cfg.Production && !auth.Enabled {
+		log.Fatal("authentication must be configured in production")
+	}
+	auth.AuditLog = cfg.AuditLog
 	if cfg.DBCtl != "" {
 		if output, err := helperCommand(cfg, cfg.DBCtl, "reconcile").CombinedOutput(); err != nil {
 			log.Fatalf("reconcile interrupted database operations: %v: %s", err, strings.TrimSpace(string(output)))
@@ -92,14 +103,6 @@ func main() {
 	}
 	_ = CleanupImportStages(cfg.ImportRoot, time.Duration(cfg.StageRetentionHours)*time.Hour)
 	_ = CleanupSiteTransactions(cfg.RecoveryRoot, time.Duration(cfg.StageRetentionHours)*time.Hour)
-	auth, err := NewAuth(cfg.Production)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if cfg.Production && !auth.Enabled {
-		log.Fatal("authentication must be configured in production")
-	}
-	auth.AuditLog = cfg.AuditLog
 	view := template.Must(template.New("index.html").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }}).ParseFiles("web/index.html"))
 	jobs, err := OpenJobs(cfg.JobState, cfg.MaxConcurrentJobs)
 	if err != nil {
@@ -126,42 +129,42 @@ func main() {
 		}
 	}()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/livez", app.livez)
-	mux.HandleFunc("/readyz", app.readyz)
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-	mux.HandleFunc("/login", app.Auth.Login)
-	mux.HandleFunc("/logout", app.Auth.Logout)
-	mux.Handle("/", app.Auth.Require(http.HandlerFunc(app.dashboard)))
-	mux.HandleFunc("/api/health", app.health)
-	mux.Handle("/api/services", app.Auth.Require(http.HandlerFunc(app.services)))
-	mux.Handle("/api/ftp", app.Auth.Require(http.HandlerFunc(app.ftpStatus)))
-	mux.Handle("/api/security/audit", app.Auth.Require(http.HandlerFunc(app.securityAudit)))
-	mux.Handle("/api/security/scan", app.Auth.Require(http.HandlerFunc(app.malwareScan)))
-	mux.Handle("/api/certificates/issue", app.Auth.Require(http.HandlerFunc(app.issueCertificate)))
-	mux.Handle("/api/node/versions", app.Auth.Require(http.HandlerFunc(app.nodeVersions)))
-	mux.Handle("/api/node/select", app.Auth.Require(http.HandlerFunc(app.selectNode)))
-	mux.Handle("/api/proxy/deploy", app.Auth.Require(http.HandlerFunc(app.deployProxy)))
-	mux.Handle("/api/proxy", app.Auth.Require(http.HandlerFunc(app.proxyList)))
-	mux.Handle("/api/proxy/test", app.Auth.Require(http.HandlerFunc(app.proxyTest)))
-	mux.Handle("/api/proxy/", app.Auth.Require(http.HandlerFunc(app.proxyManage)))
-	mux.Handle("/api/sites", app.Auth.Require(http.HandlerFunc(app.siteList)))
-	mux.Handle("/api/sites/deploy", app.Auth.Require(http.HandlerFunc(app.siteDeploy)))
-	mux.Handle("/api/sites/", app.Auth.Require(http.HandlerFunc(app.siteManage)))
+	mux.Handle("/livez", allowMethods(http.HandlerFunc(app.livez), http.MethodGet, http.MethodHead))
+	mux.Handle("/readyz", allowMethods(http.HandlerFunc(app.readyz), http.MethodGet, http.MethodHead))
+	mux.Handle("/static/", allowMethods(http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))), http.MethodGet, http.MethodHead))
+	mux.Handle("/login", allowMethods(http.HandlerFunc(app.Auth.Login), http.MethodGet, http.MethodPost))
+	mux.Handle("/logout", allowMethods(http.HandlerFunc(app.Auth.Logout), http.MethodPost))
+	mux.Handle("/", allowMethods(app.Auth.Require(http.HandlerFunc(app.dashboard)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/health", allowMethods(http.HandlerFunc(app.health), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/services", allowMethods(app.Auth.Require(http.HandlerFunc(app.services)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/ftp", allowMethods(app.Auth.Require(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/security/audit", allowMethods(app.Auth.Require(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/security/scan", allowMethods(app.Auth.Require(http.HandlerFunc(app.malwareScan)), http.MethodPost))
+	mux.Handle("/api/certificates/issue", allowMethods(app.Auth.Require(http.HandlerFunc(app.issueCertificate)), http.MethodPost))
+	mux.Handle("/api/node/versions", allowMethods(app.Auth.Require(http.HandlerFunc(app.nodeVersions)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/node/select", allowMethods(app.Auth.Require(http.HandlerFunc(app.selectNode)), http.MethodPost))
+	mux.Handle("/api/proxy/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.deployProxy)), http.MethodPost))
+	mux.Handle("/api/proxy", allowMethods(app.Auth.Require(http.HandlerFunc(app.proxyList)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/proxy/test", allowMethods(app.Auth.Require(http.HandlerFunc(app.proxyTest)), http.MethodPost))
+	mux.Handle("/api/proxy/", allowMethods(app.Auth.Require(http.HandlerFunc(app.proxyManage)), http.MethodDelete))
+	mux.Handle("/api/sites", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteList)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/sites/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteDeploy)), http.MethodPost))
+	mux.Handle("/api/sites/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteManage)), http.MethodDelete))
 	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
-	mux.Handle("/api/apps", app.Auth.Require(http.HandlerFunc(app.appList)))
-	mux.Handle("/api/apps/deploy", app.Auth.Require(http.HandlerFunc(app.appDeploy)))
-	mux.Handle("/api/apps/", app.Auth.Require(http.HandlerFunc(app.appAction)))
-	mux.Handle("/api/cpmove/inspect", app.Auth.Require(http.HandlerFunc(app.inspect)))
-	mux.Handle("/api/cpmove/import", app.Auth.Require(http.HandlerFunc(app.importBackup)))
-	mux.Handle("/api/wpress/preflight", app.Auth.Require(http.HandlerFunc(app.wpressPreflight)))
-	mux.Handle("/api/wpress/import", app.Auth.Require(http.HandlerFunc(app.wpressImport)))
-	mux.Handle("/api/jobs/", app.Auth.Require(http.HandlerFunc(app.jobStatus)))
+	mux.Handle("/api/apps", allowMethods(app.Auth.Require(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.appDeploy)), http.MethodPost))
+	mux.Handle("/api/apps/", allowMethods(app.Auth.Require(http.HandlerFunc(app.appAction)), http.MethodPost))
+	mux.Handle("/api/cpmove/inspect", allowMethods(app.Auth.Require(http.HandlerFunc(app.inspect)), http.MethodPost))
+	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.importBackup)), http.MethodPost))
+	mux.Handle("/api/wpress/preflight", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressPreflight)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/wpress/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressImport)), http.MethodPost))
+	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead))
 	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))
 	if os.Getenv("STEPANEL_METRICS_PUBLIC") != "1" {
 		metricsHandler = app.Auth.Require(metricsHandler)
 	}
-	mux.Handle("/metrics", metricsHandler)
-	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux, app.Metrics), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	mux.Handle("/metrics", allowMethods(metricsHandler, http.MethodGet, http.MethodHead))
+	server := &http.Server{Addr: cfg.Listen, Handler: logging(mux, app.Metrics), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	go func() {
 		log.Printf("StePanel listening on %s", cfg.Listen)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -222,6 +225,7 @@ func (a *App) inspect(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	file, header, err := r.FormFile("backup")
+	defer cleanupMultipartForm(r)
 	if err != nil {
 		http.Error(w, "backup file is required or exceeds the upload limit", 400)
 		return
@@ -244,7 +248,9 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	err := r.ParseMultipartForm(32 << 20)
+	defer cleanupMultipartForm(r)
+	if err != nil {
 		http.Error(w, "invalid upload: "+err.Error(), 400)
 		return
 	}
@@ -275,10 +281,12 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	tempPath := temp.Name()
 	if _, err = io.Copy(temp, file); err != nil {
 		temp.Close()
+		_ = os.Remove(tempPath)
 		http.Error(w, "could not stage upload", 500)
 		return
 	}
 	if err = temp.Close(); err != nil {
+		_ = os.Remove(tempPath)
 		http.Error(w, "could not stage upload", 500)
 		return
 	}
@@ -347,12 +355,52 @@ func logging(next http.Handler, metrics *Metrics) http.Handler {
 	})
 }
 
+func allowMethods(next http.Handler, methods ...string) http.Handler {
+	allowed := make(map[string]struct{}, len(methods))
+	for _, method := range methods {
+		allowed[method] = struct{}{}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := allowed[r.Method]; !ok {
+			w.Header().Set("Allow", strings.Join(methods, ", "))
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, limit int64, destination any) error {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("request body must contain one JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func cleanupMultipartForm(r *http.Request) {
+	if r.MultipartForm != nil {
+		_ = r.MultipartForm.RemoveAll()
+	}
+}
+
 type statusWriter struct {
 	http.ResponseWriter
 	status int
 }
 
 func (w *statusWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }

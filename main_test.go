@@ -44,6 +44,29 @@ func TestLoggingAddsBrowserSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestAllowMethodsRejectsUnexpectedMethod(t *testing.T) {
+	called := false
+	handler := allowMethods(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }), http.MethodGet)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/health", nil))
+	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet || called {
+		t.Fatalf("status = %d, Allow = %q, called = %v", response.Code, response.Header().Get("Allow"), called)
+	}
+}
+
+func TestDecodeJSONRejectsUnknownAndTrailingValues(t *testing.T) {
+	for _, body := range []string{`{"name":"ok","unknown":true}`, `{"name":"ok"}{"name":"again"}`} {
+		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		response := httptest.NewRecorder()
+		var input struct {
+			Name string `json:"name"`
+		}
+		if err := decodeJSON(response, request, 1024, &input); err == nil {
+			t.Fatalf("decodeJSON accepted %q", body)
+		}
+	}
+}
+
 func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	root := t.TempDir()
 	app := &App{Config: Config{ImportRoot: root, WebRoot: root}, Auth: Auth{}, Jobs: NewJobs(), Metrics: NewMetrics()}

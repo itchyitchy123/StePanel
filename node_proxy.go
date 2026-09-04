@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -50,7 +49,7 @@ func (a *App) selectNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct{ Site, Version string }
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil {
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
@@ -87,7 +86,7 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input proxyRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&input); err != nil {
+	if err := decodeJSON(w, r, 8192, &input); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
@@ -129,7 +128,7 @@ func (a *App) proxyTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input proxyRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil {
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}

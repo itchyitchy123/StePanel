@@ -77,6 +77,7 @@ if [[ -z "$AUDIT_KEY" ]]; then AUDIT_KEY="$(od -An -N32 -tx1 /dev/urandom | tr -
 if [[ -n "$ADMIN_PASSWORD" ]] && (( ${#ADMIN_PASSWORD} < 12 )); then echo "STEPANEL_ADMIN_PASSWORD must be at least 12 characters." >&2; exit 1; fi
 if (( ${#SESSION_SECRET} < 32 )); then echo "STEPANEL_SESSION_SECRET must be at least 32 characters." >&2; exit 1; fi
 if (( ${#AUDIT_KEY} < 32 )) || [[ $AUDIT_KEY == *$'\n'* || $AUDIT_KEY == *$'\r'* ]]; then echo 'STEPANEL_AUDIT_KEY must be at least 32 characters and contain no newlines.' >&2; exit 1; fi
+if [[ $AUDIT_KEY == "$SESSION_SECRET" ]]; then echo 'STEPANEL_AUDIT_KEY must differ from STEPANEL_SESSION_SECRET.' >&2; exit 1; fi
 ADMIN_TOTP_SECRET=${ADMIN_TOTP_SECRET// /}
 ADMIN_TOTP_SECRET=${ADMIN_TOTP_SECRET^^}
 totp_remainder=$(( ${#ADMIN_TOTP_SECRET} % 8 ))

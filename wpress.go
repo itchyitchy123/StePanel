@@ -102,7 +102,9 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	err := r.ParseMultipartForm(32 << 20)
+	defer cleanupMultipartForm(r)
+	if err != nil {
 		http.Error(w, "invalid upload: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -267,9 +269,6 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 			return WPressResult{}, err
 		}
 	}
-	if err := configureWordPress(cfg, home, dbName, dbUser, dbPassword, targetPrefix); err != nil {
-		return WPressResult{}, err
-	}
 	siteDBConfig := cfg
 	if cfg.DBCtl != "" {
 		siteDBConfig.DBUser = dbUser
@@ -279,13 +278,12 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 	if err != nil {
 		return WPressResult{}, err
 	}
-	if err := runWP(cfg, home, "config", "set", "table_prefix", sourcePrefix, "--type=variable"); err != nil {
-		return WPressResult{}, err
+	if sourcePrefix != targetPrefix {
+		if err := renameWPressTables(siteDBConfig, dbName, sourcePrefix, targetPrefix); err != nil {
+			return WPressResult{}, fmt.Errorf("normalize table prefix: %w", err)
+		}
 	}
-	if err := runWP(cfg, home, "search-replace", sourcePrefix, targetPrefix, "--all-tables", "--precise", "--recurse-objects", "--quiet"); err != nil {
-		return WPressResult{}, fmt.Errorf("normalize table prefix: %w", err)
-	}
-	if err := runWP(cfg, home, "config", "set", "table_prefix", targetPrefix, "--type=variable"); err != nil {
+	if err := configureWordPress(cfg, home, dbName, dbUser, dbPassword, targetPrefix); err != nil {
 		return WPressResult{}, err
 	}
 	urlReplaced := false
@@ -409,10 +407,28 @@ func runCommand(timeout time.Duration, name string, args ...string) error {
 	return nil
 }
 
+func runCommandInput(timeout time.Duration, name, input string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = strings.NewReader(input)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 func runWP(cfg Config, home string, args ...string) error {
 	base := []string{"--path=" + home, "--skip-plugins", "--skip-themes"}
 	base = append(base, args...)
 	return runCommand(10*time.Minute, cfg.WPCLI, base...)
+}
+
+func runWPInput(cfg Config, home, input string, args ...string) error {
+	base := []string{"--path=" + home, "--skip-plugins", "--skip-themes"}
+	base = append(base, args...)
+	return runCommandInput(10*time.Minute, cfg.WPCLI, input, base...)
 }
 
 func runWPOutput(cfg Config, home string, args ...string) (string, error) {
@@ -426,27 +442,66 @@ func runWPOutput(cfg Config, home string, args ...string) (string, error) {
 
 func configureWordPress(cfg Config, home, dbName, dbUser, dbPassword, prefix string) error {
 	if !fileExists(filepath.Join(home, "wp-config.php")) {
-		if err := runWP(cfg, home, "config", "create", "--dbname="+dbName, "--dbuser="+dbUser, "--dbpass="+dbPassword, "--dbhost="+cfg.DBHost, "--dbprefix="+prefix, "--skip-check", "--skip-salts"); err != nil {
+		if err := runWPInput(cfg, home, dbPassword+"\n", "config", "create", "--dbname="+dbName, "--dbuser="+dbUser, "--dbhost="+cfg.DBHost, "--dbprefix="+prefix, "--prompt=dbpass", "--skip-check", "--skip-salts"); err != nil {
 			return fmt.Errorf("create wp-config.php: %w", err)
 		}
 	}
-	for _, setting := range [][2]string{{"DB_NAME", dbName}, {"DB_USER", dbUser}, {"DB_PASSWORD", dbPassword}, {"DB_HOST", cfg.DBHost}} {
+	for _, setting := range [][2]string{{"DB_NAME", dbName}, {"DB_USER", dbUser}, {"DB_HOST", cfg.DBHost}} {
 		if err := runWP(cfg, home, "config", "set", setting[0], setting[1], "--type=constant"); err != nil {
 			return fmt.Errorf("configure %s: %w", setting[0], err)
 		}
+	}
+	if err := runWPInput(cfg, home, dbPassword+"\n", "config", "set", "DB_PASSWORD", "--type=constant", "--prompt=value"); err != nil {
+		return fmt.Errorf("configure DB_PASSWORD: %w", err)
 	}
 	return nil
 }
 
 func detectWPressPrefix(cfg Config, dbName string) (string, error) {
-	for _, candidate := range []string{"SERVMASK_PREFIX", "SRVMASK", "SERVMASK", "wp_"} {
-		query := "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=" + sqlString(dbName) + " AND TABLE_NAME LIKE " + sqlString(candidate+"%") + " LIMIT 1"
-		output, err := runMySQL(cfg, query)
-		if err == nil && strings.TrimSpace(output) != "" {
-			return candidate, nil
+	query := "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=" + sqlString(dbName) + " ORDER BY TABLE_NAME"
+	output, err := runMySQL(cfg, query)
+	if err != nil {
+		return "", err
+	}
+	for _, table := range strings.Split(strings.TrimSpace(output), "\n") {
+		for _, suffix := range []string{"commentmeta", "postmeta", "posts", "options", "users", "usermeta", "terms", "termmeta", "term_relationships", "term_taxonomy"} {
+			marker := "_" + suffix
+			if strings.HasSuffix(table, marker) {
+				prefix := strings.TrimSuffix(table, suffix)
+				if wpressPrefixPattern.MatchString(prefix) {
+					return prefix, nil
+				}
+			}
 		}
 	}
 	return "", errors.New("could not detect the WordPress table prefix")
+}
+
+func renameWPressTables(cfg Config, dbName, sourcePrefix, targetPrefix string) error {
+	if !wpressPrefixPattern.MatchString(sourcePrefix) || !wpressPrefixPattern.MatchString(targetPrefix) {
+		return errors.New("invalid WordPress table prefix")
+	}
+	query := "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=" + sqlString(dbName) + " AND TABLE_NAME LIKE " + sqlString(sourcePrefix+"%") + " ORDER BY TABLE_NAME"
+	output, err := runMySQL(cfg, query)
+	if err != nil {
+		return err
+	}
+	statements := make([]string, 0)
+	for _, table := range strings.Split(strings.TrimSpace(output), "\n") {
+		if table == "" || !strings.HasPrefix(table, sourcePrefix) {
+			continue
+		}
+		newName := targetPrefix + strings.TrimPrefix(table, sourcePrefix)
+		if len(table) > 64 || len(newName) > 64 {
+			return errors.New("database contains an invalid WordPress table name")
+		}
+		statements = append(statements, "RENAME TABLE "+sqlIdent(table)+" TO "+sqlIdent(newName))
+	}
+	if len(statements) == 0 {
+		return errors.New("no WordPress tables found for the detected prefix")
+	}
+	_, err = runMySQL(cfg, strings.Join(statements, "; ")+";")
+	return err
 }
 
 func createWPressDatabase(cfg Config, dbName, dbUser, password string) error {
@@ -534,8 +589,14 @@ func importWPressDatabase(cfg Config, dbName, dump string) error {
 func runMySQL(cfg Config, query string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	args := append(mysqlArgs(cfg), "--batch", "--skip-column-names", "--execute", query)
+	args := append(mysqlArgs(cfg), "--batch", "--skip-column-names")
 	cmd := exec.CommandContext(ctx, mysqlClient(), args...)
+	if cfg.DBPassword != "" || strings.Contains(query, "IDENTIFIED BY") {
+		// Keep credentials and credential-bearing SQL out of argv/procfs.
+		cmd.Stdin = strings.NewReader(query + "\n")
+	} else {
+		cmd.Args = append(cmd.Args, "--execute", query)
+	}
 	if cfg.DBPassword != "" {
 		cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
 	}

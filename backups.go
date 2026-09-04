@@ -65,7 +65,7 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 			Site             string `json:"site"`
 			IncludeDatabases bool   `json:"include_databases"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil {
+		if err := decodeJSON(w, r, 4096, &input); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
@@ -273,10 +273,11 @@ func addBackupTree(tw *tar.Writer, root, prefix string, maxEntries int, totalByt
 }
 
 func addBackupFile(tw *tar.Writer, source, name string, totalBytes *int64, manifest *BackupManifest) error {
-	info, err := os.Stat(source)
+	file, info, err := openRegularNoFollow(source, nil)
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 	if info.Size() < 0 || info.Size() > 2<<30 {
 		return fmt.Errorf("backup entry %s exceeds the 2 GiB restore limit", name)
 	}
@@ -292,11 +293,6 @@ func addBackupFile(tw *tar.Writer, source, name string, totalBytes *int64, manif
 	if err := tw.WriteHeader(header); err != nil {
 		return err
 	}
-	file, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
 	hash := sha256.New()
 	written, err := io.CopyN(io.MultiWriter(tw, hash), file, info.Size())
 	if err != nil {
