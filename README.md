@@ -46,6 +46,8 @@ service account's SSH config to expose strict-host-key, read-only health
 inventory at `/api/ssh`.
 The protected `/api/ssh/action` endpoint queues only allowlisted service
 restarts and host reboots and returns a persisted job URL.
+For Linode installations, `/api/cloud/dns` lists records and queues validated
+DNS record creation/deletion operations.
 
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).

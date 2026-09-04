@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +29,15 @@ type CloudActionResult struct {
 	Action      string    `json:"action"`
 	ID          string    `json:"id"`
 	CompletedAt time.Time `json:"completed_at"`
+}
+
+type cloudDNSRequest struct {
+	DomainID string `json:"domain_id"`
+	RecordID string `json:"record_id,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Target   string `json:"target,omitempty"`
+	TTL      int    `json:"ttl,omitempty"`
 }
 
 func (a *App) cloudInventory(w http.ResponseWriter, _ *http.Request) {
@@ -104,6 +115,133 @@ func (a *App) cloudAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
+}
+
+func (a *App) cloudDNS(w http.ResponseWriter, r *http.Request) {
+	if a.Config.CloudProvider != "linode" {
+		http.Error(w, "Linode DNS integration requires STEPANEL_CLOUD_PROVIDER=linode", 422)
+		return
+	}
+	if r.Method == http.MethodGet {
+		domain := r.URL.Query().Get("domain_id")
+		if !cloudNumericID.MatchString(domain) {
+			http.Error(w, "invalid domain_id", 422)
+			return
+		}
+		value, err := linodeAPIRequest(r.Context(), http.MethodGet, "/domains/"+domain+"/records", nil)
+		if err != nil {
+			http.Error(w, err.Error(), 503)
+			return
+		}
+		writeJSON(w, 200, value)
+		return
+	}
+	if !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", 403)
+		return
+	}
+	var in cloudDNSRequest
+	if err := decodeJSON(w, r, 8192, &in); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	if !cloudNumericID.MatchString(in.DomainID) {
+		http.Error(w, "invalid domain_id", 422)
+		return
+	}
+	if r.Method == http.MethodDelete {
+		if !cloudNumericID.MatchString(in.RecordID) {
+			http.Error(w, "invalid record_id", 422)
+			return
+		}
+		a.queueDNSJob(w, in, "delete")
+		return
+	}
+	if r.Method != http.MethodPost || !dnsTypePattern.MatchString(strings.ToUpper(in.Type)) || !dnsNamePattern.MatchString(in.Name) || len(in.Target) == 0 || len(in.Target) > 512 || in.TTL < 30 || in.TTL > 604800 {
+		http.Error(w, "invalid DNS record", 422)
+		return
+	}
+	in.Type = strings.ToUpper(in.Type)
+	a.queueDNSJob(w, in, "create")
+}
+
+var cloudNumericID = regexp.MustCompile(`^[0-9]{1,12}$`)
+var dnsTypePattern = regexp.MustCompile(`^(A|AAAA|CNAME|MX|TXT|NS|SRV)$`)
+var dnsNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.*@-]{1,253}$`)
+
+func (a *App) queueDNSJob(w http.ResponseWriter, in cloudDNSRequest, action string) error {
+	id, err := newJobID("dns")
+	if err != nil {
+		http.Error(w, "could not create DNS job", 500)
+		return nil
+	}
+	err = a.Jobs.SubmitCloud(id, in.DomainID, func() (CloudActionResult, error) {
+		var path, method string
+		var body any
+		if action == "delete" {
+			path = "/domains/" + in.DomainID + "/records/" + in.RecordID
+			method = http.MethodDelete
+		} else {
+			path = "/domains/" + in.DomainID + "/records"
+			method = http.MethodPost
+			body = map[string]any{"type": in.Type, "name": in.Name, "target": in.Target, "ttl_sec": in.TTL}
+		}
+		if _, err := linodeAPIRequest(context.Background(), method, path, body); err != nil {
+			return CloudActionResult{}, err
+		}
+		result := CloudActionResult{Provider: "linode", Action: "dns." + action, ID: in.DomainID, CompletedAt: time.Now().UTC()}
+		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.dns."+action, in.DomainID, in.Name); err != nil {
+			return result, err
+		}
+		return result, nil
+	})
+	if err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), 429)
+		} else {
+			http.Error(w, "could not persist DNS job", 500)
+		}
+		return nil
+	}
+	writeJSON(w, 202, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
+	return nil
+}
+
+func linodeAPIRequest(ctx context.Context, method, path string, payload any) (any, error) {
+	token := os.Getenv("STEPANEL_LINODE_TOKEN")
+	if token == "" {
+		return nil, errors.New("STEPANEL_LINODE_TOKEN is not configured")
+	}
+	var reader io.Reader
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, "https://api.linode.com/v4"+path, reader)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("Linode API returned %s", res.Status)
+	}
+	if res.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+	var value any
+	if err := json.NewDecoder(res.Body).Decode(&value); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 var cloudIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)

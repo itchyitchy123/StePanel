@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Asynchronous Linode DNS record management with strict domain, record, target,
+  and TTL validation.
+
 - Asynchronous, allowlisted SSH actions for configured infrastructure servers,
   including service restarts and host reboots with strict host-key checking,
   bounded timeouts, persisted jobs, and audit events.

@@ -111,6 +111,19 @@ paths:
       summary: Start, stop, reboot, or snapshot an existing cloud resource
       responses:
         '202': {description: Provider action queued; poll the returned job URL}
+  /api/cloud/dns:
+    get:
+      summary: List Linode DNS records
+      responses:
+        '200': {description: DNS records}
+    post:
+      summary: Queue a Linode DNS record creation
+      responses:
+        '202': {description: DNS change queued}
+    delete:
+      summary: Queue a Linode DNS record deletion
+      responses:
+        '202': {description: DNS change queued}
   /api/ssh:
     get:
       summary: Inspect configured SSH servers with strict host-key checking
