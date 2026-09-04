@@ -12,6 +12,22 @@ func TestValidateConfigRejectsMalformedSafetyLimit(t *testing.T) {
 	}
 }
 
+func TestValidateConfigAcceptsOpenLiteSpeed(t *testing.T) {
+	cfg := LoadConfig()
+	cfg.WebServer = "openlitespeed"
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("OpenLiteSpeed config rejected: %v", err)
+	}
+}
+
+func TestValidateConfigRejectsUnknownWebServer(t *testing.T) {
+	cfg := LoadConfig()
+	cfg.WebServer = "nginx"
+	if err := ValidateConfig(cfg); err == nil || !strings.Contains(err.Error(), "STEPANEL_WEBSERVER") {
+		t.Fatalf("expected webserver validation error, got %v", err)
+	}
+}
+
 func TestValidateConfigRequiresDedicatedProductionAuditKey(t *testing.T) {
 	t.Setenv("STEPANEL_ENV", "production")
 	t.Setenv("STEPANEL_SESSION_SECRET", "12345678901234567890123456789012")

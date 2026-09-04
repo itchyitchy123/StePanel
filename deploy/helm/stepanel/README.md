@@ -5,7 +5,7 @@ The chart is a packaging example for StePlatform. Render it before applying:
 ```sh
 helm template stepanel deploy/helm/stepanel
 helm upgrade --install stepanel deploy/helm/stepanel \
-  --set image.tag=v0.2.0
+  --set image.tag=v0.3.0
 ```
 
 Create `stepanel-secrets` separately with `admin-password`, `session-secret`,

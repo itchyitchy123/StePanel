@@ -70,7 +70,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: stepanel
-          image: ghcr.io/itchyitchy123/stepanel:v0.2.0
+          image: ghcr.io/itchyitchy123/stepanel:v0.3.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

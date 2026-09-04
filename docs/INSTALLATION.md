@@ -2,7 +2,17 @@
 
 ## Supported operating systems
 
-The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Apache, MySQL/MariaDB, PHP-FPM, ACL and archive utilities, and StePanel.
+The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Apache or OpenLiteSpeed, MySQL/MariaDB, PHP-FPM, ACL and archive utilities, and StePanel.
+
+Set `STEPANEL_WEBSERVER=apache` (the default) or
+`STEPANEL_WEBSERVER=openlitespeed` to choose the webserver. OpenLiteSpeed
+installations require the OpenLiteSpeed package repository to be configured;
+the installer verifies that `lswsctrl` is available. Apache-specific optional
+integrations (ModSecurity and the Certbot Apache plugin) are rejected for an
+OpenLiteSpeed install until equivalent OLS integrations are configured.
+OpenLiteSpeed site-vhost and reverse-proxy provisioning must be configured in
+the OLS listener/vhost configuration; the bundled Apache `stepanel-vhostctl`
+and `stepanel-proxyctl` helpers are not used for that server mode.
 
 ## Build and install
 

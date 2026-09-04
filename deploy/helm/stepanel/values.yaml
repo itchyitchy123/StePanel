@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/itchyitchy123/stepanel
-  tag: v0.2.0
+  tag: v0.3.0
   pullPolicy: IfNotPresent
 replicaCount: 1
 service:

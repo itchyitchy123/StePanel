@@ -52,6 +52,7 @@ FTP_CERT_FILE="${STEPANEL_FTP_CERT_FILE:-}"; FTP_KEY_FILE="${STEPANEL_FTP_KEY_FI
 INSTALL_NODE="${STEPANEL_INSTALL_NODE:-0}"; NODE_VERSIONS="${STEPANEL_NODE_VERSIONS:-20.18.0}"
 INSTALL_SECURITY="${STEPANEL_INSTALL_SECURITY:-0}"
 INSTALL_TLS="${STEPANEL_INSTALL_TLS:-0}"
+WEB_SERVER="${STEPANEL_WEBSERVER:-}"
 WPRESS_EXTRACT="${STEPANEL_WPRESS_EXTRACT:-wpress-extract}"
 WPCLI="${STEPANEL_WPCLI:-wp}"
 PANEL_HOSTNAME="${STEPANEL_PANEL_HOSTNAME:-}"
@@ -90,6 +91,14 @@ if [[ -z "$PANEL_HOSTNAME" ]]; then
     [[ -n $PANEL_HOSTNAME ]] && break
   done
 fi
+if [[ -z "$WEB_SERVER" && -t 0 ]]; then
+  read -r -p "Web server [apache/openlitespeed] (apache): " WEB_SERVER
+fi
+WEB_SERVER="${WEB_SERVER:-apache}"
+WEB_SERVER="${WEB_SERVER,,}"
+if [[ "$WEB_SERVER" != "apache" && "$WEB_SERVER" != "openlitespeed" ]]; then echo "STEPANEL_WEBSERVER must be apache or openlitespeed." >&2; exit 1; fi
+if [[ "$WEB_SERVER" == "openlitespeed" && "$INSTALL_TLS" == "1" ]]; then echo 'STEPANEL_INSTALL_TLS is currently supported only with Apache; configure ACME/webroot integration separately for OpenLiteSpeed.' >&2; exit 1; fi
+if [[ "$WEB_SERVER" == "openlitespeed" && "$INSTALL_MODSEC" == "1" ]]; then echo 'STEPANEL_INSTALL_MODSEC is currently supported only with Apache.' >&2; exit 1; fi
 if [[ ! "$PANEL_HOSTNAME" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then echo "Set STEPANEL_PANEL_HOSTNAME to the panel's fully qualified domain name." >&2; exit 1; fi
 if [[ "$ADMIN_PASSWORD" == *$'\n'* || "$ADMIN_PASSWORD" == *$'\r'* || "$SESSION_SECRET" == *$'\n'* || "$SESSION_SECRET" == *$'\r'* || "$DB_PASSWORD" == *$'\n'* || "$DB_PASSWORD" == *$'\r'* ]]; then echo "Credentials may not contain newlines." >&2; exit 1; fi
 if [[ "$DB_HOST" == *$'\n'* || "$DB_HOST" == *$'\r'* ]]; then echo "STEPANEL_DB_HOST may not contain newlines." >&2; exit 1; fi
@@ -140,8 +149,18 @@ if [[ -n "$ADMIN_PASSWORD" ]]; then ADMIN_PASSWORD_HASH="$(printf '%s' "$ADMIN_P
 unset ADMIN_PASSWORD
 
 if [[ "$DB_ENGINE" == "mysql" ]]; then DB_PACKAGE="mysql-server"; else DB_PACKAGE="mariadb-server"; fi
-if [[ "$PKG" == "apt" ]]; then DB_SERVICE="${DB_ENGINE/mysql/mysql}"; [[ "$DB_ENGINE" == "mariadb" ]] && DB_SERVICE="mariadb"; export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y apache2 php php-cli php-fpm php-mysql php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate
-else DB_SERVICE="$([[ "$DB_ENGINE" == "mysql" ]] && echo mysqld || echo mariadb)"; dnf install -y httpd php php-cli php-fpm php-mysqlnd php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate; fi
+if [[ "$PKG" == "apt" ]]; then DB_SERVICE="${DB_ENGINE/mysql/mysql}"; [[ "$DB_ENGINE" == "mariadb" ]] && DB_SERVICE="mariadb"; export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y php php-cli php-fpm php-mysql php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate
+else DB_SERVICE="$([[ "$DB_ENGINE" == "mysql" ]] && echo mysqld || echo mariadb)"; dnf install -y php php-cli php-fpm php-mysqlnd php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate; fi
+if [[ "$WEB_SERVER" == "apache" ]]; then
+  if [[ "$PKG" == "apt" ]]; then apt-get install -y apache2; APACHE_SERVICE=apache2; else dnf install -y httpd; APACHE_SERVICE=httpd; fi
+else
+  LSWSCTRL="$(command -v lswsctrl 2>/dev/null || printf /usr/local/lsws/bin/lswsctrl)"
+  if [[ ! -x "$LSWSCTRL" ]]; then
+    if [[ "$PKG" == "apt" ]]; then apt-get install -y openlitespeed; else dnf install -y openlitespeed; fi
+  fi
+  [[ -x "$LSWSCTRL" ]] || { echo 'OpenLiteSpeed was selected but lswsctrl is unavailable; configure the OpenLiteSpeed repository first.' >&2; exit 1; }
+  APACHE_SERVICE=lsws
+fi
 
 if [[ "$DB_VERSION" == "default" ]]; then
   if [[ "$PKG" == "apt" ]]; then apt-get install -y "$DB_PACKAGE"; else dnf install -y "$DB_PACKAGE"; fi
@@ -154,8 +173,9 @@ else
 fi
 
 WEB_GROUP="$([[ "$PKG" == "apt" ]] && printf www-data || printf apache)"
-getent group "$WEB_GROUP" >/dev/null || { echo "Apache group $WEB_GROUP was not created by the package installation." >&2; exit 1; }
-if [[ "$PKG" == "apt" ]]; then PROXY_ROOT=/etc/apache2/stepanel-proxy; VHOST_ROOT=/etc/apache2/stepanel-sites; else PROXY_ROOT=/etc/httpd/conf.d/stepanel-proxy; VHOST_ROOT=/etc/httpd/conf.d/stepanel-sites; fi
+if [[ "$WEB_SERVER" == "openlitespeed" ]]; then WEB_GROUP="$(id -gn nobody 2>/dev/null || printf nogroup)"; fi
+getent group "$WEB_GROUP" >/dev/null || { echo "Web server group $WEB_GROUP was not created by the package installation." >&2; exit 1; }
+if [[ "$WEB_SERVER" == "openlitespeed" ]]; then PROXY_ROOT=/usr/local/lsws/conf/vhosts/stepanel/proxy; VHOST_ROOT=/usr/local/lsws/conf/vhosts/stepanel/sites; elif [[ "$PKG" == "apt" ]]; then PROXY_ROOT=/etc/apache2/stepanel-proxy; VHOST_ROOT=/etc/apache2/stepanel-sites; else PROXY_ROOT=/etc/httpd/conf.d/stepanel-proxy; VHOST_ROOT=/etc/httpd/conf.d/stepanel-sites; fi
 
 systemctl enable --now "$DB_SERVICE"
 mapfile -t FPM_UNITS < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
@@ -362,9 +382,9 @@ managed_targets=(
   /etc/sudoers.d/stepanel
   /etc/stepanel-audit.key
 )
-if [[ "$PKG" == "apt" ]]; then
+if [[ "$WEB_SERVER" == "apache" && "$PKG" == "apt" ]]; then
   managed_targets+=(/etc/apache2/sites-available/stepanel.conf /etc/apache2/sites-enabled/stepanel.conf /etc/apache2/conf-enabled/stepanel-proxy.conf)
-else
+elif [[ "$WEB_SERVER" == "apache" ]]; then
   managed_targets+=(/etc/httpd/conf.d/stepanel.conf /etc/httpd/conf.d/stepanel-proxy.conf)
 fi
 if [[ "$INSTALL_TLS" == "1" ]]; then managed_targets+=(/usr/local/sbin/stepanel-certbot); fi
@@ -436,6 +456,7 @@ env_tmp=$(mktemp /etc/ste-panel.env.XXXXXX)
 TXN_TEMPS+=("$env_tmp")
 {
   write_env STEPANEL_ENV production
+  write_env STEPANEL_WEBSERVER "$WEB_SERVER"
   write_env STEPANEL_LISTEN 127.0.0.1:8090
   write_env STEPANEL_ADMIN_USERNAME "$ADMIN_USERNAME"
   write_env STEPANEL_ADMIN_PASSWORD_HASH "$ADMIN_PASSWORD_HASH"
@@ -497,9 +518,11 @@ if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
   if command -v setsebool >/dev/null 2>&1; then setsebool -P httpd_can_network_connect 1; fi
 fi
 systemctl daemon-reload
-if command -v apachectl >/dev/null 2>&1; then apachectl -t; else httpd -t; fi
+if [[ "$WEB_SERVER" == "apache" ]]; then
+  if command -v apachectl >/dev/null 2>&1; then apachectl -t; else httpd -t; fi
+fi
 systemctl enable --now "$APACHE_SERVICE" "$DB_SERVICE" "${FPM_UNITS[@]}"
-systemctl reload "$APACHE_SERVICE"
+if [[ "$WEB_SERVER" == "apache" ]]; then systemctl reload "$APACHE_SERVICE"; else "$LSWSCTRL" restart; fi
 systemctl enable --now stepanel.service
 health_ready=0
 for _ in {1..30}; do
@@ -529,7 +552,7 @@ if [[ "$INSTALL_TLS" == "1" ]]; then systemctl enable --now certbot.timer 2>/dev
 if [[ "$INSTALL_FAIL2BAN" == "1" ]]; then
   bash "$APP_DIR/integrations/install-fail2ban.sh" --yes --jails "$FAIL2BAN_JAILS" --ignore-ip "$FAIL2BAN_IGNORE_IP"
 fi
-echo "StePanel installed with $DB_ENGINE ($DB_VERSION). Verify the database service with: systemctl status $DB_SERVICE"
+echo "StePanel installed with $WEB_SERVER and $DB_ENGINE ($DB_VERSION). Verify services with: systemctl status $APACHE_SERVICE $DB_SERVICE"
 echo "Panel hostname: $PANEL_HOSTNAME. Complete TLS termination before signing in; Secure cookies are mandatory in production."
 if [[ "$INSTALL_MAIL" == "1" ]]; then echo "Mail stack installed. Mailbox data is staged under $DATA_DIR/mail; services are active only when STEPANEL_ACTIVATE_MAIL=1."; fi
 if [[ "$INSTALL_FTP" == "1" ]]; then echo "vsftpd installed with local-user chroot and passive ports $FTP_PASSIVE_MIN-$FTP_PASSIVE_MAX; it is active only when STEPANEL_ACTIVATE_FTP=1 with FTPS certificates."; fi

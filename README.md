@@ -4,7 +4,7 @@
 
 > A modern, safety-first control plane for LAMP hosting and cPanel migrations.
 
-StePanel is an open-source server management panel written in Go. It installs Apache, PHP, and a selectable MySQL or MariaDB version, provides a focused operations dashboard, and imports cPanel `cpmove` backups through an asynchronous, validated workflow.
+StePanel is an open-source server management panel written in Go. It installs Apache or OpenLiteSpeed, PHP, and a selectable MySQL or MariaDB version, provides a focused operations dashboard, and imports cPanel `cpmove` backups through an asynchronous, validated workflow.
 
 It is designed for people who want a small, understandable hosting control plane instead of a large opaque platform.
 
@@ -20,7 +20,7 @@ It is designed for people who want a small, understandable hosting control plane
 
 | Area | Included today |
 | --- | --- |
-| Installation | Apache, PHP, MySQL/MariaDB, optional Exim/Dovecot/SpamAssassin/vsftpd, systemd, Debian/Ubuntu and RHEL-family systems |
+| Installation | Apache or OpenLiteSpeed, PHP, MySQL/MariaDB, optional Exim/Dovecot/SpamAssassin/vsftpd, systemd, Debian/Ubuntu and RHEL-family systems |
 | Migration | cPanel `.tar.gz` inspection, safe staging, website, SQL, and staged mailbox restore |
 | Operations | Dashboard, health endpoint, metrics endpoint, audit log, asynchronous restore jobs |
 | Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |

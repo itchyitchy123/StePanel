@@ -36,7 +36,7 @@ func ServiceStatus() map[string]string {
 	}
 	serviceStatusCache.RUnlock()
 	result := map[string]string{}
-	for _, service := range []string{"apache2", "httpd", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
+	for _, service := range []string{"apache2", "httpd", "lsws", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
 		if _, err := exec.LookPath(service); err == nil {
 			result[service] = serviceUnitState(service)
 		}
@@ -106,12 +106,15 @@ func ServiceSummaries() []ServiceSummary {
 			}
 		}
 	}
-	services := []string{"apache2", "mysql", "php-fpm", "fail2ban", "modsecurity", "exim", "dovecot", "spamassassin", "vsftpd"}
+	services := []string{"apache2", "openlitespeed", "mysql", "php-fpm", "fail2ban", "modsecurity", "exim", "dovecot", "spamassassin", "vsftpd"}
 	result := make([]ServiceSummary, 0, len(services))
 	for _, name := range services {
 		state := status[name]
 		if name == "apache2" && state == "" {
 			state = status["httpd"]
+		}
+		if name == "openlitespeed" && state == "" {
+			state = status["lsws"]
 		}
 		if name == "mysql" && state == "" {
 			state = status["mariadb"]

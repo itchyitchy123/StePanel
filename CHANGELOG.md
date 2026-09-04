@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- OpenLiteSpeed can now be selected as the installed webserver with
+  `STEPANEL_WEBSERVER=openlitespeed`; service inventory recognizes `lsws` and
+  the installer preserves Apache as the default.
 - Persistent, server-revocable administrator sessions, password-rotation
   invalidation, request correlation IDs, a recent-jobs API/dashboard, runtime
   capability reporting, and HTTP response-class metrics.
@@ -33,24 +36,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   plus configurable upload, archive-entry, and global job concurrency limits.
 - Optional TOTP administrator MFA with accepted-code replay protection, plus
   actor/target-aware, sequence-linked HMAC audit records and offline verification.
-
-## [0.2.0] - 2026-09-04
-
-### Fixed
-
-- App deployment now validates and normalizes domains at the API boundary,
-  preventing malformed hostnames and audit-log injection through direct API use.
-- Password-based session fingerprints remain stable across restarts without
-  retaining the plaintext password in the in-memory authentication state.
-- Session admission is bounded with expiry-based eviction, validation uses a
-  read lock, HTTP metrics record implicit 200 responses correctly, and cPanel
-  restore staging IDs are collision-resistant.
-
-### Documentation
-
-- Added the production-readiness wiki covering architecture, operations,
-  security boundaries, backup/restore procedures, deployment, observability,
-  and known limitations.
 
 ### Changed
 
@@ -164,6 +149,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   contents, and minimum free-space requirements receive stricter validation.
 - Secure cookies remain mandatory in production, and installation guidance now
   requires TLS termination before first sign-in.
+
+## [0.3.0] - 2026-09-04
+
+### Added
+
+- OpenLiteSpeed can be selected as the installed webserver with
+  `STEPANEL_WEBSERVER=openlitespeed`; service inventory recognizes `lsws` and
+  the installer preserves Apache as the default.
+
+### Fixed
+
+- App deployment now validates and normalizes domains at the API boundary,
+  preventing malformed hostnames and audit-log injection through direct API use.
+- Password-based session fingerprints remain stable across restarts without
+  retaining the plaintext password in the in-memory authentication state.
+- Session admission is bounded with expiry-based eviction, validation uses a
+  read lock, HTTP metrics record implicit 200 responses correctly, and cPanel
+  restore staging IDs are collision-resistant.
+
+### Documentation
+
+- Added the production-readiness wiki covering architecture, operations,
+  security boundaries, backup/restore procedures, deployment, observability,
+  and known limitations.
 
 ## [0.1.0] - 2026-08-22
 
