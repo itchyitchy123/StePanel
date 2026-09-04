@@ -509,6 +509,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_AUDIT_KEY "$AUDIT_KEY"
   write_env STEPANEL_BACKUP_ROOT /var/backups/stepanel
   if [[ -n "${STEPANEL_OFFSITE_TARGET:-}" ]]; then write_env STEPANEL_OFFSITE_TARGET "$STEPANEL_OFFSITE_TARGET"; fi
+  if [[ -n "${STEPANEL_CLOUD_PROVIDER:-}" ]]; then write_env STEPANEL_CLOUD_PROVIDER "$STEPANEL_CLOUD_PROVIDER"; fi
   write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
   write_env STEPANEL_SESSION_STATE "$DATA_DIR/sessions.json"
   write_env STEPANEL_RECOVERY_ROOT /var/www/sites/.stepanel-recovery

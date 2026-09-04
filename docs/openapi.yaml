@@ -101,6 +101,11 @@ paths:
       summary: Run read-only operator diagnostics
       responses:
         '200': {description: Webserver, database, PHP-FPM, helper, and disk checks}
+  /api/cloud:
+    get:
+      summary: Read cloud server, DNS, load balancer, and snapshot inventory
+      responses:
+        '200': {description: Cloud inventory}
   /api/capabilities:
     get:
       summary: Report features available in the current deployment

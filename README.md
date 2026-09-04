@@ -34,6 +34,10 @@ Set `STEPANEL_OFFSITE_TARGET` to an existing rclone destination such as
 `s3:my-bucket/stepanel` to upload each verified archive after local backup
 creation. Credentials remain in rclone's protected host configuration and are
 never stored in StePanel state.
+Set `STEPANEL_CLOUD_PROVIDER` to `linode`, `aws`, or `openstack` to expose
+authenticated read-only cloud inventory at `/api/cloud` for servers, DNS,
+load balancers, and snapshots. Linode uses `STEPANEL_LINODE_TOKEN`; AWS and
+OpenStack use their standard CLI credential environments.
 
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).

@@ -109,6 +109,7 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	server.HandleFunc("/api/ftp", app.ftpStatus)
 	server.HandleFunc("/api/security/audit", app.securityAudit)
 	server.HandleFunc("/api/doctor", app.doctor)
+	server.HandleFunc("/api/cloud", app.cloudInventory)
 
 	services := httptest.NewRecorder()
 	server.ServeHTTP(services, httptest.NewRequest(http.MethodGet, "/api/services", nil))
@@ -129,6 +130,11 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	server.ServeHTTP(doctor, httptest.NewRequest(http.MethodGet, "/api/doctor", nil))
 	if doctor.Code != http.StatusOK || !strings.Contains(doctor.Body.String(), `"healthy"`) || !strings.Contains(doctor.Body.String(), `"web-root-disk"`) {
 		t.Fatalf("unexpected doctor response: %d %s", doctor.Code, doctor.Body.String())
+	}
+	cloud := httptest.NewRecorder()
+	server.ServeHTTP(cloud, httptest.NewRequest(http.MethodGet, "/api/cloud", nil))
+	if cloud.Code != http.StatusOK || !strings.Contains(cloud.Body.String(), "no cloud provider configured") {
+		t.Fatalf("unexpected cloud response: %d %s", cloud.Code, cloud.Body.String())
 	}
 }
 

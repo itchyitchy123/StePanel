@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Read-only cloud inventory integration for Linode, AWS, and OpenStack,
+  covering servers, DNS, load balancers, and snapshots through standard
+  provider credentials and CLIs.
+
 - Durable scheduled site backups with interval validation, persisted next-run
   state, the `/api/backup-schedules` API, and execution through the existing
   audited backup job pipeline.

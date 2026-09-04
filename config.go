@@ -18,6 +18,7 @@ type Config struct {
 	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo string
 	DBHost, DBUser, DBPassword                                                 string
 	OffsiteTarget                                                              string
+	CloudProvider                                                              string
 	Production                                                                 bool
 	MaxUpload                                                                  int64
 	MaxEntries, MaxConcurrentJobs, StageRetentionHours                         int
@@ -103,6 +104,7 @@ func LoadConfig() Config {
 	c.DBUser = os.Getenv("STEPANEL_DB_USER")
 	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
 	c.OffsiteTarget = strings.TrimSpace(os.Getenv("STEPANEL_OFFSITE_TARGET"))
+	c.CloudProvider = strings.ToLower(strings.TrimSpace(os.Getenv("STEPANEL_CLOUD_PROVIDER")))
 	c.Production = os.Getenv("STEPANEL_ENV") == "production"
 	if v, err := strconv.ParseInt(os.Getenv("STEPANEL_MAX_UPLOAD_BYTES"), 10, 64); err == nil && v > 0 && v <= 20<<30 {
 		c.MaxUpload = v
@@ -139,6 +141,9 @@ func ValidateConfig(c Config) error {
 	var problems []error
 	if err := validateOffsiteTarget(c.OffsiteTarget); err != nil {
 		problems = append(problems, err)
+	}
+	if c.CloudProvider != "" && c.CloudProvider != "linode" && c.CloudProvider != "aws" && c.CloudProvider != "openstack" {
+		problems = append(problems, errors.New("STEPANEL_CLOUD_PROVIDER must be linode, aws, or openstack"))
 	}
 	switch environment := os.Getenv("STEPANEL_ENV"); environment {
 	case "", "development", "lab", "test", "production":
