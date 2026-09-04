@@ -126,7 +126,12 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file, header, err := r.FormFile("backup")
-	if err != nil || !strings.EqualFold(filepath.Ext(header.Filename), ".wpress") {
+	if err != nil {
+		http.Error(w, "a .wpress archive is required", http.StatusBadRequest)
+		return
+	}
+	if !strings.EqualFold(filepath.Ext(header.Filename), ".wpress") {
+		_ = file.Close()
 		http.Error(w, "a .wpress archive is required", http.StatusBadRequest)
 		return
 	}
@@ -154,9 +159,13 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		defer os.Remove(tempPath)
 		result, restoreErr := RestoreWPress(a.Config, tempPath, site, dbSuffix, dbUserSuffix, password, siteURL, targetPrefix, force)
 		if restoreErr != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.failed", site, restoreErr.Error())
+			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.failed", site, restoreErr.Error()); auditErr != nil {
+				restoreErr = fmt.Errorf("%w; audit persistence failed: %v", restoreErr, auditErr)
+			}
 		} else {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.completed", site, result.StagedAt)
+			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.completed", site, result.StagedAt); auditErr != nil {
+				restoreErr = auditErr
+			}
 		}
 		return result, restoreErr
 	}); err != nil {
@@ -378,12 +387,12 @@ func copyWPressTree(src, dst string) error {
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
-	in, err := os.Open(src)
+	in, _, err := openRegularNoFollow(src, nil)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	out, err := openWriteNoFollow(dst, mode)
 	if err != nil {
 		return err
 	}

@@ -50,6 +50,9 @@ func InspectCPMove(file multipart.File, header *multipart.FileHeader) (CPMoveInf
 }
 
 func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries int) (CPMoveInfo, error) {
+	if header == nil {
+		return CPMoveInfo{}, errors.New("backup file metadata is missing")
+	}
 	if header.Size > 20<<30 {
 		return CPMoveInfo{}, errors.New("backup exceeds the 20 GiB upload limit")
 	}
@@ -65,6 +68,7 @@ func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries
 	info := CPMoveInfo{Archive: header.Filename, User: userFromArchiveName(header.Filename)}
 	seen := map[string]bool{}
 	seenMail := map[string]bool{}
+	var total int64
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -73,6 +77,10 @@ func inspectCPMove(file multipart.File, header *multipart.FileHeader, maxEntries
 		if err != nil {
 			return info, errors.New("backup tar stream is damaged")
 		}
+		if h.Size < 0 || h.Size > 2<<30 || total+h.Size > 20<<30 {
+			return info, errors.New("archive contents exceed the 20 GiB inspection limit")
+		}
+		total += h.Size
 		if !safeArchivePath(h.Name) {
 			return info, fmt.Errorf("unsafe archive path: %s", h.Name)
 		}
@@ -479,15 +487,13 @@ func copyTree(src, dst string) error {
 		if info.IsDir() {
 			return os.MkdirAll(target, 0750)
 		}
-		in, err := os.Open(path)
+		in, _, err := openRegularNoFollow(path, info)
 		if err != nil {
 			return err
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, 0640)
-		if os.IsExist(err) {
-			out, err = os.OpenFile(target, os.O_WRONLY|os.O_TRUNC, 0640)
-		}
+		out, err := openWriteNoFollow(target, 0640)
 		if err != nil {
+			_ = in.Close()
 			return err
 		}
 		_, err = io.Copy(out, in)

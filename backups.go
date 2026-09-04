@@ -95,9 +95,13 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 		if err := a.Jobs.SubmitBackup(jobID, input.Site, func() (BackupResult, error) {
 			result, err := CreateSiteBackup(a.Config, input.Site, input.IncludeDatabases)
 			if err != nil {
-				_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.failed", input.Site, err.Error())
+				if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.failed", input.Site, err.Error()); auditErr != nil {
+					err = fmt.Errorf("%w; audit persistence failed: %v", err, auditErr)
+				}
 			} else {
-				_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.completed", input.Site, result.ArchiveSHA256)
+				if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.completed", input.Site, result.ArchiveSHA256); auditErr != nil {
+					err = auditErr
+				}
 			}
 			return result, err
 		}); err != nil {

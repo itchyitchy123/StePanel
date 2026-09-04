@@ -69,6 +69,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Malformed WPress multipart requests no longer panic when upload metadata is
+  missing, and cpmove inspection now enforces per-entry and total decompressed
+  size limits to resist archive-bomb denial of service.
+- Restore file copies now open source and destination files without following
+  symlinks, close descriptors on failure, and write Node version metadata
+  atomically.
+- Job admission is synchronized with shutdown so persistent jobs cannot race
+  `Wait`/process termination, while malware scans are bounded to one active
+  filesystem scan.
+- Privileged site, proxy, application, certificate, restore, backup, and
+  malware operations now surface audit persistence failures instead of silently
+  discarding the audit event.
 - Restores now refuse pre-existing database or database-user names and remove
   newly created databases, users, and staged files when later steps fail.
 - Failed SQL imports drop partially imported databases instead of leaving

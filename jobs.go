@@ -41,6 +41,7 @@ type Jobs struct {
 	activeDomains map[string]bool
 	activeTargets map[string]bool
 	wg            sync.WaitGroup
+	admission     sync.RWMutex
 	path          string
 	persistErr    error
 }
@@ -205,15 +206,18 @@ func (j *Jobs) PersistenceError() error {
 }
 
 func (j *Jobs) SubmitWPress(id, user string, work func() (WPressResult, error)) error {
+	j.admission.RLock()
+	defer j.admission.RUnlock()
 	if !j.reserve(user) {
 		return ErrJobBusy
 	}
+	j.wg.Add(1)
 	item := &Job{ID: id, Kind: "wordpress.restore", State: "running", User: user, StartedAt: time.Now().UTC()}
 	if err := j.add(item); err != nil {
+		j.wg.Done()
 		j.release(user)
 		return fmt.Errorf("persist queued job: %w", err)
 	}
-	j.wg.Add(1)
 	go func() {
 		defer j.wg.Done()
 		defer j.release(user)
@@ -246,15 +250,18 @@ func (j *Jobs) Get(id string) (Job, bool) {
 }
 
 func (j *Jobs) Submit(id, user string, work func() (ImportResult, error)) error {
+	j.admission.RLock()
+	defer j.admission.RUnlock()
 	if !j.reserve(user) {
 		return ErrJobBusy
 	}
+	j.wg.Add(1)
 	item := &Job{ID: id, Kind: "cpmove.restore", State: "running", User: user, StartedAt: time.Now().UTC()}
 	if err := j.add(item); err != nil {
+		j.wg.Done()
 		j.release(user)
 		return fmt.Errorf("persist queued job: %w", err)
 	}
-	j.wg.Add(1)
 	go func() {
 		defer j.wg.Done()
 		defer j.release(user)
@@ -276,15 +283,18 @@ func (j *Jobs) Submit(id, user string, work func() (ImportResult, error)) error 
 }
 
 func (j *Jobs) SubmitBackup(id, site string, work func() (BackupResult, error)) error {
+	j.admission.RLock()
+	defer j.admission.RUnlock()
 	if !j.reserve(site) {
 		return ErrJobBusy
 	}
+	j.wg.Add(1)
 	item := &Job{ID: id, Kind: "site.backup", State: "running", User: site, StartedAt: time.Now().UTC()}
 	if err := j.add(item); err != nil {
+		j.wg.Done()
 		j.release(site)
 		return fmt.Errorf("persist queued job: %w", err)
 	}
-	j.wg.Add(1)
 	go func() {
 		defer j.wg.Done()
 		defer j.release(site)
@@ -329,6 +339,8 @@ func (j *Jobs) release(target string) {
 }
 
 func (j *Jobs) SubmitCertificate(id, domain string, work func() (CertificateResult, error)) error {
+	j.admission.RLock()
+	defer j.admission.RUnlock()
 	select {
 	case j.slots <- struct{}{}:
 	default:
@@ -342,15 +354,16 @@ func (j *Jobs) SubmitCertificate(id, domain string, work func() (CertificateResu
 	}
 	j.activeDomains[domain] = true
 	j.mu.Unlock()
+	j.wg.Add(1)
 	item := &Job{ID: id, Kind: "certificate.issue", State: "running", User: domain, StartedAt: time.Now().UTC()}
 	if err := j.add(item); err != nil {
+		j.wg.Done()
 		j.mu.Lock()
 		delete(j.activeDomains, domain)
 		j.mu.Unlock()
 		<-j.slots
 		return fmt.Errorf("persist queued job: %w", err)
 	}
-	j.wg.Add(1)
 	go func() {
 		defer j.wg.Done()
 		defer func() { j.mu.Lock(); delete(j.activeDomains, domain); j.mu.Unlock(); <-j.slots }()
@@ -372,6 +385,8 @@ func (j *Jobs) SubmitCertificate(id, domain string, work func() (CertificateResu
 }
 
 func (j *Jobs) Wait(ctx context.Context) error {
+	j.admission.Lock()
+	defer j.admission.Unlock()
 	done := make(chan struct{})
 	go func() {
 		j.wg.Wait()

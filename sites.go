@@ -62,7 +62,10 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + ".conf"
-	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deployed", input.Site, input.Domain)
+	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deployed", input.Site, input.Domain); err != nil {
+		http.Error(w, "site deployed but audit persistence is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"site": input.Site, "domain": input.Domain, "config": filepath.Join(a.Config.VHostRoot, name)})
 }
 
@@ -85,6 +88,9 @@ func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site route was not removed because validation or Apache reload failed", http.StatusServiceUnavailable)
 		return
 	}
-	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deleted", name, "managed PHP vhost removed")
+	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deleted", name, "managed PHP vhost removed"); err != nil {
+		http.Error(w, "site deleted but audit persistence is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": name})
 }

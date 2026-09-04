@@ -6,6 +6,17 @@ import (
 	"testing"
 )
 
+func TestInspectCPMoveRejectsMissingMetadata(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "empty-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := inspectCPMove(file, nil, 10); err == nil {
+		t.Fatal("missing archive metadata was accepted")
+	}
+}
+
 func TestValidateWPressTreeEnforcesEntryLimit(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "one"), "1")

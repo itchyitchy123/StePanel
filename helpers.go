@@ -55,6 +55,15 @@ func openRegularNoFollow(path string, expected os.FileInfo) (*os.File, os.FileIn
 	return file, info, nil
 }
 
+// openWriteNoFollow opens the destination itself without following a symlink.
+func openWriteNoFollow(path string, mode os.FileMode) (*os.File, error) {
+	fd, err := syscall.Open(path, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_TRUNC|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, uint32(mode.Perm()))
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(fd), path), nil
+}
+
 func sameFileInfo(a, b os.FileInfo) bool {
 	if a == nil || b == nil {
 		return false

@@ -305,9 +305,13 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		defer staged.Close()
 		result, restoreErr := RestoreCPMove(a.Config, staged, header, user, databaseRestore)
 		if restoreErr != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.failed", user, restoreErr.Error())
+			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.failed", user, restoreErr.Error()); auditErr != nil {
+				restoreErr = fmt.Errorf("%w; audit persistence failed: %v", restoreErr, auditErr)
+			}
 		} else {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.completed", user, result.StagedAt)
+			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.completed", user, result.StagedAt); auditErr != nil {
+				restoreErr = auditErr
+			}
 		}
 		return result, restoreErr
 	}); err != nil {

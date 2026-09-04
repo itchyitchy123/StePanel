@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -46,7 +47,9 @@ func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
 		if err := helperCommandContext(ctx, a.Config, a.Config.Certbot, input.Domain, input.Email).Run(); err != nil {
 			return CertificateResult{}, err
 		}
-		_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "certificate.issued", input.Domain, "Let's Encrypt certificate requested")
+		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "certificate.issued", input.Domain, "Let's Encrypt certificate requested"); err != nil {
+			return CertificateResult{}, fmt.Errorf("certificate issued but audit persistence is unavailable: %w", err)
+		}
 		return CertificateResult{Domain: input.Domain, Status: "issued"}, nil
 	}); err != nil {
 		if errors.Is(err, ErrJobBusy) {

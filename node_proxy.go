@@ -72,11 +72,14 @@ func (a *App) selectNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to prepare site root", 500)
 		return
 	}
-	if err := os.WriteFile(filepath.Join(siteRoot, ".nvmrc"), []byte("v"+version+"\n"), 0640); err != nil {
+	if err := writeAtomic(filepath.Join(siteRoot, ".nvmrc"), []byte("v"+version+"\n"), 0640); err != nil {
 		http.Error(w, "unable to select Node version", 500)
 		return
 	}
-	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "node.version.selected", input.Site, "Node v"+version)
+	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "node.version.selected", input.Site, "Node v"+version); err != nil {
+		http.Error(w, "node version selected but audit persistence is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"site": input.Site, "version": "v" + version})
 }
 
@@ -105,7 +108,10 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "proxy helper rejected the configuration or Apache reload failed", http.StatusServiceUnavailable)
 		return
 	}
-	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deployed", input.Site, input.Domain+" -> "+backend)
+	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deployed", input.Site, input.Domain+" -> "+backend); err != nil {
+		http.Error(w, "proxy deployed but audit persistence is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"site": input.Site, "domain": input.Domain, "backend": backend, "config": path, "reloaded": true})
 }
 
@@ -166,7 +172,10 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "proxy was not removed because the helper or Apache reload failed", http.StatusServiceUnavailable)
 		return
 	}
-	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deleted", name, "managed proxy removed")
+	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deleted", name, "managed proxy removed"); err != nil {
+		http.Error(w, "proxy deleted but audit persistence is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "reloaded": true})
 }
 
