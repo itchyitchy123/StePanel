@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -46,6 +47,114 @@ func (a *App) cloudInventory(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, inv)
+}
+
+func (a *App) cloudAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	var in struct{ Provider, Action, ID string }
+	if err := decodeJSON(w, r, 4096, &in); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	in.Provider = strings.ToLower(strings.TrimSpace(in.Provider))
+	if in.Provider == "" {
+		in.Provider = a.Config.CloudProvider
+	}
+	if in.Provider == "" || (a.Config.CloudProvider != "" && in.Provider != a.Config.CloudProvider) {
+		http.Error(w, "provider is not configured for this installation", http.StatusUnprocessableEntity)
+		return
+	}
+	if !cloudIDPattern.MatchString(in.ID) || (in.Action != "start" && in.Action != "stop" && in.Action != "reboot" && in.Action != "snapshot") {
+		http.Error(w, "invalid provider, action, or resource ID", http.StatusUnprocessableEntity)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := executeCloudAction(ctx, in.Provider, in.Action, in.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud."+in.Action, in.ID, in.Provider); err != nil {
+		http.Error(w, "cloud action completed but audit persistence is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"provider": in.Provider, "action": in.Action, "id": in.ID})
+}
+
+var cloudIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+
+func executeCloudAction(ctx context.Context, provider, action, id string) error {
+	switch provider {
+	case "linode":
+		token := os.Getenv("STEPANEL_LINODE_TOKEN")
+		if token == "" {
+			return errors.New("STEPANEL_LINODE_TOKEN is not configured")
+		}
+		path := "/linode/instances/" + id
+		if action == "snapshot" {
+			path += "/backups"
+		} else {
+			path += "/" + map[string]string{"start": "boot", "stop": "shutdown", "reboot": "reboot"}[action]
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.linode.com/v4"+path, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		res, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		if res.StatusCode/100 != 2 {
+			return fmt.Errorf("Linode API returned %s", res.Status)
+		}
+		return nil
+	case "aws":
+		args := []string{"ec2"}
+		switch action {
+		case "start":
+			args = append(args, "start-instances")
+		case "stop":
+			args = append(args, "stop-instances")
+		case "reboot":
+			args = append(args, "reboot-instances")
+		case "snapshot":
+			args = append(args, "create-snapshot", "--volume-id")
+		}
+		args = append(args, id, "--output", "json")
+		return runCloudCLI(ctx, "aws", "AWS", args...)
+	case "openstack":
+		args := []string{"server"}
+		switch action {
+		case "start":
+			args = append(args, "start")
+		case "stop":
+			args = append(args, "stop")
+		case "reboot":
+			args = append(args, "reboot", "--hard")
+		case "snapshot":
+			args = append(args, "backup", "create", "--name", "stepanel-"+id)
+		}
+		args = append(args, id, "-f", "json")
+		return runCloudCLI(ctx, "openstack", "OpenStack", args...)
+	default:
+		return errors.New("unsupported cloud provider")
+	}
+}
+
+func runCloudCLI(ctx context.Context, command, provider string, args ...string) error {
+	if _, err := exec.LookPath(command); err != nil {
+		return fmt.Errorf("%s CLI is not installed", provider)
+	}
+	out, err := exec.CommandContext(ctx, command, args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s action failed: %w: %s", provider, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func linodeInventory(ctx context.Context) (CloudInventory, error) {

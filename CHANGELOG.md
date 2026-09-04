@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Authenticated cloud actions for configured Linode, AWS, and OpenStack
+  providers, including start, stop, reboot, and snapshot operations with
+  strict resource validation and audit events.
+
 - Read-only cloud inventory integration for Linode, AWS, and OpenStack,
   covering servers, DNS, load balancers, and snapshots through standard
   provider credentials and CLIs.
