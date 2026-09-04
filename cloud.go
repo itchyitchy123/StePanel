@@ -41,6 +41,17 @@ type cloudDNSRequest struct {
 	TTL      int    `json:"ttl,omitempty"`
 }
 
+type cloudLBRequest struct {
+	NodeBalancerID string `json:"nodebalancer_id"`
+	ConfigID       string `json:"config_id"`
+	NodeID         string `json:"node_id,omitempty"`
+	Address        string `json:"address,omitempty"`
+	Label          string `json:"label,omitempty"`
+	Port           int    `json:"port,omitempty"`
+	Weight         int    `json:"weight,omitempty"`
+	Action         string `json:"action"`
+}
+
 func (a *App) cloudInventory(w http.ResponseWriter, _ *http.Request) {
 	provider := strings.ToLower(strings.TrimSpace(a.Config.CloudProvider))
 	if provider == "" {
@@ -168,6 +179,68 @@ func (a *App) cloudDNS(w http.ResponseWriter, r *http.Request) {
 		action = "update"
 	}
 	a.queueDNSJob(w, in, action)
+}
+
+func (a *App) cloudLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	if a.Config.CloudProvider != "linode" {
+		http.Error(w, "Linode load balancer integration requires STEPANEL_CLOUD_PROVIDER=linode", 422)
+		return
+	}
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", 403)
+		return
+	}
+	var in cloudLBRequest
+	if err := decodeJSON(w, r, 8192, &in); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	if !cloudNumericID.MatchString(in.NodeBalancerID) || !cloudNumericID.MatchString(in.ConfigID) || (in.Action != "add" && in.Action != "remove") {
+		http.Error(w, "invalid load balancer action or ID", 422)
+		return
+	}
+	if in.Action == "remove" {
+		if !cloudNumericID.MatchString(in.NodeID) {
+			http.Error(w, "invalid node_id", 422)
+			return
+		}
+	} else if net.ParseIP(in.Address) == nil || in.Port < 1 || in.Port > 65535 || in.Weight < 1 || in.Weight > 100 {
+		http.Error(w, "invalid backend address, port, or weight", 422)
+		return
+	}
+	id, err := newJobID("loadbalancer")
+	if err != nil {
+		http.Error(w, "could not create load balancer job", 500)
+		return
+	}
+	if err := a.Jobs.SubmitCloud(id, in.NodeBalancerID, func() (CloudActionResult, error) {
+		var path, method string
+		var body any
+		if in.Action == "remove" {
+			path = "/nodebalancers/" + in.NodeBalancerID + "/configs/" + in.ConfigID + "/nodes/" + in.NodeID
+			method = http.MethodDelete
+		} else {
+			path = "/nodebalancers/" + in.NodeBalancerID + "/configs/" + in.ConfigID + "/nodes"
+			method = http.MethodPost
+			body = map[string]any{"address": in.Address, "label": in.Label, "port": in.Port, "weight": in.Weight}
+		}
+		if _, err := linodeAPIRequest(context.Background(), method, path, body); err != nil {
+			return CloudActionResult{}, err
+		}
+		result := CloudActionResult{Provider: "linode", Action: "loadbalancer." + in.Action, ID: in.NodeBalancerID, CompletedAt: time.Now().UTC()}
+		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.loadbalancer."+in.Action, in.NodeBalancerID, in.Address); err != nil {
+			return result, err
+		}
+		return result, nil
+	}); err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), 429)
+		} else {
+			http.Error(w, "could not persist load balancer job", 500)
+		}
+		return
+	}
+	writeJSON(w, 202, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
 }
 
 var cloudNumericID = regexp.MustCompile(`^[0-9]{1,12}$`)

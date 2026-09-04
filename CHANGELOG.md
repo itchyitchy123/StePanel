@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Asynchronous Linode load-balancer backend management with strict address,
+  port, weight, and resource validation.
+
 - Asynchronous Linode DNS record management with strict domain, record, target,
   and TTL validation.
 
