@@ -1,14 +1,17 @@
 # Releasing StePanel
 
-1. Update `version.go`, `CHANGELOG.md`, and any migration notes.
+1. Update `version.go`, `CHANGELOG.md`, and any migration notes. Keep the
+   Helm, Kubernetes, Terraform, and OpenAPI versions synchronized with
+   `version.go`.
 2. Run `GOCACHE=/tmp/stepanel-go-cache GOFLAGS=-p=1 make check` locally when
    working on a constrained machine.
 3. Review the generated release notes and confirm the supported upgrade path.
+   Release automation rejects tags that do not match `version.go`.
 4. Create and push an annotated tag:
 
    ```sh
-   git tag -a v0.2.0 -m 'StePanel v0.2.0'
-   git push origin v0.2.0
+   git tag -a v0.4.0 -m 'StePanel v0.4.0'
+   git push origin v0.4.0
    ```
 
 5. The release workflow builds Linux AMD64 and ARM64 binaries, creates checksums

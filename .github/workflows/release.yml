@@ -21,6 +21,17 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: '1.26.7'
+      - name: Verify tag matches source version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          source_version=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' version.go)
+          tag_version=${RELEASE_TAG#v}
+          test -n "$source_version" || { echo 'version.go does not declare Version' >&2; exit 1; }
+          test "$source_version" = "$tag_version" || {
+            echo "release tag $RELEASE_TAG does not match version.go ($source_version)" >&2
+            exit 1
+          }
       - name: Build release artifacts
         env:
           VERSION: ${{ github.ref_name }}

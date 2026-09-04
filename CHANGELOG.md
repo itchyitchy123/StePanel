@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.4.0] - 2026-09-04
+
 ### Added
 
 - Linode snapshot listing and asynchronous deletion with strict snapshot ID
