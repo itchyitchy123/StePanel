@@ -34,6 +34,11 @@ type gitDeployResult struct {
 	Previous   string `json:"previous_release,omitempty"`
 }
 
+type gitRollbackRequest struct {
+	Site    string `json:"site"`
+	Confirm string `json:"confirm"`
+}
+
 // gitDeploy intentionally does not evaluate repository-provided build scripts.
 // Build execution belongs in a separately sandboxed runner.
 func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +147,92 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Git release activated but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, result)
+}
+
+func (a *App) gitRollback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	var input gitRollbackRequest
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	input.Site = safeUser(input.Site)
+	if input.Site == "" || input.Confirm != "ROLLBACK "+input.Site {
+		http.Error(w, "confirmation must exactly match ROLLBACK <site>", http.StatusUnprocessableEntity)
+		return
+	}
+	siteRoot := filepath.Join(a.Config.WebRoot, "sites", input.Site)
+	publicRoot := filepath.Join(siteRoot, "public")
+	if err := ensureInside(a.Config.WebRoot, publicRoot); err != nil {
+		http.Error(w, "invalid site root", http.StatusUnprocessableEntity)
+		return
+	}
+	a.gitActivationMu.Lock()
+	defer a.gitActivationMu.Unlock()
+	previous, err := latestPreviousRelease(siteRoot)
+	if err != nil {
+		http.Error(w, "no previous Git release is available", http.StatusConflict)
+		return
+	}
+	if err := validateGitRelease(previous, a.Config.MaxEntries); err != nil {
+		http.Error(w, "previous release failed safety validation", http.StatusConflict)
+		return
+	}
+	if info, err := os.Stat(publicRoot); err != nil || !info.IsDir() {
+		http.Error(w, "active site release is unavailable", http.StatusConflict)
+		return
+	}
+	replaced := filepath.Join(siteRoot, ".stepanel-previous-"+strings.ReplaceAll(newRequestID(), "-", ""))
+	if err := os.Rename(publicRoot, replaced); err != nil {
+		http.Error(w, "unable to preserve the active release", http.StatusInternalServerError)
+		return
+	}
+	if err := os.Rename(previous, publicRoot); err != nil {
+		_ = os.Rename(replaced, publicRoot)
+		http.Error(w, "unable to activate the previous release", http.StatusInternalServerError)
+		return
+	}
+	if err := siteHelper(a.Config, "seal", input.Site); err != nil {
+		_ = os.Rename(publicRoot, previous)
+		_ = os.Rename(replaced, publicRoot)
+		http.Error(w, "rollback could not restore site isolation", http.StatusServiceUnavailable)
+		return
+	}
+	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.git-rolled-back", input.Site, filepath.Base(previous)); err != nil {
+		log.Printf("Git rollback completed but audit persistence is unavailable: %v", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"site": input.Site, "activated": filepath.Base(previous), "replaced_release": filepath.Base(replaced)})
+}
+
+func latestPreviousRelease(siteRoot string) (string, error) {
+	entries, err := os.ReadDir(siteRoot)
+	if err != nil {
+		return "", err
+	}
+	type candidate struct {
+		path string
+		time time.Time
+	}
+	var latest candidate
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), ".stepanel-previous-") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if latest.path == "" || info.ModTime().After(latest.time) || info.ModTime().Equal(latest.time) && entry.Name() > filepath.Base(latest.path) {
+			latest = candidate{path: filepath.Join(siteRoot, entry.Name()), time: info.ModTime()}
+		}
+	}
+	if latest.path == "" {
+		return "", errors.New("no previous release")
+	}
+	return latest.path, nil
 }
 
 func validateGitAllowedHosts(value string) error {

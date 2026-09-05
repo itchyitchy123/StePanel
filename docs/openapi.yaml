@@ -53,6 +53,13 @@ paths:
         '201': {description: Database and user created; password is never returned or stored by StePanel}
         '409': {description: Object already exists or provisioning failed safely}
   /api/databases/{name}:
+    get:
+      summary: Inspect one managed database without exposing credentials
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string, pattern: '^[a-z0-9_]{1,63}$'}}
+      responses:
+        '200': {description: Database owner, user, encoding, and allocated bytes}
+        '404': {description: Managed database not found}
     delete:
       summary: Create a safety dump, then delete a managed database and user
       parameters:
@@ -290,6 +297,22 @@ paths:
         '202': {description: Release activated and previous site release preserved}
         '422': {description: Invalid site, repository, or ref}
         '502': {description: Git checkout or commit identification failed}
+  /api/sites/git-rollback:
+    post:
+      summary: Atomically restore the latest preserved Git site release
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site, confirm]
+              properties:
+                site: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}
+                confirm: {type: string, description: 'Must equal ROLLBACK followed by the site name'}
+      responses:
+        '200': {description: Previous release activated and replaced release preserved}
+        '409': {description: No valid previous release is available}
   /api/sites/{name}:
     delete:
       summary: Remove a managed PHP site route

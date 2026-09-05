@@ -14,6 +14,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Verified, bounded, filterable audit-event history at `/api/audit/events`.
 - Constrained HTTPS Git site releases with validated refs, shallow checkout,
   atomic activation, previous-release preservation, and audit records.
+- In-dashboard site workspace details covering domains, applications, proxies,
+  databases, and verified recent activity.
+- Read-only per-database detail and atomic one-click Git rollback that preserves
+  the replaced release for recovery.
 
 ### Fixed
 

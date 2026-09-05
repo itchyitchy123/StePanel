@@ -232,7 +232,26 @@ func (a *App) databaseResource(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/databases/")
 	credentialRotation := strings.HasSuffix(path, "/credentials")
 	name := strings.TrimSuffix(path, "/credentials")
-	if !validManagedDatabaseIdentifier(name, databaseNameLimit(a.Config)) || strings.Contains(name, "/") || !a.Auth.CSRF(r) {
+	if !validManagedDatabaseIdentifier(name, databaseNameLimit(a.Config)) || strings.Contains(name, "/") {
+		http.Error(w, "invalid database", http.StatusUnprocessableEntity)
+		return
+	}
+	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && !credentialRotation {
+		items, err := managedDatabaseInventory(a.Config)
+		if err != nil {
+			http.Error(w, "managed database inventory is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		for _, item := range items {
+			if item.Name == name {
+				writeJSON(w, http.StatusOK, map[string]any{"database": item, "engine": a.Config.DBEngine})
+				return
+			}
+		}
+		http.NotFound(w, r)
+		return
+	}
+	if !a.Auth.CSRF(r) {
 		http.Error(w, "invalid request", http.StatusForbidden)
 		return
 	}

@@ -6,3 +6,4 @@
  .site-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem;margin-top:1rem}
 .site-card{border:1px solid var(--line,#d8dee8);border-radius:12px;padding:1rem;background:rgba(255,255,255,.03)}
 .site-card h3{margin:.1rem 0 .6rem}.site-card code{display:block;overflow-wrap:anywhere;font-size:.78rem;color:var(--muted,#667085)}.site-card p{margin:.65rem 0 0;font-size:.9rem}
+.site-card button{border:0;background:transparent;padding:0;margin-top:1rem;cursor:pointer}.site-detail{margin-top:1rem;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:1.25rem}.site-detail h3{margin:0 0 1rem}.site-detail p{margin:.5rem 0;overflow-wrap:anywhere}

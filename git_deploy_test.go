@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,47 @@ func TestGitAllowedHostsRejectsUnsafeValues(t *testing.T) {
 	}
 	if !gitHostAllowed("github.com,git.example.net", "GIT.EXAMPLE.NET") || gitHostAllowed("github.com", "evil.github.com") {
 		t.Fatal("Git host allowlist did not use exact case-insensitive matching")
+	}
+}
+
+func TestGitRollbackAtomicallySwapsPreviousRelease(t *testing.T) {
+	webRoot := filepath.Join(t.TempDir(), "www")
+	siteRoot := filepath.Join(webRoot, "sites", "example")
+	publicRoot := filepath.Join(siteRoot, "public")
+	previousRoot := filepath.Join(siteRoot, ".stepanel-previous-old")
+	if err := os.MkdirAll(publicRoot, 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(previousRoot, 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(publicRoot, "version"), []byte("current"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(previousRoot, "version"), []byte("previous"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{Config: Config{WebRoot: webRoot, MaxEntries: 100}}
+	request := httptest.NewRequest(http.MethodPost, "/api/sites/git-rollback", strings.NewReader(`{"site":"example","confirm":"ROLLBACK example"}`))
+	response := httptest.NewRecorder()
+	app.gitRollback(response, request)
+	data, err := os.ReadFile(filepath.Join(publicRoot, "version"))
+	if response.Code != http.StatusOK || err != nil || string(data) != "previous" {
+		t.Fatalf("status = %d, active = %q, error = %v, body = %s", response.Code, data, err, response.Body.String())
+	}
+	entries, err := os.ReadDir(siteRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundCurrent := false
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".stepanel-previous-") {
+			body, readErr := os.ReadFile(filepath.Join(siteRoot, entry.Name(), "version"))
+			foundCurrent = foundCurrent || readErr == nil && string(body) == "current"
+		}
+	}
+	if !foundCurrent {
+		t.Fatal("rollback did not preserve the replaced active release")
 	}
 }
 

@@ -43,6 +43,20 @@ func TestManagedDatabaseInventory(t *testing.T) {
 	}
 }
 
+func TestDatabaseResourceReturnsReadOnlyDetailWithoutCSRF(t *testing.T) {
+	helper := filepath.Join(t.TempDir(), "dbctl")
+	script := "#!/bin/sh\nprintf 'site_db\\tsite\\tsite_user\\t4096\\tutf8mb4\\n'\n"
+	if err := os.WriteFile(helper, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{Config: Config{DBEngine: "mysql", DBCtl: helper}}
+	response := httptest.NewRecorder()
+	app.databaseResource(response, httptest.NewRequest(http.MethodGet, "/api/databases/site_db", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"site_db"`) || strings.Contains(response.Body.String(), "password") {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 func TestDatabaseProvisionDoesNotReturnPassword(t *testing.T) {
 	root := t.TempDir()
 	helper := filepath.Join(root, "dbctl")
