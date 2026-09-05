@@ -30,11 +30,18 @@ func (a *App) doctor(w http.ResponseWriter, _ *http.Request) {
 		state = services["httpd"]
 	}
 	checks = append(checks, doctorService(web, state))
-	dbState := services["mysql"]
-	if dbState == "" {
+	dbService := cfg.DBEngine
+	if dbService == "" || dbService == "mysql" {
+		dbService = "mysql"
+	}
+	dbState := services[dbService]
+	if dbService == "mysql" && dbState == "" {
 		dbState = services["mariadb"]
 	}
-	checks = append(checks, doctorService("database", dbState))
+	if dbService == "postgresql" && dbState == "" {
+		dbState = services["postgres"]
+	}
+	checks = append(checks, doctorService(dbService, dbState))
 	checks = append(checks, doctorService("php-fpm", services["php-fpm"]))
 	if cfg.OffsiteTarget != "" {
 		if err := validateOffsiteTarget(cfg.OffsiteTarget); err != nil {

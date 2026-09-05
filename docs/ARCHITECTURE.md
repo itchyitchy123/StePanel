@@ -2,7 +2,7 @@
 
 StePanel is deliberately small at this stage. The Go process owns the control-plane HTTP API and server-rendered dashboard. The operating system owns the LAMP services and systemd lifecycle.
 
-The container image packages only the StePanel control plane. Apache, MySQL/MariaDB, PHP, and site files remain external concerns in container deployments.
+The container image packages only the StePanel control plane. Apache, MySQL/MariaDB or PostgreSQL, PHP, and site files remain external concerns in container deployments.
 
 ```text
 Browser
@@ -14,7 +14,7 @@ StePanel HTTP server
    └── cpmove inspection/import API
           ├── staging area: /var/lib/ste-panel/imports
           ├── site roots: /var/www/sites/<account>/public
-          └── MySQL client → MySQL/MariaDB socket
+          └── Database client → MySQL/MariaDB or PostgreSQL socket
 ```
 
 ## Import safety model

@@ -5,7 +5,7 @@ customer server or real backup archive.
 
 ## Suggested five-minute walkthrough
 
-1. Show the version and selected MySQL/MariaDB installation options.
+1. Show the version and selected MySQL/MariaDB/PostgreSQL installation options.
 2. Open the authenticated dashboard and health endpoint.
 3. Inspect a synthetic cpmove archive and show the validation summary.
 4. Start an import, show the returned job ID, and poll its status.

@@ -36,8 +36,8 @@ func ServiceStatus() map[string]string {
 	}
 	serviceStatusCache.RUnlock()
 	result := map[string]string{}
-	for _, service := range []string{"apache2", "httpd", "lsws", "caddy", "mysql", "mariadb", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
-		if _, err := exec.LookPath(service); err == nil {
+	for _, service := range []string{"apache2", "httpd", "lsws", "caddy", "mysql", "mariadb", "postgresql", "postgres", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
+		if _, err := exec.LookPath(service); err == nil || ((service == "postgresql" || service == "postgres") && systemdUnitExists(service)) {
 			result[service] = serviceUnitState(service)
 		}
 	}
@@ -58,6 +58,16 @@ func ServiceStatus() map[string]string {
 	serviceStatusCache.at = time.Now()
 	serviceStatusCache.Unlock()
 	return result
+}
+
+func systemdUnitExists(service string) bool {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, "systemctl", "list-unit-files", service+"*.service", "--no-legend"))
+	return err == nil && strings.TrimSpace(string(output)) != ""
 }
 
 func cloneServiceStatus(source map[string]string) map[string]string {
@@ -106,7 +116,7 @@ func ServiceSummaries() []ServiceSummary {
 			}
 		}
 	}
-	services := []string{"apache2", "openlitespeed", "caddy", "mysql", "php-fpm", "fail2ban", "modsecurity", "exim", "dovecot", "spamassassin", "vsftpd"}
+	services := []string{"apache2", "openlitespeed", "caddy", "mysql", "mariadb", "postgresql", "php-fpm", "fail2ban", "modsecurity", "exim", "dovecot", "spamassassin", "vsftpd"}
 	result := make([]ServiceSummary, 0, len(services))
 	for _, name := range services {
 		state := status[name]
@@ -118,6 +128,9 @@ func ServiceSummaries() []ServiceSummary {
 		}
 		if name == "mysql" && state == "" {
 			state = status["mariadb"]
+		}
+		if name == "postgresql" && state == "" {
+			state = status["postgres"]
 		}
 		if name == "exim" && state == "" {
 			state = status["exim4"]

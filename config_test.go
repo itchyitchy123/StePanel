@@ -133,3 +133,24 @@ func TestValidateConfigRequiresOffsiteBackupTarget(t *testing.T) {
 		t.Fatalf("expected offsite target validation error, got %v", err)
 	}
 }
+
+func TestValidateConfigAcceptsPostgreSQLAndAdminPath(t *testing.T) {
+	t.Setenv("STEPANEL_DB_ENGINE", "postgresql")
+	t.Setenv("STEPANEL_DB_VERSION", "16")
+	t.Setenv("STEPANEL_DB_ADMIN_URL", "/database/postgres")
+	cfg := LoadConfig()
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("PostgreSQL config rejected: %v", err)
+	}
+	if cfg.DBAdminURL != "/database/postgres" {
+		t.Fatalf("DBAdminURL = %q", cfg.DBAdminURL)
+	}
+}
+
+func TestValidateConfigRejectsUnsafeDatabaseAdminPath(t *testing.T) {
+	cfg := LoadConfig()
+	cfg.DBAdminURL = "https://admin.example.test"
+	if err := ValidateConfig(cfg); err == nil || !strings.Contains(err.Error(), "STEPANEL_DB_ADMIN_URL") {
+		t.Fatalf("expected database admin URL validation error, got %v", err)
+	}
+}

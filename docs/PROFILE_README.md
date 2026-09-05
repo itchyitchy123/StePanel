@@ -5,7 +5,7 @@ Linux Systems Engineer focused on reliable hosting infrastructure, security auto
 ## What I work on
 
 - Red Hat, AlmaLinux, Debian, and Ubuntu server operations
-- Apache, Nginx, cPanel, PHP-FPM, MySQL, and MariaDB
+- Apache, Nginx, cPanel, PHP-FPM, MySQL, MariaDB, and PostgreSQL
 - Linux security hardening and Fail2ban automation
 - Kubernetes labs and infrastructure-as-code
 - Go, Python, Bash, and Ansible automation

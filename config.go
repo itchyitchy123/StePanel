@@ -6,9 +6,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var dbVersionPattern = regexp.MustCompile(`^(default|[0-9][0-9A-Za-z.+:~-]*)$`)
 
 type Config struct {
 	WebServer                                                                          string
@@ -17,6 +20,7 @@ type Config struct {
 	SiteCtl, VHostCtl, Certbot, DBCtl                                                  string
 	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo         string
 	DBHost, DBUser, DBPassword                                                         string
+	DBEngine, DBVersion, DBAdminURL                                                    string
 	OffsiteTarget                                                                      string
 	CloudProvider                                                                      string
 	RequireOffsiteBackup                                                               bool
@@ -104,6 +108,22 @@ func LoadConfig() Config {
 	if v := os.Getenv("STEPANEL_SUDO"); v != "" {
 		c.Sudo = v
 	}
+	c.DBEngine = strings.ToLower(strings.TrimSpace(os.Getenv("STEPANEL_DB_ENGINE")))
+	if c.DBEngine == "" {
+		c.DBEngine = "mysql"
+	}
+	c.DBVersion = strings.TrimSpace(os.Getenv("STEPANEL_DB_VERSION"))
+	if c.DBVersion == "" {
+		c.DBVersion = "default"
+	}
+	c.DBAdminURL = strings.TrimSpace(os.Getenv("STEPANEL_DB_ADMIN_URL"))
+	if c.DBAdminURL == "" {
+		if c.DBEngine == "postgresql" {
+			c.DBAdminURL = "/phppgadmin"
+		} else {
+			c.DBAdminURL = "/phpmyadmin"
+		}
+	}
 	c.DBHost = os.Getenv("STEPANEL_DB_HOST")
 	c.DBUser = os.Getenv("STEPANEL_DB_USER")
 	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
@@ -149,6 +169,15 @@ func ValidateConfig(c Config) error {
 		return fmt.Errorf("STEPANEL_WEBSERVER must be apache, openlitespeed, or caddy")
 	}
 	var problems []error
+	if c.DBEngine != "mysql" && c.DBEngine != "mariadb" && c.DBEngine != "postgresql" {
+		problems = append(problems, errors.New("STEPANEL_DB_ENGINE must be mysql, mariadb, or postgresql"))
+	}
+	if !dbVersionPattern.MatchString(c.DBVersion) {
+		problems = append(problems, errors.New("STEPANEL_DB_VERSION must be default or an alphanumeric AppStream/package version"))
+	}
+	if c.DBAdminURL == "" || !strings.HasPrefix(c.DBAdminURL, "/") || strings.ContainsAny(c.DBAdminURL, "\x00\r\n") {
+		problems = append(problems, errors.New("STEPANEL_DB_ADMIN_URL must be an absolute local URL path"))
+	}
 	if err := validateOffsiteTarget(c.OffsiteTarget); err != nil {
 		problems = append(problems, err)
 	}

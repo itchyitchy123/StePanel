@@ -11,7 +11,8 @@ longer-term hosting-panel roadmap.
 - Actor-attributed, HMAC-linked JSONL audit logs with offline verification.
 - cPanel `cpmove` inspection with archive traversal and size checks.
 - Asynchronous website and optional SQL restore jobs.
-- MySQL/MariaDB selection during installation.
+- MySQL/MariaDB/PostgreSQL selection during installation, including PostgreSQL AppStream stream selection on RHEL-family systems.
+- Optional phpMyAdmin or phpPgAdmin installation with dashboard status and management links.
 - ModSecurity and optional OWASP CRS installation in DetectionOnly mode.
 - Live service inventory for Apache, OpenLiteSpeed, Caddy, PHP-FPM, MySQL/MariaDB, Fail2Ban, and ModSecurity.
 - Cloud inventory and audited lifecycle actions for Linode, AWS, and OpenStack, plus Linode DNS, load-balancer, and snapshot operations.

@@ -2,7 +2,7 @@
 
 ## Supported operating systems
 
-The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Apache or OpenLiteSpeed, MySQL/MariaDB, PHP-FPM, ACL and archive utilities, and StePanel.
+The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Apache or OpenLiteSpeed, MySQL/MariaDB/PostgreSQL, PHP-FPM, ACL and archive utilities, and StePanel.
 
 Set `STEPANEL_WEBSERVER=apache` (the default),
 `STEPANEL_WEBSERVER=openlitespeed`, or `STEPANEL_WEBSERVER=caddy` to choose the webserver. OpenLiteSpeed
@@ -111,10 +111,11 @@ In an interactive terminal, the installer asks for the database engine and versi
 
 | Variable | Values | Meaning |
 | --- | --- | --- |
-| `STEPANEL_DB_ENGINE` | `mysql`, `mariadb` | Database distribution |
+| `STEPANEL_DB_ENGINE` | `mysql`, `mariadb`, `postgresql` | Database distribution |
 | `STEPANEL_ADMIN_TOTP_SECRET` | Unpadded base32, 160 bits or more | Require TOTP MFA for administrator login |
 | `STEPANEL_PANEL_HOSTNAME` | Fully qualified domain | Required Apache virtual-host name |
 | `STEPANEL_DB_VERSION` | `default` or an exact package version | Requested repository version |
+| `STEPANEL_INSTALL_DB_ADMIN` | `0` or `1` | Install phpMyAdmin or phpPgAdmin for the selected engine |
 | `STEPANEL_INSTALL_MAIL` | `0` or `1` | Install Exim, Dovecot, SpamAssassin, and enable mailbox staging |
 | `STEPANEL_ACTIVATE_MAIL` | `0` or `1` | Explicitly enable/start the installed mail services |
 | `STEPANEL_INSTALL_FTP` | `0` or `1` | Install vsftpd with local-user chrooting; newly installed service remains disabled |
@@ -179,6 +180,27 @@ Apache vhost or managed Node proxy.
 ## Reverse proxy
 
 Copy `deploy/apache/stepanel.conf` to the Apache configuration directory, replace the example hostname, enable the required proxy modules, and reload Apache. Add TLS with your preferred certificate automation before exposing the host. Container deployments must either mount application TLS certificates or explicitly set `STEPANEL_TLS_TERMINATED=1` only behind a reverse proxy or cluster ingress that enforces HTTPS. Generic Docker, Terraform, and static Kubernetes examples fail closed until that boundary is configured.
+
+### Database engine and administration UI
+
+Set `STEPANEL_DB_ENGINE=postgresql` to install PostgreSQL instead of MySQL or
+MariaDB. On RHEL-family systems, set `STEPANEL_DB_VERSION` to any PostgreSQL
+stream shown by `dnf module list postgresql --all`; the installer validates the
+stream, enables it, installs the server, initializes the cluster, and enables
+the PostgreSQL service. `default` uses the distribution default. Debian and
+Ubuntu installations support the default PostgreSQL package; explicit
+PostgreSQL streams are intentionally restricted to AppStream-capable DNF
+systems.
+
+Set `STEPANEL_INSTALL_DB_ADMIN=1` to install the matching browser management
+tool: phpMyAdmin for MySQL/MariaDB or phpPgAdmin for PostgreSQL. The dashboard
+shows the selected engine, version, service state, client, and a link when the
+package and Apache PHP integration are present. For Caddy or OpenLiteSpeed,
+install the package but configure its PHP route in that webserver separately;
+StePanel intentionally does not generate an unreviewed PHP proxy route.
+These tools have their own authentication and must be protected with HTTPS
+plus an IP allowlist, VPN, or equivalent access control; the StePanel session
+does not authenticate them.
 
 ## Operations
 

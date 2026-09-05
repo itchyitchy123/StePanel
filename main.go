@@ -175,6 +175,7 @@ func main() {
 	mux.Handle("/", allowMethods(app.Auth.Require(http.HandlerFunc(app.dashboard)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/health", allowMethods(http.HandlerFunc(app.health), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/services", allowMethods(app.Auth.Require(http.HandlerFunc(app.services)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/database", allowMethods(app.Auth.Require(http.HandlerFunc(app.database)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/ftp", allowMethods(app.Auth.Require(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/audit", allowMethods(app.Auth.Require(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/doctor", allowMethods(app.Auth.Require(http.HandlerFunc(app.doctor)), http.MethodGet, http.MethodHead))
@@ -260,7 +261,7 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 			alerts++
 		}
 	}
-	if err := a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.Username, "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": a.SecurityChecks(), "Jobs": a.Jobs.List(8), "Capabilities": a.Capabilities()}); err != nil {
+	if err := a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.Username, "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": a.SecurityChecks(), "Jobs": a.Jobs.List(8), "Capabilities": a.Capabilities(), "Database": a.DatabaseAdmin()}); err != nil {
 		log.Printf("dashboard render failed: %v", err)
 	}
 }

@@ -39,6 +39,8 @@ EXISTING_ADMIN_PASSWORD_HASH="${STEPANEL_ADMIN_PASSWORD_HASH:-}"
 AUDIT_KEY="${STEPANEL_AUDIT_KEY:-}"
 ADMIN_TOTP_SECRET="${STEPANEL_ADMIN_TOTP_SECRET:-}"
 DB_ENGINE="${STEPANEL_DB_ENGINE:-}"; DB_VERSION="${STEPANEL_DB_VERSION:-default}"
+INSTALL_DB_ADMIN="${STEPANEL_INSTALL_DB_ADMIN:-0}"
+DB_ADMIN_URL="${STEPANEL_DB_ADMIN_URL:-}"
 DB_HOST="${STEPANEL_DB_HOST:-localhost}"; DB_USER="${STEPANEL_DB_USER:-}"; DB_PASSWORD="${STEPANEL_DB_PASSWORD:-}"
 INSTALL_FAIL2BAN="${STEPANEL_INSTALL_FAIL2BAN:-0}"; FAIL2BAN_JAILS="${STEPANEL_FAIL2BAN_JAILS:-auto}"; FAIL2BAN_IGNORE_IP="${STEPANEL_FAIL2BAN_IGNORE_IP:-}"
 FPM_LENS_BINARY="${STEPANEL_FPM_LENS_BINARY:-}"
@@ -134,17 +136,21 @@ if [[ ! $MAX_ARCHIVE_ENTRIES =~ ^[1-9][0-9]*$ ]] || (( MAX_ARCHIVE_ENTRIES > 100
 if [[ ! $MAX_CONCURRENT_JOBS =~ ^[1-9][0-9]*$ ]] || (( MAX_CONCURRENT_JOBS > 32 )); then echo 'STEPANEL_MAX_CONCURRENT_JOBS must be between 1 and 32.' >&2; exit 1; fi
 if [[ "$REQUIRE_OFFSITE_BACKUP" != "0" && "$REQUIRE_OFFSITE_BACKUP" != "1" ]]; then echo 'STEPANEL_REQUIRE_OFFSITE_BACKUP must be 0 or 1.' >&2; exit 1; fi
 if [[ "$REQUIRE_OFFSITE_BACKUP" == "1" && -z "${STEPANEL_OFFSITE_TARGET:-}" ]]; then echo 'STEPANEL_REQUIRE_OFFSITE_BACKUP=1 requires STEPANEL_OFFSITE_TARGET.' >&2; exit 1; fi
+if [[ "$INSTALL_DB_ADMIN" != "0" && "$INSTALL_DB_ADMIN" != "1" ]]; then echo 'STEPANEL_INSTALL_DB_ADMIN must be 0 or 1.' >&2; exit 1; fi
 [[ "$NODE_VERSIONS" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(,v?[0-9]+\.[0-9]+\.[0-9]+)*$ ]] || { echo "Invalid STEPANEL_NODE_VERSIONS." >&2; exit 1; }
 
 # shellcheck source=/etc/os-release
 source /etc/os-release
 if command -v apt-get >/dev/null; then PKG="apt"; APACHE_SERVICE="apache2"; elif command -v dnf >/dev/null; then PKG="dnf"; APACHE_SERVICE="httpd"; else echo "Unsupported operating system: $ID" >&2; exit 1; fi
 
-if [[ -z "$DB_ENGINE" && -t 0 ]]; then
-  read -r -p "Database engine [mysql/mariadb] (mysql): " DB_ENGINE
+if [[ -z "${STEPANEL_DB_ENGINE:-}" && -t 0 ]]; then
+  read -r -p "Database engine [mysql/mariadb/postgresql] (mysql): " DB_ENGINE
 fi
 DB_ENGINE="${DB_ENGINE:-mysql}"
-if [[ "$DB_ENGINE" != "mysql" && "$DB_ENGINE" != "mariadb" ]]; then echo "STEPANEL_DB_ENGINE must be mysql or mariadb." >&2; exit 1; fi
+DB_ENGINE="${DB_ENGINE,,}"
+if [[ "$DB_ENGINE" != "mysql" && "$DB_ENGINE" != "mariadb" && "$DB_ENGINE" != "postgresql" ]]; then echo "STEPANEL_DB_ENGINE must be mysql, mariadb, or postgresql." >&2; exit 1; fi
+if [[ -z "$DB_ADMIN_URL" ]]; then DB_ADMIN_URL="$([[ "$DB_ENGINE" == "postgresql" ]] && echo /phppgadmin || echo /phpmyadmin)"; fi
+if [[ "$DB_ADMIN_URL" != /* || "$DB_ADMIN_URL" == *$'\n'* || "$DB_ADMIN_URL" == *$'\r'* ]]; then echo 'STEPANEL_DB_ADMIN_URL must be a local URL path beginning with /.' >&2; exit 1; fi
 if [[ -z "${STEPANEL_DB_VERSION:-}" && -t 0 ]]; then
   read -r -p "${DB_ENGINE} version (default distro version): " DB_VERSION
 fi
@@ -153,9 +159,9 @@ if [[ ! "$DB_VERSION" =~ ^(default|[0-9][0-9A-Za-z.+:~-]*)$ ]]; then echo "Inval
 if [[ -n "$ADMIN_PASSWORD" ]]; then ADMIN_PASSWORD_HASH="$(printf '%s' "$ADMIN_PASSWORD" | "$ROOT_DIR/stepanel" hash-password)"; else ADMIN_PASSWORD_HASH="$EXISTING_ADMIN_PASSWORD_HASH"; fi
 unset ADMIN_PASSWORD
 
-if [[ "$DB_ENGINE" == "mysql" ]]; then DB_PACKAGE="mysql-server"; else DB_PACKAGE="mariadb-server"; fi
-if [[ "$PKG" == "apt" ]]; then DB_SERVICE="${DB_ENGINE/mysql/mysql}"; [[ "$DB_ENGINE" == "mariadb" ]] && DB_SERVICE="mariadb"; export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y php php-cli php-fpm php-mysql php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate
-else DB_SERVICE="$([[ "$DB_ENGINE" == "mysql" ]] && echo mysqld || echo mariadb)"; dnf install -y php php-cli php-fpm php-mysqlnd php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate; fi
+if [[ "$DB_ENGINE" == "mysql" ]]; then DB_PACKAGE="mysql-server"; DB_PHP_PACKAGE="php-mysql"; DB_SERVICE="mysql"; elif [[ "$DB_ENGINE" == "mariadb" ]]; then DB_PACKAGE="mariadb-server"; DB_PHP_PACKAGE="php-mysql"; DB_SERVICE="mariadb"; else DB_PACKAGE="postgresql-server"; DB_PHP_PACKAGE="php-pgsql"; DB_SERVICE="postgresql"; fi
+if [[ "$PKG" == "apt" ]]; then export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y php php-cli php-fpm "$DB_PHP_PACKAGE" php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate
+else dnf install -y php php-cli php-fpm "$DB_PHP_PACKAGE" php-curl php-mbstring php-xml acl tar gzip ca-certificates curl sudo logrotate; fi
 if [[ "$WEB_SERVER" == "apache" ]]; then
   if [[ "$PKG" == "apt" ]]; then apt-get install -y apache2; APACHE_SERVICE=apache2; else dnf install -y httpd; APACHE_SERVICE=httpd; fi
 elif [[ "$WEB_SERVER" == "openlitespeed" ]]; then
@@ -171,14 +177,39 @@ else
   APACHE_SERVICE=caddy
 fi
 
+if [[ "$DB_ENGINE" == "postgresql" && "$PKG" == "dnf" && "$DB_VERSION" != "default" ]]; then
+  dnf module list postgresql --all >/dev/null 2>&1 || { echo 'PostgreSQL AppStream metadata is unavailable; enable the appropriate RHEL-family repositories first.' >&2; exit 1; }
+  if ! dnf module list postgresql --all 2>/dev/null | awk -v requested="$DB_VERSION" '$1 == "postgresql" && $2 == requested {found=1} END {exit(found ? 0 : 1)}'; then
+    echo "Requested PostgreSQL AppStream stream $DB_VERSION is not available." >&2
+    dnf module list postgresql --all || true
+    exit 1
+  fi
+  dnf module enable -y "postgresql:$DB_VERSION"
+fi
 if [[ "$DB_VERSION" == "default" ]]; then
-  if [[ "$PKG" == "apt" ]]; then apt-get install -y "$DB_PACKAGE"; else dnf install -y "$DB_PACKAGE"; fi
+  if [[ "$PKG" == "apt" ]]; then
+    if [[ "$DB_ENGINE" == "postgresql" ]]; then apt-get install -y postgresql postgresql-contrib; else apt-get install -y "$DB_PACKAGE"; fi
+  else
+    dnf install -y "$DB_PACKAGE"
+  fi
 elif [[ "$PKG" == "apt" ]]; then
+  [[ "$DB_ENGINE" != "postgresql" ]] || { echo 'Explicit PostgreSQL versions on Debian/Ubuntu require a configured versioned PostgreSQL repository; use an AppStream stream on RHEL-family systems.' >&2; exit 1; }
   if ! apt-cache madison "$DB_PACKAGE" | awk '{print $3}' | grep -Fxq "$DB_VERSION"; then echo "Requested $DB_PACKAGE version $DB_VERSION is not available. Configure the appropriate repository first." >&2; apt-cache madison "$DB_PACKAGE" || true; exit 1; fi
   apt-get install -y "$DB_PACKAGE=$DB_VERSION"
+elif [[ "$DB_ENGINE" == "postgresql" ]]; then
+  # The selected AppStream module controls the PostgreSQL server package
+  # version; the RPM itself remains named postgresql-server.
+  dnf install -y "$DB_PACKAGE"
 else
   if ! dnf --assumeno install "$DB_PACKAGE-$DB_VERSION" >/dev/null 2>&1; then echo "Requested $DB_PACKAGE version $DB_VERSION is not available. Enable the appropriate DNF repository/module first." >&2; dnf list --showduplicates "$DB_PACKAGE" || true; exit 1; fi
   dnf install -y "$DB_PACKAGE-$DB_VERSION"
+fi
+if [[ "$INSTALL_DB_ADMIN" == "1" ]]; then
+  if [[ "$PKG" == "apt" ]]; then
+    apt-get install -y "$([[ "$DB_ENGINE" == "postgresql" ]] && echo phppgadmin || echo phpmyadmin)"
+  else
+    dnf install -y "$([[ "$DB_ENGINE" == "postgresql" ]] && echo phppgadmin || echo phpMyAdmin)"
+  fi
 fi
 
 WEB_GROUP="$([[ "$PKG" == "apt" ]] && printf www-data || printf apache)"
@@ -187,6 +218,10 @@ if [[ "$WEB_SERVER" == "caddy" ]]; then WEB_GROUP="$(id -gn caddy 2>/dev/null ||
 getent group "$WEB_GROUP" >/dev/null || { echo "Web server group $WEB_GROUP was not created by the package installation." >&2; exit 1; }
 if [[ "$WEB_SERVER" == "openlitespeed" ]]; then PROXY_ROOT=/usr/local/lsws/conf/vhosts/stepanel/proxy; VHOST_ROOT=/usr/local/lsws/conf/vhosts/stepanel/sites; elif [[ "$WEB_SERVER" == "caddy" ]]; then PROXY_ROOT=/etc/caddy/stepanel.d; VHOST_ROOT=/etc/caddy/stepanel.d; elif [[ "$PKG" == "apt" ]]; then PROXY_ROOT=/etc/apache2/stepanel-proxy; VHOST_ROOT=/etc/apache2/stepanel-sites; else PROXY_ROOT=/etc/httpd/conf.d/stepanel-proxy; VHOST_ROOT=/etc/httpd/conf.d/stepanel-sites; fi
 
+if [[ "$DB_ENGINE" == "postgresql" && "$PKG" == "dnf" && ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
+  command -v postgresql-setup >/dev/null 2>&1 || { echo 'postgresql-setup is unavailable after PostgreSQL installation.' >&2; exit 1; }
+  postgresql-setup --initdb
+fi
 systemctl enable --now "$DB_SERVICE"
 mapfile -t FPM_UNITS < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}')
 (( ${#FPM_UNITS[@]} > 0 )) || { echo 'No PHP-FPM systemd service was found after installation.' >&2; exit 1; }
@@ -194,10 +229,14 @@ systemctl enable --now "${FPM_UNITS[@]}"
 DB_LOCAL_HELPER=0
 if [[ -z "$DB_USER" ]]; then
   [[ "$DB_HOST" == "localhost" ]] || { echo "Set STEPANEL_DB_USER and STEPANEL_DB_PASSWORD for a non-local database host." >&2; exit 1; }
-  DB_LOCAL_HELPER=1
-  DB_CLIENT=mysql
-  command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
-  "$DB_CLIENT" --protocol=socket --batch --skip-column-names --execute 'SELECT 1' | grep -Fxq 1 || { echo "Local database socket administration is unavailable." >&2; exit 1; }
+  if [[ "$DB_ENGINE" == "postgresql" ]]; then
+    runuser -u postgres -- psql --tuples-only --no-align --command 'SELECT 1' | grep -Fxq 1 || { echo "Local PostgreSQL socket administration is unavailable." >&2; exit 1; }
+  else
+    DB_LOCAL_HELPER=1
+    DB_CLIENT=mysql
+    command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
+    "$DB_CLIENT" --protocol=socket --batch --skip-column-names --execute 'SELECT 1' | grep -Fxq 1 || { echo "Local database socket administration is unavailable." >&2; exit 1; }
+  fi
 else
   DB_CLIENT=mysql
   command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
@@ -493,6 +532,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_PANEL_HOSTNAME "$PANEL_HOSTNAME"
   write_env STEPANEL_DB_ENGINE "$DB_ENGINE"
   write_env STEPANEL_DB_VERSION "$DB_VERSION"
+  write_env STEPANEL_DB_ADMIN_URL "$DB_ADMIN_URL"
   write_env STEPANEL_DB_HOST "$DB_HOST"
   write_env STEPANEL_DB_USER "$DB_USER"
   write_env STEPANEL_DB_PASSWORD "$DB_PASSWORD"

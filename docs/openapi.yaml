@@ -12,6 +12,12 @@ servers:
 security:
   - sessionCookie: []
 paths:
+  /api/database:
+    get:
+      summary: Database engine and administration UI status
+      responses:
+        '200':
+          description: Selected database engine, service health, client, and matching admin UI
   /livez:
     get:
       security: []

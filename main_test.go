@@ -42,7 +42,7 @@ func TestEmbeddedDashboardTemplate(t *testing.T) {
 		t.Fatalf("parse embedded dashboard: %v", err)
 	}
 	var rendered bytes.Buffer
-	if err := view.Execute(&rendered, map[string]any{"Title": "StePanel", "Now": time.Now(), "Servers": []ServiceSummary{{Name: "apache2", Status: "active"}}, "Healthy": 1, "Alerts": 0, "Security": []SecurityCheck{}, "Jobs": []Job{}, "Capabilities": map[string]bool{}}); err != nil {
+	if err := view.Execute(&rendered, map[string]any{"Title": "StePanel", "Now": time.Now(), "Servers": []ServiceSummary{{Name: "apache2", Status: "active"}}, "Healthy": 1, "Alerts": 0, "Security": []SecurityCheck{}, "Jobs": []Job{}, "Capabilities": map[string]bool{}, "Database": DatabaseAdmin{Engine: "mysql", Version: "default", Host: "local socket", Service: "mysql", Status: "missing", Client: "mariadb", AdminProduct: "phpMyAdmin", AdminURL: "/phpmyadmin"}}); err != nil {
 		t.Fatalf("render embedded dashboard: %v", err)
 	}
 	if strings.Contains(rendered.String(), "Stephan") || !strings.Contains(rendered.String(), "Infrastructure overview") {
@@ -106,6 +106,7 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	app := &App{Config: Config{ImportRoot: root, WebRoot: root}, Auth: Auth{}, Jobs: NewJobs(), Metrics: NewMetrics()}
 	server := http.NewServeMux()
 	server.HandleFunc("/api/services", app.services)
+	server.HandleFunc("/api/database", app.database)
 	server.HandleFunc("/api/ftp", app.ftpStatus)
 	server.HandleFunc("/api/security/audit", app.securityAudit)
 	server.HandleFunc("/api/doctor", app.doctor)
@@ -115,6 +116,11 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	server.ServeHTTP(services, httptest.NewRequest(http.MethodGet, "/api/services", nil))
 	if services.Code != http.StatusOK || !strings.Contains(services.Body.String(), `"services"`) || !strings.Contains(services.Body.String(), `"vsftpd"`) {
 		t.Fatalf("unexpected services response: %d %s", services.Code, services.Body.String())
+	}
+	database := httptest.NewRecorder()
+	server.ServeHTTP(database, httptest.NewRequest(http.MethodGet, "/api/database", nil))
+	if database.Code != http.StatusOK || !strings.Contains(database.Body.String(), `"engine":"mysql"`) || !strings.Contains(database.Body.String(), `"admin_product":"phpMyAdmin"`) {
+		t.Fatalf("unexpected database response: %d %s", database.Code, database.Body.String())
 	}
 	ftp := httptest.NewRecorder()
 	server.ServeHTTP(ftp, httptest.NewRequest(http.MethodGet, "/api/ftp", nil))
