@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +39,24 @@ func TestAuditChainRecordsActorAndVerifies(t *testing.T) {
 	}
 	if len(events) != 2 || events[0].Actor != "admin" || events[0].Target != "account" || events[1].PreviousHash != events[0].Hash || events[1].Sequence != 2 {
 		t.Fatalf("audit events = %#v", events)
+	}
+}
+
+func TestAuditEventsFiltersVerifiedHistory(t *testing.T) {
+	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("q", 32))
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := AuditAs(path, "admin", "site.deployed", "account", "example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AuditAs(path, "admin", "site.backup.completed", "account", "checksum"); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{Config: Config{AuditLog: path}}
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/audit/events?action=site.deployed", nil)
+	app.auditEvents(response, request)
+	if response.Code != http.StatusOK || strings.Count(response.Body.String(), `"action":"site.deployed"`) != 1 || strings.Contains(response.Body.String(), "site.backup.completed") {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
 

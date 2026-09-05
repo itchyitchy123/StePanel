@@ -187,6 +187,7 @@ func main() {
 	mux.Handle("/api/databases/", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseResource)), http.MethodPatch, http.MethodDelete))
 	mux.Handle("/api/ftp", allowMethods(app.Auth.Require(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/audit", allowMethods(app.Auth.Require(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/audit/events", allowMethods(app.Auth.Require(http.HandlerFunc(app.auditEvents)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/doctor", allowMethods(app.Auth.Require(http.HandlerFunc(app.doctor)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/cloud", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudInventory)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/cloud/action", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudAction)), http.MethodPost))

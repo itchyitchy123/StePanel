@@ -27,6 +27,7 @@ longer-term hosting-panel roadmap.
 - Cloud inventory and audited lifecycle actions for Linode, AWS, and OpenStack, plus Linode DNS, load-balancer, and snapshot operations.
 - Strict-host-key SSH server inventory with allowlisted asynchronous restart and reboot actions.
 - Authenticated security posture endpoint at `/api/security/audit`.
+- Verified, bounded audit-event queries at `/api/audit/events` for deployment and operational history.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
 - Transactional webserver vhosts and reverse proxies with duplicate-domain checks; PHP vhost templates remain Apache-specific.
 - Read-only site-centric inventory at `/api/sites/overview`, grouping document roots, domains, Node applications, and managed database counts without exposing secrets.

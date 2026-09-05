@@ -189,6 +189,7 @@ checkbox and should be backed up first.
 | `POST` | `/api/ssh/action` | Queue an allowlisted SSH service restart or reboot |
 | `GET` | `/api/ftp` | Authenticated vsftpd status, chroot posture, and passive-port configuration |
 | `GET` | `/api/security/audit` | Authenticated configuration and security posture checks |
+| `GET` | `/api/audit/events` | Verified, bounded, filtered audit/deployment history |
 | `GET` | `/api/node/versions` | List installed NVM Node versions |
 | `POST` | `/api/node/select` | Select an installed Node version for a managed site |
 | `POST` | `/api/proxy/deploy` | Generate and reload a validated reverse proxy for the selected webserver |
