@@ -52,6 +52,29 @@ configuration directly.
 
 The container image packages only the StePanel control plane. Caddy/Apache/OpenLiteSpeed, MySQL/MariaDB or PostgreSQL, PHP, and site files remain external concerns in container deployments.
 
+## Go package boundaries
+
+The current root package is deliberately kept buildable as one `main` package:
+the HTTP handlers, shared configuration, test fixtures, and embedded dashboard
+are still tightly coupled. A mechanical directory move would obscure those
+dependencies without improving the runtime boundary.
+
+The next structural refactor should extract stable seams in this order:
+
+1. `internal/auth` for sessions, CSRF, MFA, and rate limiting.
+2. `internal/jobs` for durable state, worker admission, and per-target
+   serialization.
+3. `internal/migration` for cpmove/WPress inspection, staging, and recovery.
+4. `internal/backup` for verified archives, retention, and offsite publishing.
+5. `internal/operations` for cloud, SSH, service, and privileged-helper
+   adapters.
+
+The HTTP layer should remain an assembly point that supplies interfaces for
+these packages. Each extraction should preserve the existing tests and add a
+package-level contract test before the next boundary is moved. This makes
+package decomposition an incremental reliability improvement rather than a
+large rewrite.
+
 ```text
 Browser
    │ HTTPS via Caddy (default), Apache, or another reverse proxy

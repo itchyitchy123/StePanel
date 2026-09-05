@@ -29,6 +29,17 @@
 - Import progress, cancellation, and retry
 - Docker and distribution integration tests
 
+## 0.7 — Internal package boundaries
+
+- Extract authentication and durable job seams into `internal` packages while
+  preserving the current HTTP/API behavior.
+- Move migration and backup workflows behind interfaces that can be tested
+  without the full control-plane assembly.
+- Keep privileged helpers and external cloud/SSH adapters behind explicit
+  operation interfaces.
+- Publish a tagged binary release with checksums, SBOM, provenance, and known
+  limitations before calling the API stable.
+
 ## 1.0 — Production contract for operator-managed hosting
 
 - Stable API and migration policy
