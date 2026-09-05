@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Encrypted per-site environment storage with AES-GCM, masked secret reads,
+  ownership checks, audited replacement/deletion, and the
+  `/api/sites/environment/{site}` API. Configure `STEPANEL_ENVIRONMENT_KEY`.
+- Signed, provider-neutral Git webhook deployments through
+  `/api/sites/git-webhook`, using `X-StePanel-Signature` and the existing
+  repository allowlist, release validation, atomic activation, and audit path.
+- Shared-hosting account suspension, unsuspension, and termination endpoints;
+  suspended customers cannot establish new sessions.
 - Shared-hosting beta with administrator-provisioned customer accounts,
   independent bcrypt credentials and mandatory per-customer TOTP, persisted
   account state, `starter`/`professional`/`agency` assignment limits, and

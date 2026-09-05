@@ -329,6 +329,26 @@ paths:
         '202': {description: Vhost validated, activated, and Apache reloaded}
         '422': {description: Invalid route or missing site document root}
         '503': {description: Host validation or Apache reload failed}
+  /api/sites/environment/{site}:
+    get:
+      summary: Read site environment metadata with secrets masked
+      parameters:
+        - {name: site, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Environment metadata}
+    put:
+      summary: Replace site environment variables
+      parameters:
+        - {name: site, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: {type: object}}}}
+      responses: {'204': {description: Environment saved}}
+    delete:
+      summary: Delete all site environment variables
+      parameters:
+        - {name: site, in: path, required: true, schema: {type: string}}
+      responses: {'204': {description: Environment deleted}}
   /api/sites/git-deploy:
     post:
       summary: Checkout and atomically activate an HTTPS Git release
@@ -348,6 +368,25 @@ paths:
         '202': {description: Release activated and previous site release preserved}
         '422': {description: Invalid site, repository, or ref}
         '502': {description: Git checkout or commit identification failed}
+  /api/sites/git-webhook:
+    post:
+      summary: Deploy a signed Git webhook payload
+      parameters:
+        - {name: X-StePanel-Signature, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site, repository]
+              properties:
+                site: {type: string}
+                repository: {type: string, format: uri}
+                ref: {type: string}
+      responses:
+        '202': {description: Deployment accepted}
+        '401': {description: Invalid signature}
   /api/sites/git-rollback:
     post:
       summary: Atomically restore the latest preserved Git site release

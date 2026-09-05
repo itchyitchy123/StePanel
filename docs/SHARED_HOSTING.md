@@ -42,6 +42,21 @@ Account data is stored in `STEPANEL_ACCOUNT_STATE`, mode
 the session state as `accounts.json`; configure a dedicated absolute path when
 needed.
 
+## Site environment variables
+
+Set `STEPANEL_ENVIRONMENT_KEY` to enable encrypted site environment storage.
+Use `GET`, `PUT`, and `DELETE /api/sites/environment/{site}` to inspect metadata,
+replace variables, or remove them. Secret variables are encrypted at rest and
+are returned only as metadata; values are never returned after they are written.
+Back up the environment state file together with the encryption key.
+
+## Signed Git webhooks
+
+Set `STEPANEL_GIT_WEBHOOK_SECRET` to enable `POST /api/sites/git-webhook`.
+Send `X-StePanel-Signature: sha256=<hex HMAC-SHA256>` with a JSON payload
+containing `site`, `repository`, and an optional `ref`. Normal repository
+allowlists and release validation still apply.
+
 ## Not implemented yet
 
 Do not market this beta as unrestricted shared hosting. It does not yet provide
