@@ -14,11 +14,11 @@ import (
 )
 
 type ServiceSummary struct {
-	Name   string
-	Region string
-	Status string
-	Load   string
-	Uptime string
+	Name   string `json:"name"`
+	Region string `json:"region"`
+	Status string `json:"status"`
+	Load   string `json:"load"`
+	Uptime string `json:"uptime"`
 }
 
 var serviceStatusCache struct {
@@ -36,10 +36,20 @@ func ServiceStatus() map[string]string {
 	}
 	serviceStatusCache.RUnlock()
 	result := map[string]string{}
-	for _, service := range []string{"apache2", "httpd", "lsws", "caddy", "mysql", "mariadb", "postgresql", "postgres", "php-fpm", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
-		if _, err := exec.LookPath(service); err == nil || ((service == "postgresql" || service == "postgres") && systemdUnitExists(service)) {
+	for _, service := range []string{"apache2", "httpd", "lsws", "caddy", "mysql", "mariadb", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
+		if _, err := exec.LookPath(service); err == nil {
 			result[service] = serviceUnitState(service)
 		}
+	}
+	if state := systemdPatternState("postgresql*.service"); state != "" {
+		result["postgresql"] = state
+	} else if _, err := exec.LookPath("postgres"); err == nil {
+		result["postgresql"] = serviceUnitState("postgresql")
+	}
+	if state := systemdPatternState("php*-fpm.service"); state != "" {
+		result["php-fpm"] = state
+	} else if _, err := exec.LookPath("php-fpm"); err == nil {
+		result["php-fpm"] = serviceUnitState("php-fpm")
 	}
 	for _, apache := range []string{"apachectl", "httpd"} {
 		if _, err := exec.LookPath(apache); err != nil {
@@ -60,14 +70,31 @@ func ServiceStatus() map[string]string {
 	return result
 }
 
-func systemdUnitExists(service string) bool {
+func systemdPatternState(pattern string) string {
 	if _, err := exec.LookPath("systemctl"); err != nil {
-		return false
+		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, "systemctl", "list-unit-files", service+"*.service", "--no-legend"))
-	return err == nil && strings.TrimSpace(string(output)) != ""
+	output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, "systemctl", "list-unit-files", pattern, "--no-legend", "--plain"))
+	if err != nil || strings.TrimSpace(string(output)) == "" {
+		return ""
+	}
+	state := "installed"
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		unitState := serviceUnitState(strings.TrimSuffix(fields[0], ".service"))
+		if unitState == "active" {
+			return "active"
+		}
+		if unitState == "failed" {
+			state = "failed"
+		}
+	}
+	return state
 }
 
 func cloneServiceStatus(source map[string]string) map[string]string {
@@ -92,13 +119,14 @@ func serviceUnitState(service string) string {
 	if state == "failed" {
 		return "failed"
 	}
-	if state != "" {
+	switch state {
+	case "inactive", "activating", "deactivating", "reloading":
 		return state
 	}
 	return "unknown"
 }
 
-func ServiceSummaries() []ServiceSummary {
+func ServiceSummaries(cfg Config) []ServiceSummary {
 	status := ServiceStatus()
 	load := "n/a"
 	if data, err := os.ReadFile("/proc/loadavg"); err == nil {
@@ -116,34 +144,61 @@ func ServiceSummaries() []ServiceSummary {
 			}
 		}
 	}
-	services := []string{"apache2", "openlitespeed", "caddy", "mysql", "mariadb", "postgresql", "php-fpm", "fail2ban", "modsecurity", "exim", "dovecot", "spamassassin", "vsftpd"}
+	services := configuredServiceNames(cfg, status)
 	result := make([]ServiceSummary, 0, len(services))
 	for _, name := range services {
-		state := status[name]
-		if name == "apache2" && state == "" {
-			state = status["httpd"]
-		}
-		if name == "openlitespeed" && state == "" {
-			state = status["lsws"]
-		}
-		if name == "mysql" && state == "" {
-			state = status["mariadb"]
-		}
-		if name == "postgresql" && state == "" {
-			state = status["postgres"]
-		}
-		if name == "exim" && state == "" {
-			state = status["exim4"]
-		}
-		if name == "spamassassin" && state == "" {
-			state = status["spamd"]
-		}
+		state := resolvedServiceStatus(name, status)
 		if state == "" {
 			state = "missing"
 		}
 		result = append(result, ServiceSummary{Name: name, Region: "this server", Status: state, Load: load, Uptime: uptime})
 	}
 	return result
+}
+
+func configuredServiceNames(cfg Config, status map[string]string) []string {
+	web := map[string]string{"apache": "apache2", "openlitespeed": "openlitespeed", "caddy": "caddy"}[cfg.WebServer]
+	if web == "" {
+		web = "apache2"
+	}
+	database := cfg.DBEngine
+	if database == "" {
+		database = "mysql"
+	}
+	services := []string{web, database, "php-fpm"}
+	for _, optional := range []string{"fail2ban", "fpm-lens", "modsecurity", "exim", "dovecot", "spamassassin", "vsftpd"} {
+		if resolvedServiceStatus(optional, status) != "" {
+			services = append(services, optional)
+		}
+	}
+	return services
+}
+
+func resolvedServiceStatus(name string, status map[string]string) string {
+	state := status[name]
+	switch name {
+	case "apache2":
+		if state == "" {
+			state = status["httpd"]
+		}
+	case "openlitespeed":
+		if state == "" {
+			state = status["lsws"]
+		}
+	case "mysql":
+		if state == "" {
+			state = status["mariadb"]
+		}
+	case "exim":
+		if state == "" {
+			state = status["exim4"]
+		}
+	case "spamassassin":
+		if state == "" {
+			state = status["spamd"]
+		}
+	}
+	return state
 }
 
 func (a *App) ftpStatus(w http.ResponseWriter, r *http.Request) {

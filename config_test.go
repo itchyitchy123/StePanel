@@ -148,9 +148,11 @@ func TestValidateConfigAcceptsPostgreSQLAndAdminPath(t *testing.T) {
 }
 
 func TestValidateConfigRejectsUnsafeDatabaseAdminPath(t *testing.T) {
-	cfg := LoadConfig()
-	cfg.DBAdminURL = "https://admin.example.test"
-	if err := ValidateConfig(cfg); err == nil || !strings.Contains(err.Error(), "STEPANEL_DB_ADMIN_URL") {
-		t.Fatalf("expected database admin URL validation error, got %v", err)
+	for _, unsafe := range []string{"https://admin.example.test", "//admin.example.test", "/db/../admin", "/db?next=//evil.test", "/db\\admin", "/db//admin"} {
+		cfg := LoadConfig()
+		cfg.DBAdminURL = unsafe
+		if err := ValidateConfig(cfg); err == nil || !strings.Contains(err.Error(), "STEPANEL_DB_ADMIN_URL") {
+			t.Fatalf("expected database admin URL validation error for %q, got %v", unsafe, err)
+		}
 	}
 }

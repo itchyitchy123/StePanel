@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 type SecurityCheck struct {
@@ -49,7 +50,44 @@ func (a *App) SecurityChecks() []SecurityCheck {
 	} else {
 		checks = append(checks, SecurityCheck{Name: "Fail2Ban", Status: "warning", Severity: "medium", Detail: "Fail2Ban is not available on PATH."})
 	}
+	if database := a.DatabaseAdmin(); database.AdminInstalled {
+		checks = append(checks, databaseAdminSecurityCheck(database))
+	}
 	return checks
+}
+
+func databaseAdminSecurityCheck(database DatabaseAdmin) SecurityCheck {
+	name := database.AdminProduct + " access policy"
+	config := apacheDBAdminConfig()
+	if !database.AdminReady || config == "" {
+		return SecurityCheck{Name: name, Status: "warning", Severity: "high", Detail: "The database administrator is installed without a verified StePanel Apache IP policy."}
+	}
+	data, err := os.ReadFile(config)
+	if err != nil {
+		return SecurityCheck{Name: name, Status: "fail", Severity: "high", Detail: "The database administrator policy cannot be read."}
+	}
+	hasIPAllowlist, openToAll := apacheAccessPolicy(string(data))
+	if openToAll {
+		return SecurityCheck{Name: name, Status: "fail", Severity: "critical", Detail: "The database administrator is open to all clients; replace Require all granted with an IP allowlist."}
+	}
+	if !hasIPAllowlist {
+		return SecurityCheck{Name: name, Status: "fail", Severity: "high", Detail: "The database administrator policy has no explicit Require ip allowlist."}
+	}
+	return SecurityCheck{Name: name, Status: "pass", Severity: "low", Detail: "The database administrator has an explicit Apache IP allowlist."}
+}
+
+func apacheAccessPolicy(content string) (hasIPAllowlist, openToAll bool) {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.ToLower(strings.TrimSpace(strings.SplitN(line, "#", 2)[0]))
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[0] == "require" && fields[1] == "all" && fields[2] == "granted" {
+			openToAll = true
+		}
+		if len(fields) >= 3 && fields[0] == "require" && fields[1] == "ip" {
+			hasIPAllowlist = true
+		}
+	}
+	return hasIPAllowlist, openToAll
 }
 
 func privateDirectoryCheck(name, path string) SecurityCheck {

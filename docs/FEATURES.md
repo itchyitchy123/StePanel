@@ -14,7 +14,9 @@ longer-term hosting-panel roadmap.
 - MySQL/MariaDB/PostgreSQL selection during installation, including PostgreSQL AppStream stream selection on RHEL-family systems.
 - Optional phpMyAdmin or phpPgAdmin installation with dashboard status and management links.
 - ModSecurity and optional OWASP CRS installation in DetectionOnly mode.
-- Live service inventory for Apache, OpenLiteSpeed, Caddy, PHP-FPM, MySQL/MariaDB, Fail2Ban, and ModSecurity.
+- Configured-stack service inventory for Apache, OpenLiteSpeed, Caddy,
+  versioned PHP-FPM, MySQL/MariaDB/PostgreSQL, and detected optional services
+  such as Fail2Ban and ModSecurity.
 - Cloud inventory and audited lifecycle actions for Linode, AWS, and OpenStack, plus Linode DNS, load-balancer, and snapshot operations.
 - Strict-host-key SSH server inventory with allowlisted asynchronous restart and reboot actions.
 - Authenticated security posture endpoint at `/api/security/audit`.

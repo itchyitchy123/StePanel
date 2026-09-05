@@ -18,7 +18,9 @@ or the import, backup, or recovery filesystem is unavailable or below
 ```sh
 journalctl -u stepanel --since today
 journalctl -u apache2 --since today
-journalctl -u mysql --since today
+journalctl -u mysql --since today       # MySQL
+journalctl -u mariadb --since today     # MariaDB
+journalctl -u postgresql --since today  # PostgreSQL
 ```
 
 Audit records include distinct `actor`, `target`, sequence, previous-hash, and

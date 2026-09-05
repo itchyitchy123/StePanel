@@ -125,7 +125,9 @@ Website files are restored to `/var/www/sites/<account>/public`. SQL dumps are r
 The panel also restores All-in-One WP Migration archives. Install
 `wpress-extract`, WP-CLI, and a MariaDB/MySQL client on the host, then use the
 WordPress migration card in the dashboard. The authenticated preflight endpoint
-is `/api/wpress/preflight`.
+is `/api/wpress/preflight`. WordPress database restore is unavailable when
+PostgreSQL is the selected engine because WPress archives contain MySQL-format
+data.
 
 The restore provisions a site-prefixed database and user, imports the archive,
 converts the archive table prefix with WP-CLI serialized-data support, and can
@@ -135,6 +137,7 @@ checkbox and should be backed up first.
 ## Documentation
 
 - [Installation guide](docs/INSTALLATION.md)
+- [Database operations](docs/DATABASES.md)
 - [Node application deployment](docs/NODE_APPS.md)
 - [Node application lifecycle](docs/APP_LIFECYCLE.md)
 - [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
@@ -172,6 +175,8 @@ checkbox and should be backed up first.
 | `GET` | `/livez` | Process-only liveness probe |
 | `GET` | `/readyz` | Job persistence and managed-filesystem readiness probe |
 | `GET` | `/api/services` | Authenticated live Apache, PHP, database, Fail2Ban, and ModSecurity inventory |
+| `GET` | `/api/database` | Selected database engine, service/client health, and browser-admin readiness |
+| `GET` | `/api/capabilities` | Runtime feature availability, including database restore compatibility |
 | `GET` | `/api/cloud` | Authenticated Linode/AWS/OpenStack inventory for servers, DNS, load balancers, and snapshots |
 | `POST` | `/api/cloud/action` | Queue a cloud server start, stop, reboot, or snapshot action |
 | `GET` | `/api/cloud/dns` | List Linode DNS records |
@@ -231,10 +236,11 @@ checkbox and should be backed up first.
 | `STEPANEL_TLS_CERT_FILE` | Optional production TLS certificate path; required with `STEPANEL_TLS_KEY_FILE` for direct TLS |
 | `STEPANEL_TLS_KEY_FILE` | Optional production TLS private-key path; required with `STEPANEL_TLS_CERT_FILE` for direct TLS |
 | `STEPANEL_TLS_TERMINATED` | Set to `1` only when a trusted HTTPS reverse proxy or cluster ingress terminates TLS before forwarding to the panel |
-| `STEPANEL_DB_HOST` | Database host used for SQL imports |
-| `STEPANEL_DB_USER` | Remote database user used for SQL imports; local installs use the restricted helper |
-| `STEPANEL_DB_PASSWORD` | Database password supplied through the process environment |
+| `STEPANEL_DB_HOST` | Selected database host; MySQL/MariaDB use it for supported SQL imports |
+| `STEPANEL_DB_USER` | Remote database user used for connectivity and supported SQL imports; local MySQL/MariaDB installs use the restricted helper |
+| `STEPANEL_DB_PASSWORD` | Required password for a configured remote database user |
 | `STEPANEL_DB_ADMIN_URL` | Local URL path for the matching database administrator; defaults to `/phpmyadmin` or `/phppgadmin` |
+| `STEPANEL_DB_ADMIN_ALLOW` | Space/comma-separated IPs or CIDRs allowed to reach the Apache database-admin route; defaults to loopback only |
 | `STEPANEL_MAIL_ROOT` | Private root for staged cPanel mailbox data |
 | `STEPANEL_METRICS_PUBLIC` | Set to `1` only when Prometheus metrics must be unauthenticated |
 | `STEPANEL_STAGE_RETENTION_HOURS` | Retention for completed restore staging directories; default `168` |

@@ -175,7 +175,7 @@ func ValidateConfig(c Config) error {
 	if !dbVersionPattern.MatchString(c.DBVersion) {
 		problems = append(problems, errors.New("STEPANEL_DB_VERSION must be default or an alphanumeric AppStream/package version"))
 	}
-	if c.DBAdminURL == "" || !strings.HasPrefix(c.DBAdminURL, "/") || strings.ContainsAny(c.DBAdminURL, "\x00\r\n") {
+	if !validDBAdminURL(c.DBAdminURL) {
 		problems = append(problems, errors.New("STEPANEL_DB_ADMIN_URL must be an absolute local URL path"))
 	}
 	if err := validateOffsiteTarget(c.OffsiteTarget); err != nil {
@@ -291,6 +291,23 @@ func ValidateConfig(c Config) error {
 		}
 	}
 	return errors.Join(problems...)
+}
+
+func validDBAdminURL(value string) bool {
+	if value == "" || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.ContainsAny(value, "\x00\r\n\\?#") {
+		return false
+	}
+	for _, segment := range strings.Split(strings.TrimPrefix(value, "/"), "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+		for _, character := range segment {
+			if !((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || strings.ContainsRune("._~-", character)) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func validateIntegerEnvironment(problems *[]error, name string, minimum, maximum int64) {

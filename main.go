@@ -251,7 +251,7 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("stepanel_csrf"); err == nil {
 		csrf = cookie.Value
 	}
-	servers := ServiceSummaries()
+	servers := ServiceSummaries(a.Config)
 	healthy, alerts := 0, 0
 	for _, server := range servers {
 		switch server.Status {
@@ -277,7 +277,7 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	a.Metrics.Write(w)
 }
 func (a *App) services(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"services": ServiceSummaries(), "time": time.Now().UTC()})
+	writeJSON(w, http.StatusOK, map[string]any{"services": ServiceSummaries(a.Config), "time": time.Now().UTC()})
 }
 func (a *App) securityAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"checks": a.SecurityChecks(), "time": time.Now().UTC()})
@@ -292,9 +292,10 @@ func (a *App) Capabilities() map[string]bool {
 		}
 	}
 	return map[string]bool{
-		"certificates": commandAvailable(a.Config.Certbot),
-		"node_apps":    hasNode && commandAvailable(a.Config.AppCtl) && commandAvailable(a.Config.ProxyCtl),
-		"wpress":       allReady(WPressPreflight(a.Config)),
+		"certificates":   commandAvailable(a.Config.Certbot),
+		"mysql_restores": mysqlCompatible(a.Config),
+		"node_apps":      hasNode && commandAvailable(a.Config.AppCtl) && commandAvailable(a.Config.ProxyCtl),
+		"wpress":         allReady(WPressPreflight(a.Config)),
 	}
 }
 func (a *App) capabilities(w http.ResponseWriter, _ *http.Request) {
@@ -344,6 +345,11 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "type IMPORT to authorize restore", 400)
 		return
 	}
+	databaseRestore := r.FormValue("restore_databases") == "on"
+	if databaseRestore && !mysqlCompatible(a.Config) {
+		http.Error(w, "cPanel SQL restores require MySQL or MariaDB; PostgreSQL dump conversion is not supported", http.StatusUnprocessableEntity)
+		return
+	}
 	if err := restoreCapacity(a.Config); err != nil {
 		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 		return
@@ -376,7 +382,6 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not stage upload", 500)
 		return
 	}
-	databaseRestore := r.FormValue("restore_databases") == "on"
 	jobID, err := newJobID("cpmove")
 	if err != nil {
 		_ = os.Remove(tempPath)

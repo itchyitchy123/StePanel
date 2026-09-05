@@ -35,3 +35,21 @@ func TestFormatUptime(t *testing.T) {
 		t.Fatalf("formatUptime() = %q, want 1d 01h", got)
 	}
 }
+
+func TestDatabaseAdminSecurityCheckRequiresVerifiedPolicy(t *testing.T) {
+	check := databaseAdminSecurityCheck(DatabaseAdmin{AdminProduct: "phpMyAdmin", AdminInstalled: true})
+	if check.Status != "warning" || check.Severity != "high" {
+		t.Fatalf("database admin check = %#v", check)
+	}
+}
+
+func TestApacheAccessPolicyIgnoresComments(t *testing.T) {
+	hasIP, open := apacheAccessPolicy("# Require all granted\nRequire ip 127.0.0.1 ::1\n")
+	if !hasIP || open {
+		t.Fatalf("hasIP = %t, open = %t", hasIP, open)
+	}
+	_, open = apacheAccessPolicy("Require all granted\n")
+	if !open {
+		t.Fatal("open Apache policy was not detected")
+	}
+}

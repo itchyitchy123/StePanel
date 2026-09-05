@@ -17,7 +17,7 @@ paths:
       summary: Database engine and administration UI status
       responses:
         '200':
-          description: Selected database engine, service health, client, and matching admin UI
+          description: Selected database engine, service health, client availability, and matching admin UI readiness
   /livez:
     get:
       security: []

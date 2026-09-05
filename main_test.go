@@ -114,7 +114,7 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 
 	services := httptest.NewRecorder()
 	server.ServeHTTP(services, httptest.NewRequest(http.MethodGet, "/api/services", nil))
-	if services.Code != http.StatusOK || !strings.Contains(services.Body.String(), `"services"`) || !strings.Contains(services.Body.String(), `"vsftpd"`) {
+	if services.Code != http.StatusOK || !strings.Contains(services.Body.String(), `"services"`) || !strings.Contains(services.Body.String(), `"apache2"`) || !strings.Contains(services.Body.String(), `"mysql"`) {
 		t.Fatalf("unexpected services response: %d %s", services.Code, services.Body.String())
 	}
 	database := httptest.NewRecorder()

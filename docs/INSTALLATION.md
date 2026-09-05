@@ -33,17 +33,20 @@ sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \\
 
 For a fresh installation, the installer requires an admin password, stores only
 its bcrypt hash, generates a session secret when one is not supplied, and starts in production mode. It
-supports `mysql` and `mariadb`. Use `default` for the distribution-provided
-version, or provide an exact version available from the configured package
-repositories. The installer verifies requested versions before installing the
-database package and fails rather than silently selecting another version. For a local
-database it installs a root-owned restore helper and does not place a global
-database credential in the control-plane environment. The helper creates only
-validated new schemas, imports through a temporary account restricted to that
-schema, and records managed objects for cleanup. Set `STEPANEL_DB_HOST`,
-`STEPANEL_DB_USER`, and `STEPANEL_DB_PASSWORD` together when using a
-pre-provisioned remote database; remote credential scope remains the operator's
-responsibility.
+supports `mysql`, `mariadb`, and `postgresql`. Use `default` for the
+distribution-provided version, or provide an exact repository version for
+MySQL/MariaDB or an available AppStream stream for PostgreSQL on RHEL-family
+systems. The installer verifies requested versions before installing the
+database package and fails rather than silently selecting another version. For
+a local MySQL/MariaDB database it installs a root-owned restore helper and does
+not place a global database credential in the control-plane environment. The
+helper creates only validated new schemas, imports through a temporary account
+restricted to that schema, and records managed objects for cleanup. Local
+PostgreSQL is verified through peer-authenticated socket access. Set
+`STEPANEL_DB_HOST`, `STEPANEL_DB_USER`, and `STEPANEL_DB_PASSWORD` together
+when using a pre-provisioned remote database; remote credential scope remains
+the operator's responsibility. cPanel and WordPress SQL restore remains
+MySQL/MariaDB-only; PostgreSQL dump conversion must be performed separately.
 When upgrading an older installation, verify that `STEPANEL_DBCTL` is active
 and restores succeed before manually removing the legacy `stepanel_admin`
 database account; the installer does not delete an existing account implicitly.
@@ -116,6 +119,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_PANEL_HOSTNAME` | Fully qualified domain | Required Apache virtual-host name |
 | `STEPANEL_DB_VERSION` | `default` or an exact package version | Requested repository version |
 | `STEPANEL_INSTALL_DB_ADMIN` | `0` or `1` | Install phpMyAdmin or phpPgAdmin for the selected engine |
+| `STEPANEL_DB_ADMIN_ALLOW` | IP/CIDR list | Apache access allowlist for the database administrator; defaults to `127.0.0.1 ::1` |
 | `STEPANEL_INSTALL_MAIL` | `0` or `1` | Install Exim, Dovecot, SpamAssassin, and enable mailbox staging |
 | `STEPANEL_ACTIVATE_MAIL` | `0` or `1` | Explicitly enable/start the installed mail services |
 | `STEPANEL_INSTALL_FTP` | `0` or `1` | Install vsftpd with local-user chrooting; newly installed service remains disabled |
@@ -201,6 +205,16 @@ StePanel intentionally does not generate an unreviewed PHP proxy route.
 These tools have their own authentication and must be protected with HTTPS
 plus an IP allowlist, VPN, or equivalent access control; the StePanel session
 does not authenticate them.
+
+The generated Apache route is restricted to loopback by default. Set
+`STEPANEL_DB_ADMIN_ALLOW` to a space- or comma-separated list of trusted IP
+addresses or CIDR networks only when remote browser access is required. The
+installer validates the values and Apache configuration before service reload.
+Prefer a VPN or management network; never expose either administrator to the
+public internet solely because it has its own login form.
+The generated Alias is included only inside the StePanel virtual host; Debian
+package-wide phpMyAdmin/phpPgAdmin aliases are disabled to prevent the console
+from appearing on customer domains.
 
 ## Operations
 

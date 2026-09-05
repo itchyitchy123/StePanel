@@ -41,6 +41,7 @@ ADMIN_TOTP_SECRET="${STEPANEL_ADMIN_TOTP_SECRET:-}"
 DB_ENGINE="${STEPANEL_DB_ENGINE:-}"; DB_VERSION="${STEPANEL_DB_VERSION:-default}"
 INSTALL_DB_ADMIN="${STEPANEL_INSTALL_DB_ADMIN:-0}"
 DB_ADMIN_URL="${STEPANEL_DB_ADMIN_URL:-}"
+DB_ADMIN_ALLOW="${STEPANEL_DB_ADMIN_ALLOW:-127.0.0.1 ::1}"
 DB_HOST="${STEPANEL_DB_HOST:-localhost}"; DB_USER="${STEPANEL_DB_USER:-}"; DB_PASSWORD="${STEPANEL_DB_PASSWORD:-}"
 INSTALL_FAIL2BAN="${STEPANEL_INSTALL_FAIL2BAN:-0}"; FAIL2BAN_JAILS="${STEPANEL_FAIL2BAN_JAILS:-auto}"; FAIL2BAN_IGNORE_IP="${STEPANEL_FAIL2BAN_IGNORE_IP:-}"
 FPM_LENS_BINARY="${STEPANEL_FPM_LENS_BINARY:-}"
@@ -107,6 +108,7 @@ if [[ ! "$PANEL_HOSTNAME" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A
 if [[ "$ADMIN_PASSWORD" == *$'\n'* || "$ADMIN_PASSWORD" == *$'\r'* || "$SESSION_SECRET" == *$'\n'* || "$SESSION_SECRET" == *$'\r'* || "$DB_PASSWORD" == *$'\n'* || "$DB_PASSWORD" == *$'\r'* ]]; then echo "Credentials may not contain newlines." >&2; exit 1; fi
 if [[ "$DB_HOST" == *$'\n'* || "$DB_HOST" == *$'\r'* ]]; then echo "STEPANEL_DB_HOST may not contain newlines." >&2; exit 1; fi
 if [[ -n "$DB_USER" && ! "$DB_USER" =~ ^[A-Za-z0-9_]{1,32}$ ]]; then echo "STEPANEL_DB_USER must contain only letters, numbers, and underscores." >&2; exit 1; fi
+if [[ -n "$DB_USER" && -z "$DB_PASSWORD" ]]; then echo "STEPANEL_DB_PASSWORD is required when STEPANEL_DB_USER is set." >&2; exit 1; fi
 if [[ "$WPRESS_EXTRACT" == *$'\n'* || "$WPRESS_EXTRACT" == *$'\r'* || "$WPCLI" == *$'\n'* || "$WPCLI" == *$'\r'* ]]; then echo "WordPress executable paths may not contain newlines." >&2; exit 1; fi
 if [[ "$WPRESS_EXTRACT" != /* || "$WPCLI" != /* ]]; then echo "STEPANEL_WPRESS_EXTRACT and STEPANEL_WPCLI must be absolute executable paths in production." >&2; exit 1; fi
 
@@ -150,7 +152,12 @@ DB_ENGINE="${DB_ENGINE:-mysql}"
 DB_ENGINE="${DB_ENGINE,,}"
 if [[ "$DB_ENGINE" != "mysql" && "$DB_ENGINE" != "mariadb" && "$DB_ENGINE" != "postgresql" ]]; then echo "STEPANEL_DB_ENGINE must be mysql, mariadb, or postgresql." >&2; exit 1; fi
 if [[ -z "$DB_ADMIN_URL" ]]; then DB_ADMIN_URL="$([[ "$DB_ENGINE" == "postgresql" ]] && echo /phppgadmin || echo /phpmyadmin)"; fi
-if [[ "$DB_ADMIN_URL" != /* || "$DB_ADMIN_URL" == *$'\n'* || "$DB_ADMIN_URL" == *$'\r'* ]]; then echo 'STEPANEL_DB_ADMIN_URL must be a local URL path beginning with /.' >&2; exit 1; fi
+if [[ ! "$DB_ADMIN_URL" =~ ^/[A-Za-z0-9][A-Za-z0-9._~/-]*$ || "$DB_ADMIN_URL" == //* || "$DB_ADMIN_URL" == *//* || "$DB_ADMIN_URL" == *"/../"* || "$DB_ADMIN_URL" == *"/./"* || "$DB_ADMIN_URL" == *"/.." || "$DB_ADMIN_URL" == *"/." ]]; then echo 'STEPANEL_DB_ADMIN_URL must be a normalized local URL path beginning with /.' >&2; exit 1; fi
+DB_ADMIN_ALLOW="${DB_ADMIN_ALLOW//,/ }"
+for db_admin_network in $DB_ADMIN_ALLOW; do
+  [[ "$db_admin_network" =~ ^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$ ]] || { echo 'STEPANEL_DB_ADMIN_ALLOW must contain only IP addresses or CIDR networks.' >&2; exit 1; }
+done
+[[ -n "${DB_ADMIN_ALLOW// /}" ]] || { echo 'STEPANEL_DB_ADMIN_ALLOW must contain at least one trusted IP address or network.' >&2; exit 1; }
 if [[ -z "${STEPANEL_DB_VERSION:-}" && -t 0 ]]; then
   read -r -p "${DB_ENGINE} version (default distro version): " DB_VERSION
 fi
@@ -205,11 +212,16 @@ else
   dnf install -y "$DB_PACKAGE-$DB_VERSION"
 fi
 if [[ "$INSTALL_DB_ADMIN" == "1" ]]; then
+  if [[ "$DB_ENGINE" == "postgresql" ]]; then DB_ADMIN_PACKAGE=phppgadmin; DB_ADMIN_PATH=/usr/share/phppgadmin; else DB_ADMIN_PACKAGE=phpmyadmin; DB_ADMIN_PATH=/usr/share/phpmyadmin; fi
   if [[ "$PKG" == "apt" ]]; then
-    apt-get install -y "$([[ "$DB_ENGINE" == "postgresql" ]] && echo phppgadmin || echo phpmyadmin)"
+    dpkg-query -W "$DB_ADMIN_PACKAGE" >/dev/null 2>&1 || apt-cache show "$DB_ADMIN_PACKAGE" >/dev/null 2>&1 || { echo "$DB_ADMIN_PACKAGE is unavailable; enable the distribution repository that provides it." >&2; exit 1; }
+    apt-get install -y "$DB_ADMIN_PACKAGE"
   else
-    dnf install -y "$([[ "$DB_ENGINE" == "postgresql" ]] && echo phppgadmin || echo phpMyAdmin)"
+    if [[ "$DB_ADMIN_PACKAGE" == "phpmyadmin" ]]; then DB_ADMIN_PACKAGE=phpMyAdmin; DB_ADMIN_PATH=/usr/share/phpMyAdmin; else DB_ADMIN_PATH=/usr/share/phpPgAdmin; fi
+    rpm -q "$DB_ADMIN_PACKAGE" >/dev/null 2>&1 || dnf --quiet list --available "$DB_ADMIN_PACKAGE" >/dev/null 2>&1 || { echo "$DB_ADMIN_PACKAGE is unavailable; enable a trusted repository such as EPEL that provides it." >&2; exit 1; }
+    dnf install -y "$DB_ADMIN_PACKAGE"
   fi
+  [[ -d "$DB_ADMIN_PATH" ]] || { echo "$DB_ADMIN_PACKAGE installed but its expected application directory $DB_ADMIN_PATH is missing." >&2; exit 1; }
 fi
 
 WEB_GROUP="$([[ "$PKG" == "apt" ]] && printf www-data || printf apache)"
@@ -238,9 +250,15 @@ if [[ -z "$DB_USER" ]]; then
     "$DB_CLIENT" --protocol=socket --batch --skip-column-names --execute 'SELECT 1' | grep -Fxq 1 || { echo "Local database socket administration is unavailable." >&2; exit 1; }
   fi
 else
-  DB_CLIENT=mysql
-  command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
-  if ! env MYSQL_PWD="$DB_PASSWORD" "$DB_CLIENT" --host "$DB_HOST" --user "$DB_USER" --batch --skip-column-names --execute 'SELECT 1' | grep -Fxq 1; then
+  if [[ "$DB_ENGINE" == "postgresql" ]]; then
+    DB_CLIENT=psql
+    database_check=(env PGPASSWORD="$DB_PASSWORD" psql --no-password --host "$DB_HOST" --username "$DB_USER" --dbname postgres --tuples-only --no-align --set ON_ERROR_STOP=1 --command 'SELECT 1')
+  else
+    DB_CLIENT=mysql
+    command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
+    database_check=(env MYSQL_PWD="$DB_PASSWORD" "$DB_CLIENT" --host "$DB_HOST" --user "$DB_USER" --batch --skip-column-names --execute 'SELECT 1')
+  fi
+  if ! "${database_check[@]}" | grep -Fxq 1; then
     echo "StePanel database credentials could not connect to $DB_HOST." >&2
     exit 1
   fi
@@ -431,6 +449,11 @@ managed_targets=(
   /etc/sudoers.d/stepanel
   /etc/stepanel-audit.key
 )
+if [[ "$INSTALL_DB_ADMIN" == "1" && "$WEB_SERVER" == "apache" && "$PKG" == "apt" ]]; then
+  managed_targets+=(/etc/apache2/stepanel-panel/db-admin.conf /etc/apache2/conf-enabled/phpmyadmin.conf /etc/apache2/conf-enabled/phppgadmin.conf)
+elif [[ "$INSTALL_DB_ADMIN" == "1" && "$WEB_SERVER" == "apache" ]]; then
+  managed_targets+=(/etc/httpd/stepanel-panel/db-admin.conf)
+fi
 if [[ "$WEB_SERVER" == "apache" && "$PKG" == "apt" ]]; then
   managed_targets+=(/etc/apache2/sites-available/stepanel.conf /etc/apache2/sites-enabled/stepanel.conf /etc/apache2/conf-enabled/stepanel-proxy.conf)
 elif [[ "$WEB_SERVER" == "apache" ]]; then
@@ -495,6 +518,22 @@ elif [[ "$WEB_SERVER" == "apache" ]]; then
   sed -i "s/panel\.example\.com/$PANEL_HOSTNAME/g" /etc/httpd/conf.d/stepanel.conf
   if [[ -f /etc/httpd/conf.d/stepanel-proxy.conf ]]; then printf '%s\n' '# Superseded by the root-owned stepanel-proxy directory.' > /etc/httpd/conf.d/stepanel-proxy.conf; fi
 fi
+if [[ "$INSTALL_DB_ADMIN" == "1" && "$WEB_SERVER" == "apache" ]]; then
+  db_admin_conf="$([[ "$PKG" == "apt" ]] && echo /etc/apache2/stepanel-panel/db-admin.conf || echo /etc/httpd/stepanel-panel/db-admin.conf)"
+  db_admin_candidate="$INSTALL_TXN/stepanel-db-admin.conf"
+  install -d -m 0755 -o root -g root "$(dirname "$db_admin_conf")"
+  {
+    printf 'Alias "%s" "%s"\n' "$DB_ADMIN_URL" "$DB_ADMIN_PATH"
+    printf '<Directory "%s">\n' "$DB_ADMIN_PATH"
+    printf '    DirectoryIndex index.php\n    Options SymLinksIfOwnerMatch\n    AllowOverride None\n    Require ip %s\n</Directory>\n' "$DB_ADMIN_ALLOW"
+  } > "$db_admin_candidate"
+  rm -f "$db_admin_conf"
+  install -m 0644 -o root -g root "$db_admin_candidate" "$db_admin_conf"
+  if [[ "$PKG" == "apt" ]]; then
+    a2disconf phpmyadmin >/dev/null 2>&1 || true
+    a2disconf phppgadmin >/dev/null 2>&1 || true
+  fi
+fi
 if [[ "$WEB_SERVER" == "caddy" ]]; then
   install -d -m 0755 /etc/caddy/stepanel.d
   printf '%s\n' "$PANEL_HOSTNAME {" $'\treverse_proxy 127.0.0.1:8080' '}' > /etc/caddy/stepanel.d/panel.caddy
@@ -533,6 +572,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_DB_ENGINE "$DB_ENGINE"
   write_env STEPANEL_DB_VERSION "$DB_VERSION"
   write_env STEPANEL_DB_ADMIN_URL "$DB_ADMIN_URL"
+  write_env STEPANEL_DB_ADMIN_ALLOW "$DB_ADMIN_ALLOW"
   write_env STEPANEL_DB_HOST "$DB_HOST"
   write_env STEPANEL_DB_USER "$DB_USER"
   write_env STEPANEL_DB_PASSWORD "$DB_PASSWORD"

@@ -32,6 +32,22 @@ No unreleased changes.
 - Synchronized release metadata to version `0.5.0` across Go, Helm, OpenAPI,
   and release documentation.
 
+### Fixed
+
+- Service inventory now reports only the configured web/database stack and
+  detected optional services, eliminating false production alerts for engines
+  that were intentionally not installed.
+- Versioned PHP-FPM and PostgreSQL systemd units are detected without exposing
+  raw system-bus errors as service states.
+- PostgreSQL remote credential checks now use non-interactive `psql`; cPanel
+  and WordPress MySQL restore controls are clearly disabled in PostgreSQL mode.
+- Database-admin URLs reject scheme-relative, traversal, query, fragment, and
+  malformed paths. Installer-managed Apache routes are IP-restricted to
+  loopback by default through `STEPANEL_DB_ADMIN_ALLOW` and scoped to the panel
+  virtual host rather than every hosted domain.
+- The database operations card now collapses correctly on narrow screens, and
+  admin-console readiness requires a valid Apache configuration target.
+
 ## [0.4.0] - 2026-09-04
 
 ### Added

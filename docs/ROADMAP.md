@@ -3,7 +3,7 @@
 ## 0.1 — Foundation
 
 - Authenticated operations dashboard
-- LAMP installation with MySQL/MariaDB selection
+- PHP hosting installation with MySQL/MariaDB/PostgreSQL selection
 - Safe asynchronous cpmove staging and restore
 - Health, metrics, tamper-evident audit events, and release automation
 - Live service inventory and authenticated security posture checks

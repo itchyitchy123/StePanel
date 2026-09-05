@@ -55,6 +55,7 @@ func WPressPreflight(cfg Config) map[string]bool {
 		"wpress_extract":  commandAvailable(cfg.WPressExtract),
 		"wp_cli":          commandAvailable(cfg.WPCLI),
 		"database_client": commandAvailable("mariadb") || commandAvailable("mysql"),
+		"mysql_engine":    mysqlCompatible(cfg),
 	}
 }
 
