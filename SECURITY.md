@@ -20,5 +20,16 @@ Please allow time for investigation and a coordinated fix before public disclosu
 StePanel provides administrator authentication, but production deployments
 must still run behind HTTPS and a reverse proxy. Do not expose port 8080/8090
 directly to the internet. Restrict backup staging permissions and use
-snapshots before restoring into a live site. MFA/OIDC, role separation, and a
-privileged restore helper remain roadmap items.
+snapshots before restoring into a live site. Production startup requires TOTP
+MFA and an enforced offsite backup target; OIDC, role separation, and a
+customer-scoped privileged restore workflow remain roadmap items.
+
+Privileged helpers use context-bound commands with bounded output. Cloud CLI
+children receive provider credentials and region settings but not panel-specific
+session, audit, or database secrets. Keep provider credential files and rclone
+configuration outside site-controlled paths and restrict them to the service
+account or root.
+
+Malformed recovery journals are moved into a root-only quarantine directory for
+operator review. Do not delete quarantined journals until the related site,
+database, and audit state has been reconciled.

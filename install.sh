@@ -99,6 +99,7 @@ ADMIN_TOTP_SECRET=${ADMIN_TOTP_SECRET// /}
 ADMIN_TOTP_SECRET=${ADMIN_TOTP_SECRET^^}
 totp_remainder=$(( ${#ADMIN_TOTP_SECRET} % 8 ))
 if [[ -n $ADMIN_TOTP_SECRET && ( ! $ADMIN_TOTP_SECRET =~ ^[A-Z2-7]{32,}$ || ! $totp_remainder =~ ^(0|2|4|5|7)$ ) ]]; then echo 'STEPANEL_ADMIN_TOTP_SECRET must be an unpadded base32 secret of at least 160 bits.' >&2; exit 1; fi
+if [[ -z $ADMIN_TOTP_SECRET ]]; then echo 'Production installations require STEPANEL_ADMIN_TOTP_SECRET for administrator MFA.' >&2; exit 1; fi
 if [[ ! "$ADMIN_USERNAME" =~ ^[a-zA-Z0-9._-]{1,64}$ || "$ADMIN_USERNAME" == *$'\n'* || "$ADMIN_USERNAME" == *$'\r'* ]]; then echo "Invalid admin username." >&2; exit 1; fi
 if [[ -z "$PANEL_HOSTNAME" ]]; then
   for panel_config in /etc/apache2/sites-available/stepanel.conf /etc/httpd/conf.d/stepanel.conf /etc/caddy/stepanel.d/panel.caddy; do
@@ -149,6 +150,7 @@ if [[ ! $MAX_UPLOAD_BYTES =~ ^[1-9][0-9]*$ ]] || (( MAX_UPLOAD_BYTES > 214748364
 if [[ ! $MAX_ARCHIVE_ENTRIES =~ ^[1-9][0-9]*$ ]] || (( MAX_ARCHIVE_ENTRIES > 1000000 )); then echo 'STEPANEL_MAX_ARCHIVE_ENTRIES must be between 1 and 1000000.' >&2; exit 1; fi
 if [[ ! $MAX_CONCURRENT_JOBS =~ ^[1-9][0-9]*$ ]] || (( MAX_CONCURRENT_JOBS > 32 )); then echo 'STEPANEL_MAX_CONCURRENT_JOBS must be between 1 and 32.' >&2; exit 1; fi
 if [[ "$REQUIRE_OFFSITE_BACKUP" != "0" && "$REQUIRE_OFFSITE_BACKUP" != "1" ]]; then echo 'STEPANEL_REQUIRE_OFFSITE_BACKUP must be 0 or 1.' >&2; exit 1; fi
+if [[ "$REQUIRE_OFFSITE_BACKUP" != "1" ]]; then echo 'Production installations require STEPANEL_REQUIRE_OFFSITE_BACKUP=1.' >&2; exit 1; fi
 if [[ "$REQUIRE_OFFSITE_BACKUP" == "1" && -z "${STEPANEL_OFFSITE_TARGET:-}" ]]; then echo 'STEPANEL_REQUIRE_OFFSITE_BACKUP=1 requires STEPANEL_OFFSITE_TARGET.' >&2; exit 1; fi
 if [[ "$INSTALL_DB_ADMIN" != "0" && "$INSTALL_DB_ADMIN" != "1" ]]; then echo 'STEPANEL_INSTALL_DB_ADMIN must be 0 or 1.' >&2; exit 1; fi
 [[ "$NODE_VERSIONS" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(,v?[0-9]+\.[0-9]+\.[0-9]+)*$ ]] || { echo "Invalid STEPANEL_NODE_VERSIONS." >&2; exit 1; }

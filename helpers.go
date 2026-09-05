@@ -10,15 +10,24 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const maxCommandOutput = 64 << 10
+const helperCommandTimeout = 2 * time.Minute
 
-type boundedBuffer struct{ data []byte }
+type boundedBuffer struct {
+	data  []byte
+	limit int
+}
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
-	if len(b.data) < maxCommandOutput {
-		n := maxCommandOutput - len(b.data)
+	limit := b.limit
+	if limit <= 0 {
+		limit = maxCommandOutput
+	}
+	if len(b.data) < limit {
+		n := limit - len(b.data)
 		if n > len(p) {
 			n = len(p)
 		}
@@ -28,7 +37,15 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 }
 
 func runBoundedCommand(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+	return runBoundedCommandLimit(cmd, maxCommandOutput)
+}
+
+func runBoundedCommandLimit(cmd *exec.Cmd, limit int) ([]byte, error) {
 	var output boundedBuffer
+	output.limit = limit
+	if limit > maxCommandOutput {
+		output.data = make([]byte, 0, min(limit, 64<<10))
+	}
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	err := cmd.Run()
@@ -60,11 +77,25 @@ func helperCommandContext(ctx context.Context, cfg Config, path string, args ...
 	return exec.CommandContext(ctx, cfg.Sudo, append([]string{"--non-interactive", path}, args...)...)
 }
 
+// runHelperCommand executes a privileged helper with a bounded lifetime and
+// bounded output. Every request-facing helper invocation should use this
+// wrapper so a wedged systemd/webserver/database helper cannot exhaust worker
+// capacity or prevent graceful shutdown.
+func runHelperCommand(ctx context.Context, cfg Config, path string, args ...string) error {
+	if path == "" {
+		return errors.New("helper is not configured")
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, helperCommandTimeout)
+	defer cancel()
+	_, err := runBoundedCommand(commandCtx, helperCommandContext(commandCtx, cfg, path, args...))
+	return err
+}
+
 func siteHelper(cfg Config, action, site string) error {
 	if cfg.SiteCtl == "" {
 		return nil
 	}
-	return helperCommand(cfg, cfg.SiteCtl, action, site).Run()
+	return runHelperCommand(context.Background(), cfg, cfg.SiteCtl, action, site)
 }
 
 // openRegularNoFollow opens a file descriptor without following symlinks and

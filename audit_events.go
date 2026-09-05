@@ -2,7 +2,10 @@ package main
 
 import (
 	"bufio"
+	"crypto/hmac"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -31,37 +34,68 @@ func (a *App) auditEvents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"events": []AuditEvent{}, "integrity": "empty"})
 		return
 	}
-	if err := VerifyAuditLog(path); err != nil {
+	target, action := r.URL.Query().Get("target"), r.URL.Query().Get("action")
+	events, err := readVerifiedAuditEvents(path, target, action, limit)
+	if err != nil {
 		http.Error(w, "audit integrity verification failed", http.StatusServiceUnavailable)
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events, "integrity": "verified"})
+}
+
+// readVerifiedAuditEvents verifies and filters in one pass. This avoids the
+// previous full-file verification followed by a second full-file scan.
+func readVerifiedAuditEvents(path, target, action string, limit int) ([]AuditEvent, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		http.Error(w, "unable to read audit log", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	defer file.Close()
-	target, action := r.URL.Query().Get("target"), r.URL.Query().Get("action")
 	events := make([]AuditEvent, 0, limit)
+	var first, previous *AuditEvent
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 4096), 1<<20)
 	for scanner.Scan() {
 		var event AuditEvent
-		if json.Unmarshal(scanner.Bytes(), &event) != nil {
-			http.Error(w, "audit log contains invalid JSON", http.StatusServiceUnavailable)
-			return
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return nil, err
 		}
-		if target != "" && !strings.EqualFold(target, event.Target) || action != "" && !strings.EqualFold(action, event.Action) {
-			continue
+		if err := validateAuditEvent(event); err != nil {
+			return nil, err
 		}
-		events = append(events, event)
-		if len(events) > limit {
-			events = events[1:]
+		expected, err := hashAuditEvent(event)
+		if err != nil || !hmac.Equal([]byte(expected), []byte(event.Hash)) {
+			return nil, fmt.Errorf("audit event %d has an invalid signature", event.Sequence)
+		}
+		if previous != nil && (event.Sequence != previous.Sequence+1 || event.PreviousHash != previous.Hash) {
+			return nil, fmt.Errorf("audit chain breaks at event %d", event.Sequence)
+		}
+		copyEvent := event
+		if first == nil {
+			first = &copyEvent
+		}
+		previous = &copyEvent
+		if target == "" || strings.EqualFold(target, event.Target) {
+			if action == "" || strings.EqualFold(action, event.Action) {
+				events = append(events, event)
+				if len(events) > limit {
+					events = events[1:]
+				}
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		http.Error(w, "unable to scan audit log", http.StatusServiceUnavailable)
-		return
+		return nil, err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": events, "integrity": "verified"})
+	if previous == nil {
+		return nil, errors.New("audit log contains no signed events")
+	}
+	state, err := loadAuditState(path + ".state")
+	if err != nil {
+		return nil, err
+	}
+	if state.Sequence != previous.Sequence || state.Hash != previous.Hash || first.Sequence != state.FirstSequence || first.PreviousHash != state.FirstPreviousHash {
+		return nil, errors.New("audit chain state does not match the log")
+	}
+	return events, nil
 }

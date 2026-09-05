@@ -47,8 +47,11 @@ jobs:
           STEPANEL_LISTEN=127.0.0.1:18090 \
           STEPANEL_TLS_TERMINATED=0 \
           STEPANEL_ADMIN_PASSWORD=ci-only-password \
+          STEPANEL_ADMIN_TOTP_SECRET=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP \
           STEPANEL_SESSION_SECRET=ci-session-secret-012345678901234567890123 \
           STEPANEL_AUDIT_KEY=ci-audit-key-012345678901234567890123456789 \
+          STEPANEL_OFFSITE_TARGET=s3:stepanel-ci \
+          STEPANEL_REQUIRE_OFFSITE_BACKUP=1 \
           STEPANEL_IMPORT_ROOT="$smoke_root/imports" \
           STEPANEL_BACKUP_ROOT="$smoke_root/backups" \
           STEPANEL_WEB_ROOT="$smoke_root/www" \

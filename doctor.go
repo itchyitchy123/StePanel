@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -43,6 +44,7 @@ func (a *App) doctor(w http.ResponseWriter, _ *http.Request) {
 	}
 	checks = append(checks, doctorService(dbService, dbState))
 	checks = append(checks, doctorService("php-fpm", services["php-fpm"]))
+	checks = append(checks, a.productionReadinessChecks()...)
 	if cfg.OffsiteTarget != "" {
 		if err := validateOffsiteTarget(cfg.OffsiteTarget); err != nil {
 			checks = append(checks, DoctorCheck{"offsite-backup", "fail", "high", err.Error()})
@@ -91,6 +93,48 @@ func (a *App) doctor(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"checks": checks, "failed": failed, "healthy": failed == 0, "time": time.Now().UTC()})
+}
+
+// productionReadinessChecks makes the controls that are easy to miss during a
+// first installation visible to automation and to the operator dashboard. It
+// intentionally does not claim that an offsite target is immutable or that a
+// reverse proxy is correctly configured; those require provider and network
+// evidence outside this process.
+func (a *App) productionReadinessChecks() []DoctorCheck {
+	if !a.Config.Production {
+		return []DoctorCheck{{"production-profile", "warn", "medium", "development profile is active; production launch checks are not enforced"}}
+	}
+	checks := []DoctorCheck{}
+	if a.Auth.TOTPEnabled {
+		checks = append(checks, DoctorCheck{"administrator-mfa", "pass", "low", "TOTP is required for administrator login"})
+	} else {
+		checks = append(checks, DoctorCheck{"administrator-mfa", "fail", "high", "production launch requires STEPANEL_ADMIN_TOTP_SECRET"})
+	}
+	if a.Config.RequireOffsiteBackup && a.Config.OffsiteTarget != "" {
+		checks = append(checks, DoctorCheck{"offsite-backup-policy", "pass", "low", "production startup requires an offsite backup target"})
+	} else {
+		checks = append(checks, DoctorCheck{"offsite-backup-policy", "fail", "high", "set STEPANEL_OFFSITE_TARGET and STEPANEL_REQUIRE_OFFSITE_BACKUP=1 before production launch"})
+	}
+	switch {
+	case a.Config.TLSCertFile != "" || a.Config.TLSKeyFile != "":
+		if a.Config.TLSCertFile == "" || a.Config.TLSKeyFile == "" {
+			checks = append(checks, DoctorCheck{"transport-security", "fail", "high", "both TLS certificate and key must be configured"})
+		} else if _, err := tls.LoadX509KeyPair(a.Config.TLSCertFile, a.Config.TLSKeyFile); err != nil {
+			checks = append(checks, DoctorCheck{"transport-security", "fail", "high", fmt.Sprintf("TLS certificate/key cannot be loaded: %v", err)})
+		} else {
+			checks = append(checks, DoctorCheck{"transport-security", "pass", "low", "the control plane serves a readable, matching application certificate and key"})
+		}
+	case a.Config.TLSAlreadyTerminated:
+		checks = append(checks, DoctorCheck{"transport-security", "warn", "medium", "TLS termination is asserted by configuration; verify the proxy redirects HTTP and protects cookies"})
+	default:
+		checks = append(checks, DoctorCheck{"transport-security", "warn", "medium", "control plane relies on a loopback listener; verify its external reverse proxy enforces HTTPS"})
+	}
+	if err := AuditPersistenceError(); err != nil {
+		checks = append(checks, DoctorCheck{"audit-persistence", "fail", "critical", err.Error()})
+	} else {
+		checks = append(checks, DoctorCheck{"audit-persistence", "pass", "low", "audit chain is writable"})
+	}
+	return checks
 }
 
 func doctorService(name, state string) DoctorCheck {

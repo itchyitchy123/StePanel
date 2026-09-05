@@ -114,6 +114,33 @@ func TestRecoverSiteTransactionsRollsBackInterruptedSite(t *testing.T) {
 	assertTestFile(t, filepath.Join(home, "index.html"), "old")
 }
 
+func TestRecoverSiteTransactionsQuarantinesMalformedEntryAndContinues(t *testing.T) {
+	root := t.TempDir()
+	recovery := filepath.Join(root, ".stepanel-recovery")
+	if err := os.MkdirAll(filepath.Join(recovery, "bad"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(recovery, "bad", "transaction.json"), []byte("not-json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "site", "public")
+	writeTestFile(t, filepath.Join(home, "index.html"), "old")
+	txn, err := BeginSiteTransaction(recovery, home, "test.restore", "site")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(home, "index.html"), "partial")
+	recovered, err := RecoverSiteTransactions(recovery)
+	if err == nil || len(recovered) != 1 || recovered[0] != txn.ID {
+		t.Fatalf("recovered=%#v err=%v", recovered, err)
+	}
+	assertTestFile(t, filepath.Join(home, "index.html"), "old")
+	entries, readErr := os.ReadDir(filepath.Join(recovery, "quarantine"))
+	if readErr != nil || len(entries) != 1 {
+		t.Fatalf("quarantine entries=%d err=%v", len(entries), readErr)
+	}
+}
+
 func TestSiteTransactionRollbackReconcilesRestoredBackup(t *testing.T) {
 	root := t.TempDir()
 	recovery := filepath.Join(root, ".stepanel-recovery")

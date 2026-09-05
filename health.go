@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"time"
@@ -63,6 +64,17 @@ func readinessChecks(cfg Config, jobs *Jobs) map[string]ReadinessCheck {
 		"import_capacity":   cfg.ImportRoot,
 		"job_capacity":      filepath.Dir(cfg.JobState),
 		"recovery_capacity": filepath.Dir(cfg.RecoveryRoot),
+	}
+	if cfg.RequireOffsiteBackup {
+		if cfg.OffsiteTarget == "" {
+			checks["offsite_backup"] = ReadinessCheck{Ready: false, Detail: "offsite backup is required but no target is configured"}
+		} else if err := validateOffsiteTarget(cfg.OffsiteTarget); err != nil {
+			checks["offsite_backup"] = ReadinessCheck{Ready: false, Detail: err.Error()}
+		} else if _, err := exec.LookPath("rclone"); err != nil {
+			checks["offsite_backup"] = ReadinessCheck{Ready: false, Detail: "rclone is required for the configured offsite backup target"}
+		} else {
+			checks["offsite_backup"] = ReadinessCheck{Ready: true, Detail: "rclone and an offsite target are configured"}
+		}
 	}
 	names := make([]string, 0, len(roots))
 	for name := range roots {

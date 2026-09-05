@@ -117,7 +117,7 @@ func main() {
 	}
 	databaseRecoveries, err := RecoverTransactionDatabases(cfg, cfg.RecoveryRoot)
 	if err != nil {
-		log.Fatalf("recover interrupted database transactions: %v", err)
+		log.Printf("recover interrupted database transactions (continuing with isolated failures): %v", err)
 	}
 	for _, id := range databaseRecoveries {
 		log.Printf("recovered databases for interrupted site transaction %s", id)
@@ -125,15 +125,17 @@ func main() {
 	}
 	recovered, err := RecoverSiteTransactions(cfg.RecoveryRoot)
 	if err != nil {
-		log.Fatalf("recover interrupted site transactions: %v", err)
+		log.Printf("recover interrupted site transactions (continuing with isolated failures): %v", err)
 	}
 	for _, id := range recovered {
 		txn, loadErr := loadSiteTransaction(filepath.Join(cfg.RecoveryRoot, id))
 		if loadErr != nil {
-			log.Fatalf("load recovered site transaction %s: %v", id, loadErr)
+			log.Printf("load recovered site transaction %s: %v", id, loadErr)
+			continue
 		}
 		if sealErr := siteHelper(cfg, "seal", txn.Site); sealErr != nil {
-			log.Fatalf("seal recovered site transaction %s: %v", id, sealErr)
+			log.Printf("seal recovered site transaction %s: %v", id, sealErr)
+			continue
 		}
 		log.Printf("recovered interrupted site transaction %s", id)
 		_ = Audit(cfg.AuditLog, "restore.recovered", id, "previous site restored after unclean shutdown")
@@ -168,6 +170,8 @@ func main() {
 	if !app.Auth.Enabled {
 		log.Println("warning: authentication is disabled; set STEPANEL_ADMIN_PASSWORD and STEPANEL_SESSION_SECRET")
 	}
+	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	go func() {
 		scheduleTicker := time.NewTicker(time.Minute)
 		cleanupTicker := time.NewTicker(15 * time.Minute)
@@ -175,6 +179,8 @@ func main() {
 		defer cleanupTicker.Stop()
 		for {
 			select {
+			case <-runCtx.Done():
+				return
 			case <-scheduleTicker.C:
 				app.runDueBackups()
 			case <-cleanupTicker.C:
@@ -262,9 +268,7 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	<-signals
+	<-runCtx.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
@@ -418,6 +422,12 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		temp.Close()
 		_ = os.Remove(tempPath)
 		http.Error(w, "could not stage upload", 500)
+		return
+	}
+	if err = temp.Sync(); err != nil {
+		_ = temp.Close()
+		_ = os.Remove(tempPath)
+		http.Error(w, "could not durably stage upload", 500)
 		return
 	}
 	if err = temp.Close(); err != nil {

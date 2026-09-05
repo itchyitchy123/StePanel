@@ -74,6 +74,9 @@ func TestValidateConfigRejectsUnknownWebServer(t *testing.T) {
 
 func TestValidateConfigRequiresDedicatedProductionAuditKey(t *testing.T) {
 	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_ADMIN_TOTP_SECRET", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP")
+	t.Setenv("STEPANEL_REQUIRE_OFFSITE_BACKUP", "1")
+	t.Setenv("STEPANEL_OFFSITE_TARGET", "s3:stepanel-test")
 	t.Setenv("STEPANEL_SESSION_SECRET", "12345678901234567890123456789012")
 	t.Setenv("STEPANEL_AUDIT_KEY", "12345678901234567890123456789012")
 	cfg := LoadConfig()
@@ -90,6 +93,9 @@ func TestValidateConfigRequiresDedicatedProductionAuditKey(t *testing.T) {
 
 func TestValidateConfigRequiresLoopbackOrTLSInProduction(t *testing.T) {
 	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_ADMIN_TOTP_SECRET", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP")
+	t.Setenv("STEPANEL_REQUIRE_OFFSITE_BACKUP", "1")
+	t.Setenv("STEPANEL_OFFSITE_TARGET", "s3:stepanel-test")
 	t.Setenv("STEPANEL_AUDIT_KEY", "audit-key-that-is-long-enough-123456")
 	t.Setenv("STEPANEL_SESSION_SECRET", "session-key-that-is-long-enough-123456")
 	cfg := LoadConfig()
@@ -101,6 +107,9 @@ func TestValidateConfigRequiresLoopbackOrTLSInProduction(t *testing.T) {
 
 func TestValidateConfigAcceptsProductionTLSPaths(t *testing.T) {
 	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_ADMIN_TOTP_SECRET", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP")
+	t.Setenv("STEPANEL_REQUIRE_OFFSITE_BACKUP", "1")
+	t.Setenv("STEPANEL_OFFSITE_TARGET", "s3:stepanel-test")
 	t.Setenv("STEPANEL_AUDIT_KEY", "audit-key-that-is-long-enough-123456")
 	t.Setenv("STEPANEL_SESSION_SECRET", "session-key-that-is-long-enough-123456")
 	cfg := LoadConfig()
@@ -128,6 +137,9 @@ func TestValidateConfigAcceptsProductionTLSPaths(t *testing.T) {
 
 func TestValidateConfigAcceptsTrustedTLSTermination(t *testing.T) {
 	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_ADMIN_TOTP_SECRET", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP")
+	t.Setenv("STEPANEL_REQUIRE_OFFSITE_BACKUP", "1")
+	t.Setenv("STEPANEL_OFFSITE_TARGET", "s3:stepanel-test")
 	t.Setenv("STEPANEL_TLS_TERMINATED", "1")
 	t.Setenv("STEPANEL_AUDIT_KEY", "audit-key-that-is-long-enough-123456")
 	t.Setenv("STEPANEL_SESSION_SECRET", "session-key-that-is-long-enough-123456")
@@ -167,6 +179,15 @@ func TestValidateConfigRequiresOffsiteBackupTarget(t *testing.T) {
 	t.Setenv("STEPANEL_REQUIRE_OFFSITE_BACKUP", "1")
 	if err := ValidateConfig(LoadConfig()); err == nil || !strings.Contains(err.Error(), "STEPANEL_OFFSITE_TARGET") {
 		t.Fatalf("expected offsite target validation error, got %v", err)
+	}
+}
+
+func TestValidateConfigProductionRequiresMFAAndOffsitePolicy(t *testing.T) {
+	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_AUDIT_KEY", "audit-key-that-is-long-enough-123456")
+	t.Setenv("STEPANEL_SESSION_SECRET", "session-key-that-is-long-enough-123456")
+	if err := ValidateConfig(LoadConfig()); err == nil || !strings.Contains(err.Error(), "administrator MFA") || !strings.Contains(err.Error(), "STEPANEL_REQUIRE_OFFSITE_BACKUP") {
+		t.Fatalf("expected production MFA and offsite policy errors, got %v", err)
 	}
 }
 

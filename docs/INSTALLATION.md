@@ -86,6 +86,7 @@ upgrade, and review package-manager history if dependency installation fails.
 
 Set `STEPANEL_ADMIN_TOTP_SECRET` to an unpadded base32 secret representing at
 least 20 random bytes to require a six-digit authenticator code at every login.
+Production configuration validation rejects startup without this setting.
 Generate a secret on the host and enroll the same value manually in the
 operator's authenticator before running the installer:
 
@@ -104,6 +105,11 @@ attribution is required.
 The installer generates a separate audit HMAC key, stores a root-only copy at
 `/etc/stepanel-audit.key`, and supplies it through the protected service
 environment. Preserve both in the host's secret backup.
+
+Production validation also requires `STEPANEL_REQUIRE_OFFSITE_BACKUP=1` and a
+valid `STEPANEL_OFFSITE_TARGET` (for example `s3:my-bucket/stepanel`). Configure
+and test the rclone destination before starting production; provider-side
+retention lock/immutability remains an operator responsibility.
 
 FTP is opt-in. Installation alone leaves a newly installed vsftpd service
 disabled. Activation requires `STEPANEL_ACTIVATE_FTP=1` and readable certificate

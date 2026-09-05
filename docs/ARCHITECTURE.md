@@ -32,13 +32,17 @@ StePanel HTTP server
 When configured, StePanel provides administrator authentication with signed,
 expiring, server-revocable sessions persisted in private control-plane state.
 Password-hash rotation invalidates previously issued sessions. CSRF tokens for mutating forms, login rate limiting,
-optional replay-resistant TOTP, security response headers, and JSONL audit
+production-required replay-resistant TOTP, security response headers, and JSONL audit
 events with explicit actor and target identity. Unsafe authenticated requests
 must persist a preflight audit event before reaching their handler. The default
 Caddy host integration provides automatic HTTPS; alternate deployments must
 provide an equivalent TLS boundary. Webserver snippets and
 systemd application units cross narrowly validated, root-owned helper
 boundaries; the service account cannot edit active configuration directly.
+Request-facing helper invocations are context-bound with bounded lifetimes and
+output, preventing a wedged service command from exhausting worker capacity.
+Cloud CLI children receive a filtered environment so panel session, audit, and
+database secrets are not inherited.
 Local database administration crosses a root-owned helper boundary. Uploaded
 SQL is executed through an ephemeral account with privileges only on the newly
 created target schema. Remote database deployments use the explicitly supplied
@@ -68,8 +72,11 @@ unclean shutdown as failed. Site overwrites use a transaction journal on the
 site filesystem: the previous document root is moved into the recovery
 transaction before deployment. Newly created database names and users are
 journaled in the same transaction before provisioning. Startup removes managed
-databases first and then rolls back every uncommitted site transaction.
-Recovery artifacts are retained for the same period as restore staging data.
+databases first and then rolls back every uncommitted site transaction. Invalid
+journals are quarantined for inspection and do not block unrelated recovery;
+site rollback is withheld while database cleanup is incomplete. Scheduler and
+cleanup goroutines are cancelled during graceful shutdown. Recovery artifacts
+are retained for the same period as restore staging data.
 
 ## Verified backups
 
@@ -99,3 +106,8 @@ sequence and previous-hash fields. Separately HMAC-authenticated chain state sur
 log rotation and detects tail/prefix inconsistency; startup and readiness expose
 audit persistence failures. This is tamper evidence, not immutable storage, so
 the log, state, and key still require independent retention.
+
+The authenticated audit-events endpoint verifies and filters the chain in one
+file pass. Query cost is still proportional to retained log size, so large
+installations should rotate only after verification and retain indexed exports
+for historical searches.

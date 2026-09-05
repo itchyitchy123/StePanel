@@ -50,14 +50,23 @@ provide access to a host's systemd, Apache, PHP-FPM, or database services.
 1. Install on a supported Debian/Ubuntu or RHEL-family host.
 2. Select the database engine and exact repository version where required.
 3. Set a panel FQDN, strong administrator credentials, session secret, and
-   optional MFA before exposing the service.
+   `STEPANEL_ADMIN_TOTP_SECRET` before exposing the service. MFA is a release
+   gate even though an existing installation can still start without it.
 4. For Caddy, verify DNS, ports 80/443, automatic HTTPS, secure cookies, and
    HSTS; for Apache/OpenLiteSpeed, complete an equivalent TLS termination
    configuration before exposure.
 5. Confirm `/livez` and authenticated `/readyz` responses.
 6. Verify helper paths, ownership, sudo policy, writable roots, and free space.
 7. Run a small backup and restore rehearsal before accepting customer data.
-8. Configure log rotation, metrics scraping, alerting, and host-level backups.
+8. Configure an offsite target and set `STEPANEL_REQUIRE_OFFSITE_BACKUP=1`.
+   The target must be independently administered and use provider retention
+   lock/immutability where available; StePanel cannot prove that property.
+9. Configure log rotation, metrics scraping, alerting, and host-level backups.
+10. Run authenticated `/api/doctor` and resolve every `fail` result before
+    launch. A transport-security `warn` requires documented reverse-proxy
+    evidence; a `pass` only means the application TLS files are configured.
+11. Exercise SIGTERM shutdown during a disposable restore and confirm active
+    jobs drain, schedulers stop, and readiness reports the service as draining.
 
 ## Day-to-day operations
 
@@ -67,6 +76,11 @@ audit persistence error, or readiness failure as an operational incident rather
 than retrying blindly. Long-running jobs survive graceful shutdown; after an
 unclean shutdown, inspect reconciled failed jobs and transaction journals before
 starting another restore.
+
+If startup reports quarantined recovery journals, preserve the quarantine
+directory and reconcile the affected resources before removal. A database
+cleanup failure intentionally prevents the corresponding site rollback so the
+operator can recover both resources safely.
 
 Use the job status endpoint for polling instead of repeatedly submitting the
 same operation. Restore admission limits and per-target locks are intentional:

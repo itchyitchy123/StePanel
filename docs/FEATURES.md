@@ -7,7 +7,8 @@ longer-term hosting-panel roadmap.
 ## Available now
 
 - Go HTTP control plane with signed administrator sessions.
-- CSRF protection, login rate limiting, optional TOTP MFA, and security headers.
+- CSRF protection, login rate limiting, production-required TOTP MFA, and
+  security headers.
 - Actor-attributed, HMAC-linked JSONL audit logs with offline verification.
 - cPanel `cpmove` inspection with archive traversal and size checks.
 - Asynchronous website and optional SQL restore jobs.
@@ -44,6 +45,11 @@ longer-term hosting-panel roadmap.
 - Independently verified site and registered-database backups.
 - Scheduled local backup jobs with retention controls and optional enforced
   offsite-target policy.
+- Privileged helper execution has bounded contexts/output, shutdown cancels
+  background schedulers, malformed recovery journals are quarantined, and
+  migration uploads are synced before queue admission.
+- Cloud inventory preserves partial results with explicit warnings, bounds
+  provider output, and removes panel-specific secrets from CLI environments.
 - Site restore/delete operations, including deterministic site IDs and
   per-site Node.js runtime selection where supported by the target host.
 - Production deployment examples with immutable image/action references,

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +35,21 @@ func TestReadyzChecksPersistentCapacity(t *testing.T) {
 	response = httptest.NewRecorder()
 	app.readyz(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestReadyzFailsWhenRequiredOffsiteBackupIsNotConfigured(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{filepath.Join(root, "imports"), filepath.Join(root, "backups"), filepath.Join(root, "sites")} {
+		if err := os.MkdirAll(path, 0750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := &App{Config: Config{ImportRoot: filepath.Join(root, "imports"), BackupRoot: filepath.Join(root, "backups"), JobState: filepath.Join(root, "jobs.json"), RecoveryRoot: filepath.Join(root, "sites", ".stepanel-recovery"), MinFreeBytes: 1, RequireOffsiteBackup: true}, Jobs: NewJobs()}
+	response := httptest.NewRecorder()
+	app.readyz(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "offsite_backup") {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }

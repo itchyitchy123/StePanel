@@ -189,7 +189,7 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site document root does not exist", http.StatusUnprocessableEntity)
 		return
 	}
-	if a.Config.VHostCtl == "" || helperCommand(a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain).Run() != nil {
+	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain); err != nil {
 		http.Error(w, "site helper rejected the route or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}
@@ -219,7 +219,7 @@ func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site route not found", http.StatusNotFound)
 		return
 	}
-	if a.Config.VHostCtl == "" || helperCommand(a.Config, a.Config.VHostCtl, "delete", name).Run() != nil {
+	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "delete", name); err != nil {
 		http.Error(w, "site route was not removed because validation or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}

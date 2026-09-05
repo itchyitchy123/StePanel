@@ -105,7 +105,7 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	name := proxyConfigName(a.Config.WebServer, input.Site, input.Domain)
 	path := filepath.Join(a.Config.ProxyRoot, name)
-	if a.Config.ProxyCtl == "" || helperCommand(a.Config, a.Config.ProxyCtl, "apply", input.Site, strings.ToLower(input.Domain), backend).Run() != nil {
+	if err := runHelperCommand(r.Context(), a.Config, a.Config.ProxyCtl, "apply", input.Site, strings.ToLower(input.Domain), backend); err != nil {
 		http.Error(w, "proxy helper rejected the configuration or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}
@@ -168,7 +168,7 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "proxy not found", http.StatusNotFound)
 		return
 	}
-	if a.Config.ProxyCtl == "" || helperCommand(a.Config, a.Config.ProxyCtl, "delete", name).Run() != nil {
+	if err := runHelperCommand(r.Context(), a.Config, a.Config.ProxyCtl, "delete", name); err != nil {
 		http.Error(w, "proxy was not removed because the helper or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}

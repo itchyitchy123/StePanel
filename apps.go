@@ -97,7 +97,7 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to save app manifest", 500)
 		return
 	}
-	if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, "apply", app.Site, strings.TrimPrefix(app.Version, "v"), app.Root, strconv.Itoa(app.Port)).Run() != nil {
+	if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "apply", app.Site, strings.TrimPrefix(app.Version, "v"), app.Root, strconv.Itoa(app.Port)); err != nil {
 		if hadPrevious {
 			_ = writeAtomic(manifestPath, previous, 0600)
 		} else {
@@ -147,25 +147,25 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "current app manifest is invalid", 500)
 			return
 		}
-		if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, "apply", previous.Site, strings.TrimPrefix(previous.Version, "v"), previous.Root, strconv.Itoa(previous.Port)).Run() != nil {
+		if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "apply", previous.Site, strings.TrimPrefix(previous.Version, "v"), previous.Root, strconv.Itoa(previous.Port)); err != nil {
 			http.Error(w, "rollback failed", 502)
 			return
 		}
 		if err := writeAtomic(manifestPath+".bak", current, 0600); err != nil {
-			_ = helperCommand(a.Config, a.Config.AppCtl, "apply", currentManifest.Site, strings.TrimPrefix(currentManifest.Version, "v"), currentManifest.Root, strconv.Itoa(currentManifest.Port)).Run()
+			_ = runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "apply", currentManifest.Site, strings.TrimPrefix(currentManifest.Version, "v"), currentManifest.Root, strconv.Itoa(currentManifest.Port))
 			http.Error(w, "rollback state could not be persisted; the previous process configuration was restored", 500)
 			return
 		}
 		if err := writeAtomic(manifestPath, backup, 0600); err != nil {
 			_ = writeAtomic(manifestPath+".bak", backup, 0600)
-			if helperCommand(a.Config, a.Config.AppCtl, "apply", currentManifest.Site, strings.TrimPrefix(currentManifest.Version, "v"), currentManifest.Root, strconv.Itoa(currentManifest.Port)).Run() != nil {
+			if runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "apply", currentManifest.Site, strings.TrimPrefix(currentManifest.Version, "v"), currentManifest.Root, strconv.Itoa(currentManifest.Port)) != nil {
 				http.Error(w, "rollback manifest failed and the prior process configuration could not be restored", 503)
 				return
 			}
 			http.Error(w, "rollback manifest could not be persisted; the previous process configuration was restored", 500)
 			return
 		}
-	} else if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, parts[1], parts[0]).Run() != nil {
+	} else if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, parts[1], parts[0]); err != nil {
 		http.Error(w, "app action failed", 502)
 		return
 	}

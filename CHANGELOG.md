@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Production-readiness doctor checks for mandatory launch MFA, enforced
+  offsite-backup policy, transport-security boundary, and audit persistence.
+- Production configuration now refuses startup unless administrator TOTP MFA
+  and an enforced offsite-backup target are configured.
+- Readiness now fails when a required offsite target or its `rclone` dependency
+  is unavailable; backup inventory validates archive metadata and supports
+  bounded, site-filtered responses.
 - Caddy `.htaccess` migration through the dashboard, API, and
   `stepanel convert-htaccess` CLI. Common front-controller and redirect rules
   are translated, unsupported lines are reported, and partial application
@@ -47,6 +54,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   site workspace and constrained Git deployment behavior.
 - Updated the deterministic dashboard SVG/PNG preview to include managed sites
   and clearly identify it as a development preview after version 0.6.0.
+- Privileged helper calls now use bounded contexts/output, and shutdown cancels
+  backup scheduling and cleanup loops before waiting for jobs.
+- Cloud inventory preserves partial results with warnings, bounds provider
+  output, and removes panel-specific secrets from cloud CLI environments.
+- Audit-event filtering verifies and selects recent matches in one pass; backup
+  inventory skips isolated corrupt artifacts instead of hiding healthy backups.
 
 ### Fixed
 
@@ -70,6 +83,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Git releases now enforce an exact host allowlist, disable interactive Git
   credentials, reject symlink/device payloads and oversized trees, remove
   repository metadata before activation, and serialize release switching.
+- Malformed recovery journals are quarantined while valid transactions
+  continue recovering; site rollback is withheld when database cleanup is
+  incomplete.
+- cPanel and WordPress uploads are synced before durable restore jobs are
+  accepted, reducing the risk of queued jobs referencing truncated staging
+  files.
 
 ## [0.6.0] - 2026-09-04
 

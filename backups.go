@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,7 +52,24 @@ type BackupResult struct {
 func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		manifests, err := listBackups(a.Config.BackupRoot)
+		site := strings.TrimSpace(r.URL.Query().Get("site"))
+		if site != "" {
+			site = safeUser(site)
+			if site == "" {
+				http.Error(w, "invalid site", http.StatusUnprocessableEntity)
+				return
+			}
+		}
+		limit := 100
+		if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+			parsed, parseErr := strconv.Atoi(rawLimit)
+			if parseErr != nil || parsed < 1 || parsed > 500 {
+				http.Error(w, "limit must be between 1 and 500", http.StatusUnprocessableEntity)
+				return
+			}
+			limit = parsed
+		}
+		manifests, err := listBackupsPage(a.Config.BackupRoot, site, limit)
 		if err != nil {
 			http.Error(w, "unable to inspect backups", http.StatusInternalServerError)
 			return
@@ -527,8 +545,15 @@ func readBackupManifest(root string) (BackupManifest, error) {
 		return BackupManifest{}, err
 	}
 	var manifest BackupManifest
-	if err := json.Unmarshal(data, &manifest); err != nil || manifest.Version != 1 || safeUser(manifest.Site) == "" || manifest.Archive != "backup.tar.gz" {
+	if err := json.Unmarshal(data, &manifest); err != nil || manifest.Version != 1 || safeUser(manifest.Site) == "" || manifest.Archive != "backup.tar.gz" || manifest.VerifiedAt.IsZero() || manifest.Bytes < 0 || len(manifest.ArchiveSHA256) != sha256.Size*2 {
 		return BackupManifest{}, errors.New("invalid backup manifest")
+	}
+	if _, err := hex.DecodeString(manifest.ArchiveSHA256); err != nil {
+		return BackupManifest{}, errors.New("invalid backup archive checksum")
+	}
+	archiveInfo, err := os.Stat(filepath.Join(root, manifest.Archive))
+	if err != nil || !archiveInfo.Mode().IsRegular() || archiveInfo.Size() != manifest.Bytes {
+		return BackupManifest{}, errors.New("backup archive is missing or does not match its manifest")
 	}
 	return manifest, nil
 }
@@ -545,6 +570,10 @@ func VerifySiteBackup(root string) (BackupManifest, error) {
 }
 
 func listBackups(root string) ([]BackupResult, error) {
+	return listBackupsPage(root, "", 0)
+}
+
+func listBackupsPage(root, site string, limit int) ([]BackupResult, error) {
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return []BackupResult{}, nil
@@ -560,10 +589,19 @@ func listBackups(root string) ([]BackupResult, error) {
 		path := filepath.Join(root, entry.Name())
 		manifest, err := readBackupManifest(path)
 		if err != nil {
-			return nil, fmt.Errorf("invalid backup manifest %s", entry.Name())
+			// A damaged artifact must not hide every healthy backup from the
+			// operator. Keep it visible in logs for quarantine/repair workflows.
+			log.Printf("skip invalid backup manifest %s: %v", entry.Name(), err)
+			continue
+		}
+		if site != "" && manifest.Site != site {
+			continue
 		}
 		backups = append(backups, BackupResult{Site: manifest.Site, Path: path, ArchiveSHA256: manifest.ArchiveSHA256, Bytes: manifest.Bytes, Databases: manifest.Databases, VerifiedAt: manifest.VerifiedAt})
 	}
 	sort.Slice(backups, func(i, j int) bool { return backups[i].VerifiedAt.After(backups[j].VerifiedAt) })
+	if limit > 0 && len(backups) > limit {
+		backups = backups[:limit]
+	}
 	return backups, nil
 }

@@ -6,6 +6,8 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -153,6 +155,43 @@ func TestAuthenticatedOperationalEndpoints(t *testing.T) {
 	if cloud.Code != http.StatusOK || !strings.Contains(cloud.Body.String(), "no cloud provider configured") {
 		t.Fatalf("unexpected cloud response: %d %s", cloud.Code, cloud.Body.String())
 	}
+}
+
+func TestProductionReadinessChecksRequireMFAAndOffsiteBackup(t *testing.T) {
+	app := &App{Config: Config{Production: true}, Auth: Auth{}}
+	checks := app.productionReadinessChecks()
+	failed := map[string]bool{}
+	for _, check := range checks {
+		if check.Status == "fail" {
+			failed[check.Name] = true
+		}
+	}
+	if !failed["administrator-mfa"] || !failed["offsite-backup-policy"] {
+		t.Fatalf("production readiness checks = %#v, want MFA and offsite policy failures", checks)
+	}
+}
+
+func TestProductionDoctorRejectsUnreadableTLSPair(t *testing.T) {
+	root := t.TempDir()
+	cert := filepath.Join(root, "cert.pem")
+	key := filepath.Join(root, "key.pem")
+	if err := os.WriteFile(cert, []byte("not a certificate"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key, []byte("not a key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{Config: Config{Production: true, TLSCertFile: cert, TLSKeyFile: key}, Auth: Auth{TOTPEnabled: true}}
+	checks := app.productionReadinessChecks()
+	for _, check := range checks {
+		if check.Name == "transport-security" {
+			if check.Status != "fail" {
+				t.Fatalf("TLS check = %#v, want fail", check)
+			}
+			return
+		}
+	}
+	t.Fatal("transport-security check was not returned")
 }
 
 func TestAuthRequireProtectsAPI(t *testing.T) {

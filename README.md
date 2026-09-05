@@ -205,7 +205,7 @@ checkbox and should be backed up first.
 | `GET` | `/api/sites/overview/<site>` | Inspect one site workspace without exposing credentials or environment values |
 | `POST` | `/api/sites/deploy` | Validate and route a domain to its isolated PHP-FPM pool |
 | `DELETE` | `/api/sites/<config>` | Remove a managed PHP site vhost |
-| `GET` | `/api/backups` | List private verified backup artifacts |
+| `GET` | `/api/backups` | List private verified backup artifacts (`site` filter; `limit` 1–500, default 100) |
 | `POST` | `/api/backups` | Queue a site backup with optional managed database dumps |
 | `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |

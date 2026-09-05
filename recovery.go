@@ -273,25 +273,39 @@ func RecoverSiteTransactions(root string) ([]string, error) {
 		return nil, err
 	}
 	recovered := []string{}
+	var failures []error
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || entry.Name() == "quarantine" {
 			continue
 		}
 		dir := filepath.Join(root, entry.Name())
 		txn, err := loadSiteTransaction(dir)
 		if err != nil {
-			return recovered, err
+			if quarantineErr := quarantineRecoveryTransaction(root, dir, err); quarantineErr != nil {
+				failures = append(failures, fmt.Errorf("quarantine invalid transaction %s: %w (original: %v)", entry.Name(), quarantineErr, err))
+			} else {
+				failures = append(failures, fmt.Errorf("quarantined invalid transaction %s: %w", entry.Name(), err))
+			}
+			continue
 		}
 		if txn.State == "committed" || txn.State == "rolled-back" {
 			continue
 		}
+		if len(txn.Databases) > 0 {
+			// Database cleanup must complete before the site is restored. Leaving
+			// the transaction pending is safer than rolling back the filesystem
+			// while managed databases from the interrupted restore remain active.
+			failures = append(failures, fmt.Errorf("recover transaction %s: database cleanup is incomplete", txn.ID))
+			continue
+		}
 		if err := txn.Rollback(); err != nil {
-			return recovered, fmt.Errorf("recover transaction %s: %w", txn.ID, err)
+			failures = append(failures, fmt.Errorf("recover transaction %s: %w", txn.ID, err))
+			continue
 		}
 		recovered = append(recovered, txn.ID)
 	}
 	sort.Strings(recovered)
-	return recovered, nil
+	return recovered, errors.Join(failures...)
 }
 
 func RecoverTransactionDatabases(cfg Config, root string) ([]string, error) {
@@ -303,24 +317,46 @@ func RecoverTransactionDatabases(cfg Config, root string) ([]string, error) {
 		return nil, err
 	}
 	recovered := []string{}
+	var failures []error
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || entry.Name() == "quarantine" {
 			continue
 		}
 		txn, err := loadSiteTransaction(filepath.Join(root, entry.Name()))
 		if err != nil {
-			return recovered, err
+			if quarantineErr := quarantineRecoveryTransaction(root, filepath.Join(root, entry.Name()), err); quarantineErr != nil {
+				failures = append(failures, fmt.Errorf("quarantine invalid transaction %s: %w (original: %v)", entry.Name(), quarantineErr, err))
+			} else {
+				failures = append(failures, fmt.Errorf("quarantined invalid transaction %s: %w", entry.Name(), err))
+			}
+			continue
 		}
 		if txn.State == "committed" || txn.State == "rolled-back" || len(txn.Databases) == 0 {
 			continue
 		}
 		if err := txn.cleanupDatabases(cfg); err != nil {
-			return recovered, fmt.Errorf("recover transaction %s databases: %w", txn.ID, err)
+			failures = append(failures, fmt.Errorf("recover transaction %s databases: %w", txn.ID, err))
+			continue
 		}
 		recovered = append(recovered, txn.ID)
 	}
 	sort.Strings(recovered)
-	return recovered, nil
+	return recovered, errors.Join(failures...)
+}
+
+// quarantineRecoveryTransaction removes malformed journal entries from the
+// active recovery scan while preserving them for operator inspection.
+func quarantineRecoveryTransaction(root, dir string, cause error) error {
+	quarantine := filepath.Join(root, "quarantine")
+	if err := os.MkdirAll(quarantine, 0700); err != nil {
+		return err
+	}
+	name := filepath.Base(dir) + "-" + time.Now().UTC().Format("20060102-150405.000000000")
+	target := filepath.Join(quarantine, name)
+	if err := os.Rename(dir, target); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(target, "quarantine-reason.txt"), []byte(cause.Error()+"\n"), 0600)
 }
 
 func loadSiteTransaction(dir string) (*SiteTransaction, error) {
@@ -362,7 +398,7 @@ func CleanupSiteTransactions(root string, maxAge time.Duration) error {
 	}
 	cutoff := time.Now().Add(-maxAge)
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || entry.Name() == "quarantine" {
 			continue
 		}
 		dir := filepath.Join(root, entry.Name())

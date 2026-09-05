@@ -291,6 +291,12 @@ func ValidateConfig(c Config) error {
 		}
 	}
 	if c.Production {
+		if strings.TrimSpace(os.Getenv("STEPANEL_ADMIN_TOTP_SECRET")) == "" {
+			problems = append(problems, errors.New("production requires STEPANEL_ADMIN_TOTP_SECRET for administrator MFA"))
+		}
+		if !c.RequireOffsiteBackup || c.OffsiteTarget == "" {
+			problems = append(problems, errors.New("production requires STEPANEL_REQUIRE_OFFSITE_BACKUP=1 and STEPANEL_OFFSITE_TARGET"))
+		}
 		if raw := os.Getenv("STEPANEL_TLS_TERMINATED"); raw != "" && raw != "0" && raw != "1" {
 			problems = append(problems, errors.New("STEPANEL_TLS_TERMINATED must be 0 or 1"))
 		}

@@ -22,12 +22,12 @@
       <section class="metrics customer-summary" aria-label="Hosting summary">
         <article class="metric"><span class="metric-label">Managed sites</span><strong id="siteCount">—</strong><span class="metric-note">Sites you can manage here</span></article>
         <article class="metric"><span class="metric-label">Domains connected</span><strong id="domainCount">—</strong><span class="metric-note">Managed web routes</span></article>
-        <article class="metric"><span class="metric-label">Verified backups</span><strong id="backupCount">—</strong><span class="metric-note">Private recovery points</span></article>
+        <article class="metric"><span class="metric-label">Latest verified backup</span><strong id="backupFreshness">—</strong><span class="metric-note">Private recovery point freshness</span></article>
         <article class="metric"><span class="metric-label">Needs attention</span><strong>{{ .Alerts }}</strong><span class="metric-note warning">Platform checks requiring review</span></article>
       </section>
       <section class="onboarding" id="start" aria-labelledby="start-heading">
         <div><p class="eyebrow">Start here</p><h2 id="start-heading">What would you like to do?</h2><p>Start with a guided task. You can review the result and recent activity from the site workspace.</p></div>
-        <div class="onboarding-actions"><a class="task-card" href="#migrations"><strong>Move a cPanel site</strong><span>Inspect a backup before restoring it.</span></a><a class="task-card" href="#sites"><strong>Connect a domain</strong><span>Add a managed route to an existing site.</span></a><a class="task-card" href="#deploy"><strong>Deploy an application</strong><span>Route a local Node application safely.</span></a></div>
+        <div class="onboarding-actions"><a class="task-card" href="#migrations"><strong>Move a cPanel site</strong><span>Inspect a backup before restoring it.</span></a><a class="task-card" href="#sites"><strong>Add a domain route</strong><span>Route a domain to an existing site, then update DNS.</span></a><a class="task-card" href="#deploy"><strong>Deploy an application</strong><span>Route a local Node application safely.</span></a></div>
       </section>
       <section class="security-card" id="security">
         <div class="section-heading"><div><p class="eyebrow">Security posture</p><h2>Operator checks</h2></div><a class="quiet-action" href="/api/security/audit">View JSON →</a></div>

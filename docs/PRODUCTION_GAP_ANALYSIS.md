@@ -8,7 +8,8 @@ platform.
 ## Implemented production controls
 
 - Authentication has secure session cookies, CSRF protection, login
-  throttling, optional TOTP, security headers, and tamper-evident audit logs.
+  throttling, production-required TOTP, security headers, and tamper-evident
+  audit logs.
 - Restore archives are inspected before extraction and restore work is
   asynchronous.
 - Backups can be independently verified. Deployments can require an offsite
@@ -23,6 +24,15 @@ platform.
   failures, and stuck jobs.
 - Operators have site-centric inventory, constrained pre-built HTTPS Git
   deployment with atomic file rollback, and credential-safe database detail.
+- Privileged helper calls are bounded by context and output limits, and
+  background scheduling is cancelled during graceful shutdown.
+- Recovery journals are processed independently; malformed entries are
+  quarantined and incomplete database cleanup prevents unsafe site rollback.
+- Cloud inventory reports partial provider failures, limits provider output,
+  and avoids inheriting panel-specific secrets into provider CLI processes.
+- Restore uploads are synced before queue admission, backup inventory tolerates
+  isolated corrupt artifacts, and audit-event filtering performs one verified
+  file pass.
 
 ## Required before exposing the panel to customers
 

@@ -506,11 +506,38 @@ func runCloudCLI(ctx context.Context, command, provider string, args ...string) 
 	if _, err := exec.LookPath(command); err != nil {
 		return fmt.Errorf("%s CLI is not installed", provider)
 	}
-	out, err := runBoundedCommand(ctx, exec.CommandContext(ctx, command, args...))
+	cmd := exec.CommandContext(ctx, command, args...)
+	cmd.Env = cloudCommandEnv()
+	out, err := runBoundedCommand(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("%s action failed: %w: %s", provider, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// Cloud CLIs need provider credentials and region settings, but should not
+// inherit unrelated panel secrets (database passwords, session keys, etc.).
+func cloudCommandEnv() []string {
+	blocked := func(key string) bool {
+		upper := strings.ToUpper(key)
+		if strings.HasPrefix(upper, "STEPANEL_") {
+			return true
+		}
+		for _, fragment := range []string{"DATABASE_PASSWORD", "DB_PASSWORD", "SESSION_SECRET", "ADMIN_PASSWORD", "TOTP_SECRET", "AUDIT_KEY", "PRIVATE_KEY"} {
+			if strings.Contains(upper, fragment) {
+				return true
+			}
+		}
+		return false
+	}
+	env := make([]string, 0, len(os.Environ()))
+	for _, item := range os.Environ() {
+		key, _, ok := strings.Cut(item, "=")
+		if ok && !blocked(key) {
+			env = append(env, item)
+		}
+	}
+	return env
 }
 
 func linodeInventory(ctx context.Context) (CloudInventory, error) {
@@ -535,7 +562,7 @@ func linodeInventory(ctx context.Context) (CloudInventory, error) {
 			return nil, fmt.Errorf("Linode API returned %s", res.Status)
 		}
 		var value any
-		if err := json.NewDecoder(res.Body).Decode(&value); err != nil {
+		if err := json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(&value); err != nil {
 			return nil, err
 		}
 		return value, nil
@@ -567,7 +594,9 @@ func cliCloudInventory(ctx context.Context, command, provider string) (CloudInve
 		return CloudInventory{}, fmt.Errorf("%s CLI is not installed", provider)
 	}
 	run := func(args ...string) (any, error) {
-		out, err := runBoundedCommand(ctx, exec.CommandContext(ctx, command, args...))
+		cmd := exec.CommandContext(ctx, command, args...)
+		cmd.Env = cloudCommandEnv()
+		out, err := runBoundedCommandLimit(cmd, 8<<20)
 		if err != nil {
 			return nil, fmt.Errorf("%s command failed: %w", provider, err)
 		}
@@ -578,16 +607,29 @@ func cliCloudInventory(ctx context.Context, command, provider string) (CloudInve
 		return value, nil
 	}
 	inv := CloudInventory{Provider: strings.ToLower(provider)}
+	var failures int
+	assign := func(name string, target *any, args ...string) {
+		value, err := run(args...)
+		if err != nil {
+			inv.Warnings = append(inv.Warnings, name+": "+err.Error())
+			failures++
+			return
+		}
+		*target = value
+	}
 	if provider == "AWS" {
-		inv.Servers, _ = run("ec2", "describe-instances", "--output", "json")
-		inv.DNS, _ = run("route53", "list-hosted-zones", "--output", "json")
-		inv.LoadBalancers, _ = run("elbv2", "describe-load-balancers", "--output", "json")
-		inv.Snapshots, _ = run("ec2", "describe-snapshots", "--owner-ids", "self", "--output", "json")
+		assign("servers", &inv.Servers, "ec2", "describe-instances", "--output", "json")
+		assign("dns", &inv.DNS, "route53", "list-hosted-zones", "--output", "json")
+		assign("load_balancers", &inv.LoadBalancers, "elbv2", "describe-load-balancers", "--output", "json")
+		assign("snapshots", &inv.Snapshots, "ec2", "describe-snapshots", "--owner-ids", "self", "--output", "json")
 	} else {
-		inv.Servers, _ = run("server", "list", "-f", "json")
-		inv.DNS, _ = run("recordset", "list", "-f", "json")
-		inv.LoadBalancers, _ = run("loadbalancer", "list", "-f", "json")
-		inv.Snapshots, _ = run("server", "backup", "list", "-f", "json")
+		assign("servers", &inv.Servers, "server", "list", "-f", "json")
+		assign("dns", &inv.DNS, "recordset", "list", "-f", "json")
+		assign("load_balancers", &inv.LoadBalancers, "loadbalancer", "list", "-f", "json")
+		assign("snapshots", &inv.Snapshots, "server", "backup", "list", "-f", "json")
+	}
+	if failures == 4 {
+		return inv, errors.New("all cloud inventory queries failed")
 	}
 	return inv, nil
 }

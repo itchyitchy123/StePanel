@@ -179,6 +179,12 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not stage upload", http.StatusInternalServerError)
 		return
 	}
+	if err = temp.Sync(); err != nil {
+		_ = temp.Close()
+		_ = os.Remove(tempPath)
+		http.Error(w, "could not durably stage upload", http.StatusInternalServerError)
+		return
+	}
 	if err = temp.Close(); err != nil {
 		_ = os.Remove(tempPath)
 		http.Error(w, "could not stage upload", http.StatusInternalServerError)
