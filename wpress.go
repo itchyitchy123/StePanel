@@ -120,6 +120,10 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if a.Config.MaxUpload > 0 && r.ContentLength > a.Config.MaxUpload {
+		http.Error(w, "upload exceeds the configured size limit", http.StatusRequestEntityTooLarge)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	if !a.Auth.CSRF(r) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)

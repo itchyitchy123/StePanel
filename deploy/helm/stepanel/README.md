@@ -9,7 +9,8 @@ helm upgrade --install stepanel deploy/helm/stepanel \
 ```
 
 Create `stepanel-secrets` separately with `admin-password`, `session-secret`,
-and an independent `audit-key`; `admin-totp-secret` is optional. Production installations should pin an
+an independent `audit-key`, mandatory `admin-totp-secret`, and an
+`offsite-target` (for example `rclone:remote/stepanel`). Production installations should pin an
 image digest in `values.yaml`, select an appropriate persistent storage class, enable and
 configure the ingress with TLS, and add a network policy appropriate to the
 cluster ingress controller. The chart explicitly enables trusted upstream TLS
@@ -17,6 +18,10 @@ termination only when ingress is enabled and configured with TLS; do not expose
 its Service directly. Label the ingress namespace `stepanel.ingress=true` or
 override the selector. The chart enforces one replica because restore
 jobs and managed site state are local to the control plane.
+
+The default values expect a `stepanel-tls` Secret for
+`stepanel.example.com`; replace the host and secret name with the certificate
+managed by your ingress controller.
 
 The chart packages the control plane only. It does not grant access to a
 Kubernetes node's Apache, PHP-FPM, systemd, accounts, or StePanel privileged

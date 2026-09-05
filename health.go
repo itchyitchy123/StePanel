@@ -20,6 +20,11 @@ func (a *App) livez(w http.ResponseWriter, _ *http.Request) {
 
 func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
 	checks := readinessChecks(a.Config, a.Jobs)
+	if a.RecoveryError != nil {
+		checks["recovery_state"] = ReadinessCheck{Ready: false, Detail: a.RecoveryError.Error()}
+	} else {
+		checks["recovery_state"] = ReadinessCheck{Ready: true}
+	}
 	if err := a.Auth.SessionPersistenceError(); err != nil {
 		checks["session_state"] = ReadinessCheck{Ready: false, Detail: err.Error()}
 	} else {

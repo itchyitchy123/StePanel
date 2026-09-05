@@ -66,6 +66,23 @@ resource "kubernetes_deployment" "stepanel" {
             value = ":8080"
           }
           env {
+            name  = "STEPANEL_TLS_TERMINATED"
+            value = "1"
+          }
+          env {
+            name  = "STEPANEL_REQUIRE_OFFSITE_BACKUP"
+            value = "1"
+          }
+          env {
+            name = "STEPANEL_OFFSITE_TARGET"
+            value_from {
+              secret_key_ref {
+                name = "stepanel-secrets"
+                key  = "offsite-target"
+              }
+            }
+          }
+          env {
             name  = "STEPANEL_IMPORT_ROOT"
             value = "/var/lib/ste-panel/imports"
           }
@@ -150,7 +167,6 @@ resource "kubernetes_deployment" "stepanel" {
               secret_key_ref {
                 name     = "stepanel-secrets"
                 key      = "admin-totp-secret"
-                optional = true
               }
             }
           }
@@ -214,7 +230,7 @@ resource "kubernetes_persistent_volume_claim" "stepanel_data" {
   }
   spec {
     access_modes = ["ReadWriteOnce"]
-    resources { requests = { storage = "10Gi" } }
+    resources { requests = { storage = "50Gi" } }
   }
 }
 
@@ -225,7 +241,7 @@ resource "kubernetes_persistent_volume_claim" "stepanel_sites" {
   }
   spec {
     access_modes = ["ReadWriteOnce"]
-    resources { requests = { storage = "10Gi" } }
+    resources { requests = { storage = "50Gi" } }
   }
 }
 

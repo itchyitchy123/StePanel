@@ -27,6 +27,7 @@ type App struct {
 	Jobs                     *Jobs
 	Metrics                  *Metrics
 	Schedules                *backupSchedules
+	RecoveryError            error
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
 	gitActivationMu          sync.Mutex
@@ -115,8 +116,10 @@ func main() {
 			log.Fatalf("reconcile interrupted database operations: %v: %s", err, strings.TrimSpace(string(output)))
 		}
 	}
+	var recoveryFailures []error
 	databaseRecoveries, err := RecoverTransactionDatabases(cfg, cfg.RecoveryRoot)
 	if err != nil {
+		recoveryFailures = append(recoveryFailures, err)
 		log.Printf("recover interrupted database transactions (continuing with isolated failures): %v", err)
 	}
 	for _, id := range databaseRecoveries {
@@ -125,15 +128,18 @@ func main() {
 	}
 	recovered, err := RecoverSiteTransactions(cfg.RecoveryRoot)
 	if err != nil {
+		recoveryFailures = append(recoveryFailures, err)
 		log.Printf("recover interrupted site transactions (continuing with isolated failures): %v", err)
 	}
 	for _, id := range recovered {
 		txn, loadErr := loadSiteTransaction(filepath.Join(cfg.RecoveryRoot, id))
 		if loadErr != nil {
+			recoveryFailures = append(recoveryFailures, fmt.Errorf("load recovered site transaction %s: %w", id, loadErr))
 			log.Printf("load recovered site transaction %s: %v", id, loadErr)
 			continue
 		}
 		if sealErr := siteHelper(cfg, "seal", txn.Site); sealErr != nil {
+			recoveryFailures = append(recoveryFailures, fmt.Errorf("seal recovered site transaction %s: %w", id, sealErr))
 			log.Printf("seal recovered site transaction %s: %v", id, sealErr)
 			continue
 		}
@@ -163,7 +169,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open backup schedules: %v", err)
 	}
-	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules}
+	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, RecoveryError: errors.Join(recoveryFailures...)}
 	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
 		log.Printf("initialize audit chain: %v", err)
 	}
@@ -196,6 +202,7 @@ func main() {
 	}()
 	mux := http.NewServeMux()
 	expensive := make(chan struct{}, 4)
+	uploads := make(chan struct{}, max(1, cfg.MaxConcurrentJobs))
 	mux.Handle("/livez", allowMethods(http.HandlerFunc(app.livez), http.MethodGet, http.MethodHead))
 	mux.Handle("/readyz", allowMethods(http.HandlerFunc(app.readyz), http.MethodGet, http.MethodHead))
 	mux.Handle("/static/", allowMethods(http.StripPrefix("/static/", http.FileServer(http.FS(staticAssets))), http.MethodGet, http.MethodHead))
@@ -245,9 +252,9 @@ func main() {
 	mux.Handle("/api/caddy/htaccess", allowMethods(app.Auth.Require(http.HandlerFunc(app.htaccessMigration)), http.MethodPost))
 	mux.Handle("/api/apps/", allowMethods(app.Auth.Require(http.HandlerFunc(app.appAction)), http.MethodPost))
 	mux.Handle("/api/cpmove/inspect", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.inspect), expensive)), http.MethodPost))
-	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.importBackup)), http.MethodPost))
+	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.importBackup), uploads)), http.MethodPost))
 	mux.Handle("/api/wpress/preflight", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressPreflight)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/wpress/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressImport)), http.MethodPost))
+	mux.Handle("/api/wpress/import", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.wpressImport), uploads)), http.MethodPost))
 	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/jobs", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobList)), http.MethodGet, http.MethodHead))
 	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))
@@ -353,6 +360,10 @@ func (a *App) inspect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	if a.Config.MaxUpload > 0 && r.ContentLength > a.Config.MaxUpload {
+		http.Error(w, "upload exceeds the configured size limit", http.StatusRequestEntityTooLarge)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	if !a.Auth.CSRF(r) {
 		http.Error(w, "invalid CSRF token", 403)
@@ -377,9 +388,17 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	if a.Config.MaxUpload > 0 && r.ContentLength > a.Config.MaxUpload {
+		http.Error(w, "upload exceeds the configured size limit", http.StatusRequestEntityTooLarge)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	if !a.Auth.CSRF(r) {
 		http.Error(w, "invalid CSRF token", 403)
+		return
+	}
+	if err := restoreCapacity(a.Config); err != nil {
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 		return
 	}
 	err := r.ParseMultipartForm(32 << 20)
@@ -395,10 +414,6 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	databaseRestore := r.FormValue("restore_databases") == "on"
 	if databaseRestore && !mysqlCompatible(a.Config) {
 		http.Error(w, "cPanel SQL restores require MySQL or MariaDB; PostgreSQL dump conversion is not supported", http.StatusUnprocessableEntity)
-		return
-	}
-	if err := restoreCapacity(a.Config); err != nil {
-		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 		return
 	}
 	file, header, err := r.FormFile("backup")

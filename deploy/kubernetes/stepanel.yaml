@@ -26,7 +26,7 @@ metadata:
 spec:
   accessModes: [ReadWriteOnce]
   resources:
-    requests: {storage: 10Gi}
+    requests: {storage: 50Gi}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -36,7 +36,7 @@ metadata:
 spec:
   accessModes: [ReadWriteOnce]
   resources:
-    requests: {storage: 10Gi}
+    requests: {storage: 50Gi}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -85,6 +85,17 @@ spec:
               value: "production"
             - name: STEPANEL_LISTEN
               value: ":8080"
+            # Traffic is restricted to the labelled ingress namespace below;
+            # that ingress must terminate HTTPS before forwarding here.
+            - name: STEPANEL_TLS_TERMINATED
+              value: "1"
+            - name: STEPANEL_REQUIRE_OFFSITE_BACKUP
+              value: "1"
+            - name: STEPANEL_OFFSITE_TARGET
+              valueFrom:
+                secretKeyRef:
+                  name: stepanel-secrets
+                  key: offsite-target
             - name: STEPANEL_SESSION_STATE
               value: "/var/lib/ste-panel/sessions.json"
             - name: STEPANEL_IMPORT_ROOT
@@ -131,7 +142,6 @@ spec:
                 secretKeyRef:
                   name: stepanel-secrets
                   key: admin-totp-secret
-                  optional: true
           readinessProbe:
             httpGet:
               path: /readyz

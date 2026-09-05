@@ -205,9 +205,9 @@ definitions from `/etc/caddy/stepanel.d`. Apache users can instead copy
 `deploy/apache/stepanel.conf` to the Apache configuration directory, replace
 the example hostname, enable the required modules, and configure TLS.
 Container deployments must either mount application TLS certificates or set
-`STEPANEL_TLS_TERMINATED=1` only behind an ingress that enforces HTTPS. Generic
-Docker, Terraform, and static Kubernetes examples fail closed until that
-boundary is configured.
+`STEPANEL_TLS_TERMINATED=1` only behind an ingress that enforces HTTPS. The
+Kubernetes, Helm, and Terraform examples assume that trusted ingress boundary;
+generic Docker deployments still require the operator to provide it explicitly.
 
 ### Database engine and administration UI
 

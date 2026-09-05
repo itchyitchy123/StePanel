@@ -6,21 +6,26 @@ Create the secret out-of-band, then apply the manifest:
 kubectl -n stepanel create secret generic stepanel-secrets \
   --from-literal=admin-password='change-me' \
   --from-literal=session-secret="$(openssl rand -hex 32)" \
-  --from-literal=audit-key="$(openssl rand -hex 32)"
+  --from-literal=audit-key="$(openssl rand -hex 32)" \
+  --from-literal=admin-totp-secret='BASE32_SECRET' \
+  --from-literal=offsite-target='rclone:remote/stepanel'
 kubectl apply -f deploy/kubernetes/stepanel.yaml
 ```
 
-Add `--from-literal=admin-totp-secret='BASE32_SECRET'` to require TOTP MFA.
+The production manifest requires TOTP MFA and an offsite rclone target. Replace
+the example values before applying. Configure an HTTPS ingress in a namespace
+labelled `stepanel.ingress=true`; the manifest sets
+`STEPANEL_TLS_TERMINATED=1` because ingress traffic is the only allowed pod
+ingress path.
 
-The manifest creates two 10Gi persistent volume claims for control-plane data
+The manifest creates two 50Gi persistent volume claims for control-plane data
 and site files. Adjust their size and storage class for the environment. It
 uses one replica with a `Recreate` rollout because restore jobs and persistent
 state are process-local. The pod runs as UID/GID 10001 with a read-only root
-filesystem and no service-account token. The manifest intentionally does not
-enable trusted upstream TLS termination by default; add an HTTPS ingress and
-set `STEPANEL_TLS_TERMINATED=1` only after that boundary is enforced. Label the
-ingress namespace `stepanel.ingress=true`. The included NetworkPolicy denies
-other ingress traffic.
+filesystem and no service-account token. It assumes an HTTPS ingress terminates
+TLS before forwarding to the Service; label that ingress namespace
+`stepanel.ingress=true`. The included NetworkPolicy denies other ingress
+traffic, so do not expose the Service directly.
 
 This container is a control-plane packaging target, not a host-management
 agent. Kubernetes pods do not have the host's Apache, PHP-FPM, systemd, local
