@@ -66,6 +66,19 @@ func commandAvailable(name string) bool {
 	return err == nil
 }
 
+func validateExtractionLayout(stage, extracted string) error {
+	entries, err := os.ReadDir(stage)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() != filepath.Base(extracted) && entry.Name() != "tmp" {
+			return errors.New("WPress extractor wrote outside its designated output directory")
+		}
+	}
+	return nil
+}
+
 func (a *App) wpressPreflight(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ready": allReady(WPressPreflight(a.Config)), "checks": WPressPreflight(a.Config)})
 }
@@ -178,8 +191,10 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.Jobs.SubmitWPress(jobID, site, func() (WPressResult, error) {
+		a.Metrics.RestoreStarted()
 		defer os.Remove(tempPath)
 		result, restoreErr := RestoreWPress(a.Config, tempPath, site, dbSuffix, dbUserSuffix, password, siteURL, targetPrefix, force)
+		a.Metrics.RestoreFinished(restoreErr)
 		if restoreErr != nil {
 			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.failed", site, restoreErr.Error()); auditErr != nil {
 				restoreErr = fmt.Errorf("%w; audit persistence failed: %v", restoreErr, auditErr)
@@ -187,7 +202,7 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		} else {
 			detail := fmt.Sprintf("%s; metadata=%t; htaccess=%t", result.StagedAt, result.MetadataApplied, result.HTAccessRestored)
 			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.completed", site, detail); auditErr != nil {
-				restoreErr = auditErr
+				log.Printf("WordPress restore completed but audit persistence is unavailable: %v", auditErr)
 			}
 		}
 		return result, restoreErr
@@ -221,9 +236,23 @@ func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword
 		return WPressResult{}, err
 	}
 	defer os.RemoveAll(stage)
+	if archiveInfo, err := os.Stat(archive); err != nil || !archiveInfo.Mode().IsRegular() || archiveInfo.Size() > cfg.MaxUpload && cfg.MaxUpload > 0 {
+		return WPressResult{}, errors.New("WPress archive is missing, not regular, or exceeds the configured upload limit")
+	}
 	extracted := filepath.Join(stage, "extracted")
-	if err := runCommand(20*time.Minute, cfg.WPressExtract, "--out", extracted, archive); err != nil {
+	if err := os.MkdirAll(filepath.Join(stage, "tmp"), 0700); err != nil {
+		return WPressResult{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, cfg.WPressExtract, "--out", extracted, archive)
+	cmd.Dir = stage
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + stage, "TMPDIR=" + filepath.Join(stage, "tmp")}
+	if _, err := runBoundedCommand(ctx, cmd); err != nil {
 		return WPressResult{}, fmt.Errorf("extract archive: %w", err)
+	}
+	if err := validateExtractionLayout(stage, extracted); err != nil {
+		return WPressResult{}, err
 	}
 	maxEntries := cfg.MaxEntries
 	if maxEntries <= 0 {
@@ -555,7 +584,7 @@ func fileExists(path string) bool { _, err := os.Stat(path); return err == nil }
 func runCommand(timeout time.Duration, name string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, name, args...))
 	if err != nil {
 		return fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(string(output)))
 	}
@@ -565,9 +594,7 @@ func runCommand(timeout time.Duration, name string, args ...string) error {
 func runCommandInput(timeout time.Duration, name, input string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdin = strings.NewReader(input)
-	output, err := cmd.CombinedOutput()
+	output, err := runBoundedCommandInput(ctx, exec.CommandContext(ctx, name, args...), strings.NewReader(input))
 	if err != nil {
 		return fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(string(output)))
 	}
@@ -591,7 +618,7 @@ func runWPOutput(cfg Config, home string, args ...string) (string, error) {
 	base = append(base, args...)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, cfg.WPCLI, base...).CombinedOutput()
+	output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, cfg.WPCLI, base...))
 	return string(output), err
 }
 
@@ -694,7 +721,7 @@ func cleanupWPressDatabase(cfg Config, dbName, dbUser string) error {
 	if cfg.DBCtl != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		output, err := helperCommandContext(ctx, cfg, cfg.DBCtl, "cleanup-wordpress", dbName, dbUser).CombinedOutput()
+		output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "cleanup-wordpress", dbName, dbUser))
 		if err != nil {
 			return fmt.Errorf("cleanup WordPress database: %w: %s", err, strings.TrimSpace(string(output)))
 		}
@@ -715,7 +742,7 @@ func restoreWPressDatabaseWithHelper(cfg Config, site, dbName, dbUser, password,
 	defer cancel()
 	cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore-wordpress", dbName, dbUser, site)
 	cmd.Stdin = io.MultiReader(strings.NewReader(password+"\n"), input)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runBoundedCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("restore WordPress database: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
@@ -735,7 +762,7 @@ func importWPressDatabase(cfg Config, dbName, dump string) error {
 		cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
 	}
 	cmd.Stdin = input
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runBoundedCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("import database: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
@@ -755,7 +782,7 @@ func runMySQL(cfg Config, query string) (string, error) {
 	if cfg.DBPassword != "" {
 		cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
 	}
-	output, err := cmd.CombinedOutput()
+	output, err := runBoundedCommand(ctx, cmd)
 	return string(output), err
 }
 

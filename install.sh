@@ -53,8 +53,8 @@ INSTALL_NODE="${STEPANEL_INSTALL_NODE:-0}"; NODE_VERSIONS="${STEPANEL_NODE_VERSI
 INSTALL_SECURITY="${STEPANEL_INSTALL_SECURITY:-0}"
 INSTALL_TLS="${STEPANEL_INSTALL_TLS:-0}"
 WEB_SERVER="${STEPANEL_WEBSERVER:-}"
-WPRESS_EXTRACT="${STEPANEL_WPRESS_EXTRACT:-wpress-extract}"
-WPCLI="${STEPANEL_WPCLI:-wp}"
+WPRESS_EXTRACT="${STEPANEL_WPRESS_EXTRACT:-/usr/local/bin/wpress-extract}"
+WPCLI="${STEPANEL_WPCLI:-/usr/local/bin/wp}"
 PANEL_HOSTNAME="${STEPANEL_PANEL_HOSTNAME:-}"
 STAGE_RETENTION_HOURS="${STEPANEL_STAGE_RETENTION_HOURS:-168}"
 MIN_FREE_BYTES="${STEPANEL_MIN_FREE_BYTES:-1073741824}"
@@ -105,6 +105,7 @@ if [[ "$ADMIN_PASSWORD" == *$'\n'* || "$ADMIN_PASSWORD" == *$'\r'* || "$SESSION_
 if [[ "$DB_HOST" == *$'\n'* || "$DB_HOST" == *$'\r'* ]]; then echo "STEPANEL_DB_HOST may not contain newlines." >&2; exit 1; fi
 if [[ -n "$DB_USER" && ! "$DB_USER" =~ ^[A-Za-z0-9_]{1,32}$ ]]; then echo "STEPANEL_DB_USER must contain only letters, numbers, and underscores." >&2; exit 1; fi
 if [[ "$WPRESS_EXTRACT" == *$'\n'* || "$WPRESS_EXTRACT" == *$'\r'* || "$WPCLI" == *$'\n'* || "$WPCLI" == *$'\r'* ]]; then echo "WordPress executable paths may not contain newlines." >&2; exit 1; fi
+if [[ "$WPRESS_EXTRACT" != /* || "$WPCLI" != /* ]]; then echo "STEPANEL_WPRESS_EXTRACT and STEPANEL_WPCLI must be absolute executable paths in production." >&2; exit 1; fi
 
 if [[ "$INSTALL_FAIL2BAN" != "0" && "$INSTALL_FAIL2BAN" != "1" ]]; then echo "STEPANEL_INSTALL_FAIL2BAN must be 0 or 1." >&2; exit 1; fi
 if [[ "$INSTALL_FAIL2BAN" == "1" && -z "$FAIL2BAN_IGNORE_IP" && -t 0 ]]; then read -r -p "Trusted management IPs/CIDRs for Fail2ban (required): " FAIL2BAN_IGNORE_IP; fi

@@ -20,6 +20,7 @@ WORKDIR /opt/stepanel
 ENV HOME=/opt/stepanel \
     STEPANEL_ENV=production \
     STEPANEL_LISTEN=:8080 \
+    STEPANEL_TLS_TERMINATED=1 \
     STEPANEL_IMPORT_ROOT=/var/lib/ste-panel/imports \
     STEPANEL_BACKUP_ROOT=/var/lib/ste-panel/backups \
     STEPANEL_WEB_ROOT=/var/www \

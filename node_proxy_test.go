@@ -15,7 +15,7 @@ func TestLocalBackendValidation(t *testing.T) {
 			t.Errorf("localBackend(%q) failed: %v", value, err)
 		}
 	}
-	invalid := []string{"https://127.0.0.1:3000", "http://example.com:3000", "http://127.0.0.1", "http://127.0.0.1:3000/admin", "http://user:pass@127.0.0.1:3000"}
+	invalid := []string{"https://127.0.0.1:3000", "http://example.com:3000", "http://127.0.0.1", "http://127.0.0.1:3000/admin", "http://user:pass@127.0.0.1:3000", "http://169.254.169.254:80", "http://100.100.100.200:80"}
 	for _, value := range invalid {
 		if _, err := localBackend(value); err == nil {
 			t.Errorf("localBackend(%q) unexpectedly passed", value)

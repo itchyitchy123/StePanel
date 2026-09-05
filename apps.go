@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -114,8 +115,7 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "app.deployed", app.Site, app.Domain+" on port "+strconv.Itoa(app.Port)); err != nil {
-		http.Error(w, "application deployed but audit persistence is unavailable", http.StatusServiceUnavailable)
-		return
+		log.Printf("application deployed but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, app)
 }
@@ -162,8 +162,7 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "app."+parts[1], parts[0], "systemd action"); err != nil {
-		http.Error(w, "application action completed but audit persistence is unavailable", http.StatusServiceUnavailable)
-		return
+		log.Printf("application action completed but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"site": parts[0], "action": parts[1]})
 }

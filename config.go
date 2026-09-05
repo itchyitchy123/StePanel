@@ -11,29 +11,32 @@ import (
 )
 
 type Config struct {
-	WebServer                                                                  string
-	Listen, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir                  string
-	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl               string
-	SiteCtl, VHostCtl, Certbot, DBCtl                                          string
-	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo string
-	DBHost, DBUser, DBPassword                                                 string
-	OffsiteTarget                                                              string
-	CloudProvider                                                              string
-	Production                                                                 bool
-	MaxUpload                                                                  int64
-	MaxEntries, MaxConcurrentJobs, StageRetentionHours                         int
-	FTPPassiveMin, FTPPassiveMax                                               int
-	MinFreeBytes                                                               uint64
+	WebServer                                                                          string
+	Listen, TLSCertFile, TLSKeyFile, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir string
+	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl                       string
+	SiteCtl, VHostCtl, Certbot, DBCtl                                                  string
+	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo         string
+	DBHost, DBUser, DBPassword                                                         string
+	OffsiteTarget                                                                      string
+	CloudProvider                                                                      string
+	TLSAlreadyTerminated                                                               bool
+	Production                                                                         bool
+	MaxUpload                                                                          int64
+	MaxEntries, MaxConcurrentJobs, StageRetentionHours                                 int
+	FTPPassiveMin, FTPPassiveMax                                                       int
+	MinFreeBytes                                                                       uint64
 }
 
 func LoadConfig() Config {
-	c := Config{WebServer: "apache", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "wpress-extract", WPCLI: "wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{WebServer: "apache", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_WEBSERVER"); v != "" {
 		c.WebServer = strings.ToLower(strings.TrimSpace(v))
 	}
 	if v := os.Getenv("STEPANEL_LISTEN"); v != "" {
 		c.Listen = v
 	}
+	c.TLSCertFile = os.Getenv("STEPANEL_TLS_CERT_FILE")
+	c.TLSKeyFile = os.Getenv("STEPANEL_TLS_KEY_FILE")
 	if v := os.Getenv("STEPANEL_IMPORT_ROOT"); v != "" {
 		c.ImportRoot = v
 	}
@@ -105,6 +108,9 @@ func LoadConfig() Config {
 	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
 	c.OffsiteTarget = strings.TrimSpace(os.Getenv("STEPANEL_OFFSITE_TARGET"))
 	c.CloudProvider = strings.ToLower(strings.TrimSpace(os.Getenv("STEPANEL_CLOUD_PROVIDER")))
+	if v := strings.TrimSpace(os.Getenv("STEPANEL_TLS_TERMINATED")); v == "1" {
+		c.TLSAlreadyTerminated = true
+	}
 	c.Production = os.Getenv("STEPANEL_ENV") == "production"
 	if v, err := strconv.ParseInt(os.Getenv("STEPANEL_MAX_UPLOAD_BYTES"), 10, 64); err == nil && v > 0 && v <= 20<<30 {
 		c.MaxUpload = v
@@ -200,8 +206,30 @@ func ValidateConfig(c Config) error {
 		}
 	}
 	if c.Production {
+		if raw := os.Getenv("STEPANEL_TLS_TERMINATED"); raw != "" && raw != "0" && raw != "1" {
+			problems = append(problems, errors.New("STEPANEL_TLS_TERMINATED must be 0 or 1"))
+		}
+		if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
+			problems = append(problems, errors.New("production requires both STEPANEL_TLS_CERT_FILE and STEPANEL_TLS_KEY_FILE when TLS is enabled"))
+		}
+		if c.TLSCertFile != "" || c.TLSKeyFile != "" {
+			for name, path := range map[string]string{"STEPANEL_TLS_CERT_FILE": c.TLSCertFile, "STEPANEL_TLS_KEY_FILE": c.TLSKeyFile} {
+				if !filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n") {
+					problems = append(problems, fmt.Errorf("%s must be an absolute path in production", name))
+				}
+			}
+		} else if !c.TLSAlreadyTerminated {
+			if host, _, err := net.SplitHostPort(c.Listen); err == nil && host != "127.0.0.1" && host != "::1" && host != "localhost" {
+				problems = append(problems, errors.New("production without application TLS must listen only on loopback"))
+			}
+		}
 		for name, path := range map[string]string{"STEPANEL_APPCTL": c.AppCtl, "STEPANEL_PROXYCTL": c.ProxyCtl, "STEPANEL_SITECTL": c.SiteCtl, "STEPANEL_VHOSTCTL": c.VHostCtl, "STEPANEL_DBCTL": c.DBCtl, "STEPANEL_CERTBOT": c.Certbot, "STEPANEL_SUDO": c.Sudo} {
 			if path != "" && (!filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n")) {
+				problems = append(problems, fmt.Errorf("%s must be an absolute executable path in production", name))
+			}
+		}
+		for name, path := range map[string]string{"STEPANEL_WPRESS_EXTRACT": c.WPressExtract, "STEPANEL_WPCLI": c.WPCLI} {
+			if path == "" || !filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n") {
 				problems = append(problems, fmt.Errorf("%s must be an absolute executable path in production", name))
 			}
 		}

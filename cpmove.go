@@ -350,7 +350,7 @@ func restoreSQL(cfg Config, stage, user string, txn *SiteTransaction) ([]string,
 			}
 			cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore", name, user)
 			cmd.Stdin = input
-			output, restoreErr := cmd.CombinedOutput()
+			output, restoreErr := runBoundedCommand(ctx, cmd)
 			_ = input.Close()
 			cancel()
 			if restoreErr != nil {
@@ -384,7 +384,7 @@ func restoreSQL(cfg Config, stage, user string, txn *SiteTransaction) ([]string,
 		if cfg.DBPassword != "" {
 			cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
 		}
-		output, err := cmd.CombinedOutput()
+		output, err := runBoundedCommand(ctx, cmd)
 		if err != nil {
 			failures = append(failures, name+": create failed: "+strings.TrimSpace(string(output)))
 			cancel()
@@ -403,7 +403,7 @@ func restoreSQL(cfg Config, stage, user string, txn *SiteTransaction) ([]string,
 			cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
 		}
 		cmd.Stdin = input
-		output, err = cmd.CombinedOutput()
+		output, err = runBoundedCommand(ctx, cmd)
 		input.Close()
 		cancel()
 		if err != nil {
@@ -422,7 +422,7 @@ func dropDatabase(cfg Config, name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	if cfg.DBCtl != "" {
-		output, err := helperCommandContext(ctx, cfg, cfg.DBCtl, "drop", name).CombinedOutput()
+		output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "drop", name))
 		if err != nil {
 			return fmt.Errorf("drop database: %w: %s", err, strings.TrimSpace(string(output)))
 		}
@@ -433,7 +433,7 @@ func dropDatabase(cfg Config, name string) error {
 	if cfg.DBPassword != "" {
 		cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.DBPassword)
 	}
-	output, err := cmd.CombinedOutput()
+	output, err := runBoundedCommand(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("drop database: %w: %s", err, strings.TrimSpace(string(output)))
 	}

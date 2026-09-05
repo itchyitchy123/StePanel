@@ -177,7 +177,7 @@ Apache vhost or managed Node proxy.
 
 ## Reverse proxy
 
-Copy `deploy/apache/stepanel.conf` to the Apache configuration directory, replace the example hostname, enable the required proxy modules, and reload Apache. Add TLS with your preferred certificate automation before exposing the host.
+Copy `deploy/apache/stepanel.conf` to the Apache configuration directory, replace the example hostname, enable the required proxy modules, and reload Apache. Add TLS with your preferred certificate automation before exposing the host. Kubernetes and Helm deployments set `STEPANEL_TLS_TERMINATED=1`; expose their Service only through an ingress or reverse proxy that actually enforces HTTPS.
 
 ## Operations
 

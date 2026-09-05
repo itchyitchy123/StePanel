@@ -12,7 +12,8 @@ Create `stepanel-secrets` separately with `admin-password`, `session-secret`,
 and an independent `audit-key`; `admin-totp-secret` is optional. Production installations should pin an
 image digest, select an appropriate persistent storage class, enable and
 configure the ingress with TLS, and add a network policy appropriate to the
-cluster ingress controller. The chart enforces one replica because restore
+cluster ingress controller. The chart explicitly enables trusted upstream TLS
+termination; do not expose its Service directly. The chart enforces one replica because restore
 jobs and managed site state are local to the control plane.
 
 The chart packages the control plane only. It does not grant access to a

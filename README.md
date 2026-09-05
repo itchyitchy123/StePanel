@@ -220,8 +220,11 @@ checkbox and should be backed up first.
 | `STEPANEL_JOB_STATE` | Durable restore and certificate job state file |
 | `STEPANEL_SESSION_STATE` | Durable revocable administrator session state file |
 | `STEPANEL_RECOVERY_ROOT` | Durable site rollback transactions on the site filesystem |
-| `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; default `wpress-extract` |
-| `STEPANEL_WPCLI` | WP-CLI executable; default `wp` |
+| `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; production default `/usr/local/bin/wpress-extract` |
+| `STEPANEL_WPCLI` | WP-CLI executable; production default `/usr/local/bin/wp` |
+| `STEPANEL_TLS_CERT_FILE` | Optional production TLS certificate path; required with `STEPANEL_TLS_KEY_FILE` for direct TLS |
+| `STEPANEL_TLS_KEY_FILE` | Optional production TLS private-key path; required with `STEPANEL_TLS_CERT_FILE` for direct TLS |
+| `STEPANEL_TLS_TERMINATED` | Set to `1` only when a trusted HTTPS reverse proxy or cluster ingress terminates TLS before forwarding to the panel |
 | `STEPANEL_DB_HOST` | MySQL/MariaDB host used for SQL imports |
 | `STEPANEL_DB_USER` | Remote database user used for SQL imports; local installs use the restricted helper |
 | `STEPANEL_DB_PASSWORD` | Database password supplied through the process environment |

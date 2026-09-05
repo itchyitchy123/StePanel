@@ -3,12 +3,45 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 )
+
+const maxCommandOutput = 64 << 10
+
+type boundedBuffer struct{ data []byte }
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	if len(b.data) < maxCommandOutput {
+		n := maxCommandOutput - len(b.data)
+		if n > len(p) {
+			n = len(p)
+		}
+		b.data = append(b.data, p[:n]...)
+	}
+	return len(p), nil
+}
+
+func runBoundedCommand(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+	var output boundedBuffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	err := cmd.Run()
+	if err != nil {
+		return output.data, fmt.Errorf("%w: %s", err, string(output.data))
+	}
+	return output.data, nil
+}
+
+func runBoundedCommandInput(ctx context.Context, cmd *exec.Cmd, input io.Reader) ([]byte, error) {
+	cmd.Stdin = input
+	return runBoundedCommand(ctx, cmd)
+}
 
 // helperCommand runs narrowly scoped privileged helpers through sudo when the
 // packaged installation configures it. Development and test configurations can
@@ -124,8 +157,11 @@ func rejectSymlinkParents(path, root string) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureInside(root, path); err != nil {
-		return err
+	if path != root && !strings.HasPrefix(path, root+string(os.PathSeparator)) {
+		return errors.New("path escapes configured root")
+	}
+	if info, statErr := os.Lstat(root); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("configured root is a symlink")
 	}
 	rel, err := filepath.Rel(root, filepath.Dir(path))
 	if err != nil {

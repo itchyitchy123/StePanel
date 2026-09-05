@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -63,8 +64,7 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + ".conf"
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deployed", input.Site, input.Domain); err != nil {
-		http.Error(w, "site deployed but audit persistence is unavailable", http.StatusServiceUnavailable)
-		return
+		log.Printf("site deployed but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"site": input.Site, "domain": input.Domain, "config": filepath.Join(a.Config.VHostRoot, name)})
 }
@@ -89,8 +89,7 @@ func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deleted", name, "managed PHP vhost removed"); err != nil {
-		http.Error(w, "site deleted but audit persistence is unavailable", http.StatusServiceUnavailable)
-		return
+		log.Printf("site deleted but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": name})
 }

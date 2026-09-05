@@ -51,3 +51,78 @@ func TestValidateConfigRequiresDedicatedProductionAuditKey(t *testing.T) {
 		t.Fatalf("validation error = %v", err)
 	}
 }
+
+func TestValidateConfigRequiresLoopbackOrTLSInProduction(t *testing.T) {
+	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_AUDIT_KEY", "audit-key-that-is-long-enough-123456")
+	t.Setenv("STEPANEL_SESSION_SECRET", "session-key-that-is-long-enough-123456")
+	cfg := LoadConfig()
+	cfg.Listen = ":8080"
+	if err := ValidateConfig(cfg); err == nil || !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("expected production listener validation error, got %v", err)
+	}
+}
+
+func TestValidateConfigAcceptsProductionTLSPaths(t *testing.T) {
+	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_AUDIT_KEY", "audit-key-that-is-long-enough-123456")
+	t.Setenv("STEPANEL_SESSION_SECRET", "session-key-that-is-long-enough-123456")
+	cfg := LoadConfig()
+	cfg.TLSCertFile = "/etc/stepanel/cert.pem"
+	cfg.TLSKeyFile = "/etc/stepanel/key.pem"
+	cfg.ImportRoot = "/var/lib/ste-panel/imports"
+	cfg.BackupRoot = "/var/backups/stepanel"
+	cfg.WebRoot = "/var/www"
+	cfg.MailRoot = "/var/lib/ste-panel/mail"
+	cfg.NVMDir = "/var/lib/ste-panel/nvm"
+	cfg.ProxyRoot = "/var/lib/ste-panel/proxy"
+	cfg.VHostRoot = "/var/lib/ste-panel/vhosts"
+	cfg.AppRoot = "/var/lib/ste-panel/apps"
+	cfg.MalwareRoot = "/var/lib/ste-panel/quarantine"
+	cfg.AuditLog = "/var/lib/ste-panel/audit.jsonl"
+	cfg.JobState = "/var/lib/ste-panel/jobs.json"
+	cfg.SessionState = "/var/lib/ste-panel/sessions.json"
+	cfg.RecoveryRoot = "/var/www/sites/.stepanel-recovery"
+	cfg.WPressExtract = "/usr/local/bin/wpress-extract"
+	cfg.WPCLI = "/usr/local/bin/wp"
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("TLS production config rejected: %v", err)
+	}
+}
+
+func TestValidateConfigAcceptsTrustedTLSTermination(t *testing.T) {
+	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_TLS_TERMINATED", "1")
+	t.Setenv("STEPANEL_AUDIT_KEY", "audit-key-that-is-long-enough-123456")
+	t.Setenv("STEPANEL_SESSION_SECRET", "session-key-that-is-long-enough-123456")
+	cfg := LoadConfig()
+	cfg.Listen = ":8080"
+	cfg.ImportRoot = "/var/lib/ste-panel/imports"
+	cfg.BackupRoot = "/var/lib/ste-panel/backups"
+	cfg.WebRoot = "/var/www"
+	cfg.MailRoot = "/var/lib/ste-panel/mail"
+	cfg.NVMDir = "/var/lib/ste-panel/nvm"
+	cfg.ProxyRoot = "/var/lib/ste-panel/proxy"
+	cfg.VHostRoot = "/var/lib/ste-panel/vhosts"
+	cfg.AppRoot = "/var/lib/ste-panel/apps"
+	cfg.MalwareRoot = "/var/lib/ste-panel/quarantine"
+	cfg.AuditLog = "/var/lib/ste-panel/audit.jsonl"
+	cfg.JobState = "/var/lib/ste-panel/jobs.json"
+	cfg.SessionState = "/var/lib/ste-panel/sessions.json"
+	cfg.RecoveryRoot = "/var/www/sites/.stepanel-recovery"
+	cfg.WPressExtract = "/usr/local/bin/wpress-extract"
+	cfg.WPCLI = "/usr/local/bin/wp"
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("trusted proxy TLS config rejected: %v", err)
+	}
+}
+
+func TestValidateConfigRejectsInvalidTLSTerminationFlag(t *testing.T) {
+	t.Setenv("STEPANEL_ENV", "production")
+	t.Setenv("STEPANEL_TLS_TERMINATED", "yes")
+	t.Setenv("STEPANEL_AUDIT_KEY", "audit-key-that-is-long-enough-123456")
+	t.Setenv("STEPANEL_SESSION_SECRET", "session-key-that-is-long-enough-123456")
+	if err := ValidateConfig(LoadConfig()); err == nil || !strings.Contains(err.Error(), "STEPANEL_TLS_TERMINATED") {
+		t.Fatalf("expected TLS termination validation error, got %v", err)
+	}
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -77,8 +78,7 @@ func (a *App) selectNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "node.version.selected", input.Site, "Node v"+version); err != nil {
-		http.Error(w, "node version selected but audit persistence is unavailable", http.StatusServiceUnavailable)
-		return
+		log.Printf("node version selected but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"site": input.Site, "version": "v" + version})
 }
@@ -109,8 +109,7 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deployed", input.Site, input.Domain+" -> "+backend); err != nil {
-		http.Error(w, "proxy deployed but audit persistence is unavailable", http.StatusServiceUnavailable)
-		return
+		log.Printf("proxy deployed but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"site": input.Site, "domain": input.Domain, "backend": backend, "config": path, "reloaded": true})
 }
@@ -173,8 +172,7 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "proxy.deleted", name, "managed proxy removed"); err != nil {
-		http.Error(w, "proxy deleted but audit persistence is unavailable", http.StatusServiceUnavailable)
-		return
+		log.Printf("proxy deleted but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "reloaded": true})
 }
@@ -195,14 +193,18 @@ func localBackend(value string) (string, error) {
 	if u.Port() == "" {
 		return "", errors.New("backend must include a port")
 	}
-	if u.Hostname() == "localhost" {
+	if strings.EqualFold(u.Hostname(), "localhost") {
 		return u.Host, nil
 	}
 	ip := net.ParseIP(u.Hostname())
-	if ip == nil || !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()) {
+	if ip == nil || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || isCloudMetadataIP(ip) || !(ip.IsLoopback() || ip.IsPrivate()) {
 		return "", errors.New("backend must target localhost or a private IP")
 	}
 	return u.Host, nil
+}
+
+func isCloudMetadataIP(ip net.IP) bool {
+	return ip.Equal(net.ParseIP("169.254.169.254")) || ip.Equal(net.ParseIP("100.100.100.200")) || ip.Equal(net.ParseIP("fd00:ec2::254"))
 }
 
 func ensureInside(root, target string) error {
@@ -217,5 +219,5 @@ func ensureInside(root, target string) error {
 	if t != r && !strings.HasPrefix(t, r+string(os.PathSeparator)) {
 		return errors.New("path escapes configured root")
 	}
-	return nil
+	return rejectSymlinkParents(t, r)
 }

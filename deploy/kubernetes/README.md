@@ -16,7 +16,8 @@ The manifest creates two 10Gi persistent volume claims for control-plane data
 and site files. Adjust their size and storage class for the environment. It
 uses one replica with a `Recreate` rollout because restore jobs and persistent
 state are process-local. The pod runs as UID/GID 10001 with a read-only root
-filesystem and no service-account token. Add an ingress, TLS, database
+filesystem and no service-account token. The manifest explicitly enables
+trusted upstream TLS termination; add an ingress, TLS, database
 connection, and environment-specific network policy before production use.
 
 This container is a control-plane packaging target, not a host-management

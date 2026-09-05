@@ -13,6 +13,7 @@ Install these commands on the destination host:
 - `mariadb` or `mysql`.
 
 Override executable paths with `STEPANEL_WPRESS_EXTRACT` and `STEPANEL_WPCLI`.
+Production configurations must use absolute executable paths.
 Use `/api/wpress/preflight` to verify availability.
 
 ## Restore procedure

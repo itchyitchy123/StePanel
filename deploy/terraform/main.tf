@@ -65,6 +65,20 @@ resource "kubernetes_deployment" "stepanel" {
             name  = "STEPANEL_LISTEN"
             value = ":8080"
           }
+          env { name = "STEPANEL_TLS_TERMINATED" value = "1" }
+          env { name = "STEPANEL_IMPORT_ROOT" value = "/var/lib/ste-panel/imports" }
+          env { name = "STEPANEL_BACKUP_ROOT" value = "/var/lib/ste-panel/backups" }
+          env { name = "STEPANEL_WEB_ROOT" value = "/var/www" }
+          env { name = "STEPANEL_MAIL_ROOT" value = "/var/lib/ste-panel/mail" }
+          env { name = "STEPANEL_NVM_DIR" value = "/var/lib/ste-panel/nvm" }
+          env { name = "STEPANEL_PROXY_ROOT" value = "/var/lib/ste-panel/proxy" }
+          env { name = "STEPANEL_VHOST_ROOT" value = "/var/lib/ste-panel/vhosts" }
+          env { name = "STEPANEL_APP_ROOT" value = "/var/lib/ste-panel/apps" }
+          env { name = "STEPANEL_MALWARE_ROOT" value = "/var/lib/ste-panel/quarantine" }
+          env { name = "STEPANEL_AUDIT_LOG" value = "/var/lib/ste-panel/audit.jsonl" }
+          env { name = "STEPANEL_JOB_STATE" value = "/var/lib/ste-panel/jobs.json" }
+          env { name = "STEPANEL_SESSION_STATE" value = "/var/lib/ste-panel/sessions.json" }
+          env { name = "STEPANEL_RECOVERY_ROOT" value = "/var/www/sites/.stepanel-recovery" }
           env {
             name = "STEPANEL_ADMIN_PASSWORD"
             value_from {

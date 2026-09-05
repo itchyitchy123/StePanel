@@ -33,8 +33,7 @@ func uploadOffsite(cfg Config, result BackupResult) error {
 	destination := strings.TrimRight(cfg.OffsiteTarget, "/") + "/" + result.Site + "/" + filepath.Base(result.Path)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "rclone", "copyto", result.Path, destination, "--immutable")
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, "rclone", "copyto", result.Path, destination, "--immutable")); err != nil {
 		return fmt.Errorf("offsite upload failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil

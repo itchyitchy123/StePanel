@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -115,7 +116,7 @@ func (a *App) cloudAction(w http.ResponseWriter, r *http.Request) {
 		}
 		result := CloudActionResult{Provider: in.Provider, Action: in.Action, ID: in.ID, CompletedAt: time.Now().UTC()}
 		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud."+in.Action, in.ID, in.Provider); err != nil {
-			return result, err
+			log.Printf("cloud action completed but audit persistence is unavailable: %v", err)
 		}
 		return result, nil
 	}); err != nil {
@@ -229,7 +230,7 @@ func (a *App) cloudLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		}
 		result := CloudActionResult{Provider: "linode", Action: "loadbalancer." + in.Action, ID: in.NodeBalancerID, CompletedAt: time.Now().UTC()}
 		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.loadbalancer."+in.Action, in.NodeBalancerID, in.Address); err != nil {
-			return result, err
+			log.Printf("load balancer action completed but audit persistence is unavailable: %v", err)
 		}
 		return result, nil
 	}); err != nil {
@@ -278,7 +279,7 @@ func (a *App) cloudSnapshots(w http.ResponseWriter, r *http.Request) {
 		}
 		result := CloudActionResult{Provider: "linode", Action: "snapshot.delete", ID: id, CompletedAt: time.Now().UTC()}
 		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.snapshot.delete", id, "linode"); err != nil {
-			return result, err
+			log.Printf("snapshot deletion completed but audit persistence is unavailable: %v", err)
 		}
 		return result, nil
 	})
@@ -362,7 +363,7 @@ func (a *App) queueDNSJob(w http.ResponseWriter, in cloudDNSRequest, action stri
 		}
 		result := CloudActionResult{Provider: "linode", Action: "dns." + action, ID: in.DomainID, CompletedAt: time.Now().UTC()}
 		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.dns."+action, in.DomainID, in.Name); err != nil {
-			return result, err
+			log.Printf("DNS action completed but audit persistence is unavailable: %v", err)
 		}
 		return result, nil
 	})
@@ -505,7 +506,7 @@ func runCloudCLI(ctx context.Context, command, provider string, args ...string) 
 	if _, err := exec.LookPath(command); err != nil {
 		return fmt.Errorf("%s CLI is not installed", provider)
 	}
-	out, err := exec.CommandContext(ctx, command, args...).CombinedOutput()
+	out, err := runBoundedCommand(ctx, exec.CommandContext(ctx, command, args...))
 	if err != nil {
 		return fmt.Errorf("%s action failed: %w: %s", provider, err, strings.TrimSpace(string(out)))
 	}
@@ -566,7 +567,7 @@ func cliCloudInventory(ctx context.Context, command, provider string) (CloudInve
 		return CloudInventory{}, fmt.Errorf("%s CLI is not installed", provider)
 	}
 	run := func(args ...string) (any, error) {
-		out, err := exec.CommandContext(ctx, command, args...).Output()
+		out, err := runBoundedCommand(ctx, exec.CommandContext(ctx, command, args...))
 		if err != nil {
 			return nil, fmt.Errorf("%s command failed: %w", provider, err)
 		}

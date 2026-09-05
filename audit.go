@@ -19,6 +19,8 @@ var auditMu sync.Mutex
 var auditPersistenceErr error
 var auditKeyPath = "/etc/stepanel-audit.key"
 
+const maxAuditLogBytes int64 = 256 << 20
+
 type AuditEvent struct {
 	Time         string `json:"time"`
 	Sequence     uint64 `json:"sequence"`
@@ -78,6 +80,11 @@ func appendAuditEvent(path, actor, action, target, detail string) error {
 		return err
 	}
 	statePath := path + ".state"
+	if info, statErr := os.Stat(path); statErr == nil && info.Size() >= maxAuditLogBytes {
+		return errors.New("audit log exceeds the 256 MiB retention limit; rotate it after verification")
+	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
 	state, err := loadAuditState(statePath)
 	if err != nil {
 		return err
@@ -235,6 +242,9 @@ func reconcileAuditTail(path string, state auditState) (auditState, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &last); err != nil {
 			return state, errors.New("audit log contains an invalid event")
 		}
+		if err := validateAuditEvent(last); err != nil {
+			return state, err
+		}
 		if first.Sequence == 0 {
 			first = last
 		}
@@ -274,6 +284,16 @@ func reconcileAuditTail(path string, state auditState) (auditState, error) {
 		return auditState{Version: 1, Sequence: last.Sequence, Hash: last.Hash, FirstSequence: state.FirstSequence, FirstPreviousHash: state.FirstPreviousHash, KeyCheck: state.KeyCheck}, nil
 	}
 	return state, errors.New("audit log and chain state are inconsistent")
+}
+
+func validateAuditEvent(event AuditEvent) error {
+	if event.Sequence == 0 || strings.TrimSpace(event.Actor) == "" || strings.TrimSpace(event.Action) == "" {
+		return errors.New("audit log contains an event with invalid identity or sequence")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, event.Time); err != nil {
+		return errors.New("audit log contains an invalid event timestamp")
+	}
+	return nil
 }
 
 func writeAuditState(path string, state auditState) error {
@@ -331,6 +351,9 @@ func VerifyAuditLog(path string) error {
 	for scanner.Scan() {
 		var event AuditEvent
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return err
+		}
+		if err := validateAuditEvent(event); err != nil {
 			return err
 		}
 		expected, err := hashAuditEvent(event)

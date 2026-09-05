@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -160,7 +161,7 @@ func (a *App) runDueBackups() {
 			if err != nil {
 				_ = AuditAs(a.Config.AuditLog, "scheduler", "site.backup.failed", site, err.Error())
 			} else if auditErr := AuditAs(a.Config.AuditLog, "scheduler", "site.backup.completed", site, result.ArchiveSHA256); auditErr != nil {
-				err = auditErr
+				log.Printf("scheduled backup completed but audit persistence is unavailable: %v", auditErr)
 			}
 			return result, err
 		})

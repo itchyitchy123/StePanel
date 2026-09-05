@@ -138,6 +138,15 @@ func TestAuditPreservesUnsignedLegacyLog(t *testing.T) {
 	}
 }
 
+func TestValidateAuditEventRejectsBadTimestampAndIdentity(t *testing.T) {
+	if err := validateAuditEvent(AuditEvent{Sequence: 1, Time: "not-a-timestamp", Actor: "admin", Action: "test"}); err == nil {
+		t.Fatal("invalid timestamp was accepted")
+	}
+	if err := validateAuditEvent(AuditEvent{Sequence: 1, Time: "2026-09-04T00:00:00Z", Actor: "", Action: "test"}); err == nil {
+		t.Fatal("empty actor was accepted")
+	}
+}
+
 func TestAuditChainContinuesAcrossRotation(t *testing.T) {
 	t.Setenv("STEPANEL_AUDIT_KEY", strings.Repeat("r", 32))
 	path := filepath.Join(t.TempDir(), "audit.jsonl")

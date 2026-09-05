@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -107,7 +108,7 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.offsite_failed", input.Site, err.Error())
 				} else if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.completed", input.Site, result.ArchiveSHA256); auditErr != nil {
-					err = auditErr
+					log.Printf("backup completed but audit persistence is unavailable: %v", auditErr)
 				}
 			}
 			return result, err
@@ -317,7 +318,7 @@ func addBackupFile(tw *tar.Writer, source, name string, totalBytes *int64, manif
 func managedDatabasesForSite(cfg Config, site string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	output, err := helperCommandContext(ctx, cfg, cfg.DBCtl, "list", site).CombinedOutput()
+	output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "list", site))
 	if err != nil {
 		return nil, fmt.Errorf("list managed databases: %w: %s", err, strings.TrimSpace(string(output)))
 	}

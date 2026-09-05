@@ -60,7 +60,21 @@ spec:
           env:
             - {name: STEPANEL_ENV, value: "production"}
             - {name: STEPANEL_LISTEN, value: ":8080"}
+            # The configured ingress must terminate HTTPS before forwarding here.
+            - {name: STEPANEL_TLS_TERMINATED, value: "1"}
             - {name: STEPANEL_SESSION_STATE, value: "/var/lib/ste-panel/sessions.json"}
+            - {name: STEPANEL_IMPORT_ROOT, value: "/var/lib/ste-panel/imports"}
+            - {name: STEPANEL_BACKUP_ROOT, value: "/var/lib/ste-panel/backups"}
+            - {name: STEPANEL_WEB_ROOT, value: "/var/www"}
+            - {name: STEPANEL_MAIL_ROOT, value: "/var/lib/ste-panel/mail"}
+            - {name: STEPANEL_NVM_DIR, value: "/var/lib/ste-panel/nvm"}
+            - {name: STEPANEL_PROXY_ROOT, value: "/var/lib/ste-panel/proxy"}
+            - {name: STEPANEL_VHOST_ROOT, value: "/var/lib/ste-panel/vhosts"}
+            - {name: STEPANEL_APP_ROOT, value: "/var/lib/ste-panel/apps"}
+            - {name: STEPANEL_MALWARE_ROOT, value: "/var/lib/ste-panel/quarantine"}
+            - {name: STEPANEL_AUDIT_LOG, value: "/var/lib/ste-panel/audit.jsonl"}
+            - {name: STEPANEL_JOB_STATE, value: "/var/lib/ste-panel/jobs.json"}
+            - {name: STEPANEL_RECOVERY_ROOT, value: "/var/www/sites/.stepanel-recovery"}
             - name: STEPANEL_ADMIN_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: admin-password}}
             - name: STEPANEL_SESSION_SECRET

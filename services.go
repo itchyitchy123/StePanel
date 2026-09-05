@@ -46,7 +46,7 @@ func ServiceStatus() map[string]string {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		output, err := exec.CommandContext(ctx, apache, "-M").CombinedOutput()
+		output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, apache, "-M"))
 		cancel()
 		if err == nil && (bytes.Contains(output, []byte("security2_module")) || bytes.Contains(output, []byte("security3_module"))) {
 			result["modsecurity"] = "enabled"
@@ -74,7 +74,7 @@ func serviceUnitState(service string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, "systemctl", "is-active", service).CombinedOutput()
+	output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, "systemctl", "is-active", service))
 	state := strings.TrimSpace(string(output))
 	if err == nil && state == "active" {
 		return "active"

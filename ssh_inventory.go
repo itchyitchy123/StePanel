@@ -125,7 +125,7 @@ func executeSSHAction(ctx context.Context, server, action, service string) error
 	} else {
 		args = append(args, "systemctl", "restart", service)
 	}
-	out, err := exec.CommandContext(ctx, "ssh", args...).CombinedOutput()
+	out, err := runBoundedCommand(ctx, exec.CommandContext(ctx, "ssh", args...))
 	if err != nil {
 		return fmt.Errorf("SSH action failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}

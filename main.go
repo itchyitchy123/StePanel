@@ -85,7 +85,10 @@ func main() {
 		log.Fatalf("open persistent session state: %v", err)
 	}
 	if cfg.DBCtl != "" {
-		if output, err := helperCommand(cfg, cfg.DBCtl, "reconcile").CombinedOutput(); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "reconcile"))
+		cancel()
+		if err != nil {
 			log.Fatalf("reconcile interrupted database operations: %v: %s", err, strings.TrimSpace(string(output)))
 		}
 	}
@@ -213,7 +216,13 @@ func main() {
 	server := &http.Server{Addr: cfg.Listen, Handler: logging(normalizeAPIErrors(mux), app.Metrics, cfg.Production), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	go func() {
 		log.Printf("StePanel listening on %s", cfg.Listen)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if cfg.TLSCertFile != "" {
+			err = server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
 	}()
@@ -391,7 +400,7 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.completed", user, result.StagedAt); auditErr != nil {
-				restoreErr = auditErr
+				log.Printf("cpmove restore completed but audit persistence is unavailable: %v", auditErr)
 			}
 		}
 		return result, restoreErr
