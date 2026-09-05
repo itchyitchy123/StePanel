@@ -15,9 +15,11 @@
    git push origin "v${release_version}"
    ```
 
-5. The release workflow builds Linux AMD64 and ARM64 binaries, creates checksums
-   and an SBOM, publishes provenance, pushes multi-architecture container
-   images, and attaches artifacts to the GitHub release.
+5. The release workflow runs GoReleaser for Linux AMD64 and ARM64 binaries,
+   creates tar archives and SHA-256 checksums, publishes provenance, pushes
+   multi-architecture container images, and attaches the artifacts to the
+   GitHub release. The workflow also attaches an SPDX SBOM generated for the
+   checked-out source tree.
 
 Never include database passwords, backup archives, production configuration, or
 session secrets in release artifacts.

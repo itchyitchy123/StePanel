@@ -146,6 +146,7 @@ checkbox and should be backed up first.
 - [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
 - [WordPress WPress migration guide](docs/WPRESS_IMPORTS.md)
 - [Architecture and safety model](docs/ARCHITECTURE.md)
+- [Engineering decisions and interview walkthrough](docs/ENGINEERING_DECISIONS.md)
 - [Feature catalog](docs/FEATURES.md)
 - [Threat model](docs/THREAT_MODEL.md)
 - [Malware guard](docs/MALWARE_GUARD.md)

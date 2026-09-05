@@ -1,0 +1,46 @@
+version: 2
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: stepanel
+    main: .
+    binary: stepanel
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Commit={{ .FullCommit }} -X main.BuildDate={{ .Date }}
+
+archives:
+  - id: stepanel
+    ids:
+      - stepanel
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+      - SECURITY.md
+
+checksum:
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'

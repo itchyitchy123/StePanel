@@ -2,6 +2,54 @@
 
 StePanel is deliberately small at this stage. The Go process owns the control-plane HTTP API and server-rendered dashboard. The operating system owns the webserver, PHP, database, and systemd lifecycle.
 
+## Request lifecycle
+
+The same admission boundary applies to read-only inspection and privileged
+mutations. A `cpmove` inspection stops after validation and metadata extraction;
+an authorized restore records a job before any background work starts. The
+job worker then crosses only the narrowly scoped helper/database boundaries it
+needs.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Browser / API client
+    participant P as StePanel HTTP API
+    participant A as Auth + CSRF + rate limits
+    participant I as cpmove inspector
+    participant J as Durable async job store / worker
+    participant M as MySQL / MariaDB
+    participant W as Apache / Caddy helper
+
+    C->>P: HTTPS request
+    P->>A: Authenticate session and validate CSRF
+    A-->>P: Admit or reject (audit rejected mutations)
+    alt POST /api/cpmove/inspect
+        P->>I: Bounded upload stream
+        I->>I: Validate gzip/tar paths and inspect manifest
+        I-->>P: Safe metadata and findings
+        P-->>C: Inspection response
+    else POST /api/cpmove/import
+        P->>I: Preflight and archive validation
+        I-->>P: Approved restore plan
+        P->>J: Persist job and preflight audit event
+        J-->>C: Job ID / polling URL
+        J->>J: Stage archive and restore site transaction
+        J->>M: Create account-prefixed schema and import SQL
+        J->>W: Apply validated vhost/config and reload
+        J->>J: Persist result and completion audit event
+        C->>P: GET job status
+        P->>J: Read durable state
+        J-->>C: State, result, or failure
+    end
+```
+
+The database and webserver are external system resources. SQL is executed
+through the selected database boundary, while Apache/Caddy changes are made
+through root-owned helpers that validate their complete configuration before a
+reload. The control-plane service account does not edit active webserver
+configuration directly.
+
 The container image packages only the StePanel control plane. Caddy/Apache/OpenLiteSpeed, MySQL/MariaDB or PostgreSQL, PHP, and site files remain external concerns in container deployments.
 
 ```text
