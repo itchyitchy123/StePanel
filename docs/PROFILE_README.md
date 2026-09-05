@@ -1,31 +1,43 @@
 # Stephan Loesevitz
 
-Linux Systems Engineer focused on reliable hosting infrastructure, security automation, and practical developer tooling.
+Linux Systems Engineer building safer, more observable hosting infrastructure.
+I work at the boundary between Linux operations and software engineering: taking
+messy, failure-prone server workflows and turning them into repeatable,
+auditable automation.
 
-## What I work on
+My focus is practical reliability—least privilege, safe migrations, recovery
+paths, useful health signals, and documentation that an operator can follow at
+03:00. I work across Red Hat and Debian-based systems, cPanel/PHP hosting,
+databases, Kubernetes, and infrastructure-as-code, using Go, Python, Bash, and
+Ansible.
 
-- Red Hat, AlmaLinux, Debian, and Ubuntu server operations
-- Apache, Nginx, cPanel, PHP-FPM, MySQL, MariaDB, and PostgreSQL
-- Linux security hardening and Fail2ban automation
-- Kubernetes labs and infrastructure-as-code
-- Go, Python, Bash, and Ansible automation
+## Selected work
 
-## Selected projects
-
-| Project | Description |
+| Project | What it demonstrates |
 | --- | --- |
-| [StePanel](https://github.com/itchyitchy123/StePanel) | Go control plane for LAMP hosting and cPanel migrations |
-| [php-fpm_auto-optimize](https://github.com/itchyitchy123/php-fpm_auto-optimize) | Workload-based PHP-FPM capacity recommendations |
-| [install_fail2ban](https://github.com/itchyitchy123/install_fail2ban) | Validated Fail2ban deployment for Linux hosting servers |
-| [wpress_extract_plugin_cpanel](https://github.com/itchyitchy123/wpress_extract_plugin_cpanel) | WordPress migration tooling for cPanel environments |
+| [StePanel](https://github.com/itchyitchy123/StePanel) | Go control plane for LAMP hosting and cPanel migrations, with validated restores, durable jobs, audit events, backups, and reproducible releases. Start with the [architecture](https://github.com/itchyitchy123/StePanel/blob/main/docs/ARCHITECTURE.md) or [demo walkthrough](https://github.com/itchyitchy123/StePanel/blob/main/docs/DEMO.md). |
+| [php-fpm_auto-optimize](https://github.com/itchyitchy123/php-fpm_auto-optimize) | Workload-based PHP-FPM capacity recommendations that connect measurement to safer resource planning. |
+| [install_fail2ban](https://github.com/itchyitchy123/install_fail2ban) | Validated, repeatable security deployment for Linux hosting services. |
+| [wpress_extract_plugin_cpanel](https://github.com/itchyitchy123/wpress_extract_plugin_cpanel) | WordPress migration tooling for real cPanel archive workflows. |
+
+## How I approach infrastructure
+
+- Define the trust boundary before writing the automation.
+- Make destructive operations explicit, bounded, and recoverable.
+- Prefer observable failure over silent success.
+- Test the recovery path, not only the happy path.
+- Leave behind clear runbooks, interfaces, and operating limits.
 
 ## Currently building
 
-StePanel: an operator-focused, safety-first hosting control plane with LAMP installation, database version selection, asynchronous cpmove restore jobs, audit events, and reproducible releases.
+I am developing StePanel as a focused reference implementation for safe hosting
+operations. The project is intentionally honest about its limits: it is a
+single-host operator control plane, not yet a complete multi-tenant platform.
 
 ## Connect
 
-- [LinkedIn](https://www.linkedin.com/in/stephan-loesevitz-85646b225/)
-- [cyberducttape.com](https://cyberducttape.com)
+[LinkedIn](https://www.linkedin.com/in/stephan-loesevitz-85646b225/) ·
+[cyberducttape.com](https://cyberducttape.com)
 
-Open to infrastructure automation, Linux hosting, and reliability conversations.
+Open to infrastructure engineering, Linux hosting, platform automation, and
+reliability conversations.
