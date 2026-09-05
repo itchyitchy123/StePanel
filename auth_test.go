@@ -31,6 +31,15 @@ func TestHashPassword(t *testing.T) {
 	}
 }
 
+func TestAuthRejectsInvalidPasswordHash(t *testing.T) {
+	t.Setenv("STEPANEL_ADMIN_PASSWORD", "")
+	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "not-a-bcrypt-hash")
+	t.Setenv("STEPANEL_SESSION_SECRET", "12345678901234567890123456789012")
+	if _, err := NewAuth(true); err == nil {
+		t.Fatal("invalid bcrypt hash was accepted")
+	}
+}
+
 func TestAuthRejectsOversizedLogin(t *testing.T) {
 	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
 	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")

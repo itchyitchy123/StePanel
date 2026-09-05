@@ -60,6 +60,11 @@ func NewAuth(secureCookies bool) (Auth, error) {
 		}
 		hash = generated
 	}
+	if hash != "" {
+		if _, err := bcrypt.Cost([]byte(hash)); err != nil {
+			return Auth{}, errors.New("STEPANEL_ADMIN_PASSWORD_HASH must be a valid bcrypt hash")
+		}
+	}
 	secret := os.Getenv("STEPANEL_SESSION_SECRET")
 	totpValue := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(os.Getenv("STEPANEL_ADMIN_TOTP_SECRET")), " ", ""))
 	var totpSecret []byte
@@ -215,12 +220,18 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid login request", http.StatusBadRequest)
 		return
 	}
-	credentialsValid := r.FormValue("username") == a.Username && bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(r.FormValue("password"))) == nil
+	username := r.FormValue("username")
+	// Always run bcrypt after parsing a syntactically valid login request. The
+	// previous short-circuit made an unknown username substantially cheaper to
+	// reject than a known one, exposing an avoidable username timing oracle.
+	usernameMatches := subtle.ConstantTimeCompare([]byte(username), []byte(a.Username)) == 1
+	passwordMatches := bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(r.FormValue("password"))) == nil
+	credentialsValid := usernameMatches && passwordMatches
 	if credentialsValid && a.TOTPEnabled {
 		credentialsValid = a.consumeTOTP(r.FormValue("totp"), time.Now())
 	}
 	if !credentialsValid {
-		actor := r.FormValue("username")
+		actor := username
 		if actor == "" {
 			actor = "unknown"
 		}

@@ -298,12 +298,23 @@ func addBackupTree(tw *tar.Writer, root, prefix string, maxEntries int, totalByt
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("backup refuses special file %s", path)
 		}
-		return addBackupFile(tw, path, name, totalBytes, manifest)
+		// Keep the directory walk's inode identity through to the open. Site
+		// files can be changed by their owning account while a backup is in
+		// progress; accepting a replacement here would defeat the no-follow
+		// validation performed above.
+		return addBackupFileExpected(tw, path, name, totalBytes, manifest, info)
 	})
 }
 
 func addBackupFile(tw *tar.Writer, source, name string, totalBytes *int64, manifest *BackupManifest) error {
-	file, info, err := openRegularNoFollow(source, nil)
+	return addBackupFileExpected(tw, source, name, totalBytes, manifest, nil)
+}
+
+// addBackupFileExpected writes a regular file that still matches the file
+// observed during validation. Callers without a preceding walk, such as the
+// database dump staging path, can use addBackupFile instead.
+func addBackupFileExpected(tw *tar.Writer, source, name string, totalBytes *int64, manifest *BackupManifest, expected os.FileInfo) error {
+	file, info, err := openRegularNoFollow(source, expected)
 	if err != nil {
 		return err
 	}

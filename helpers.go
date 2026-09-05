@@ -136,7 +136,10 @@ func sameFileInfo(a, b os.FileInfo) bool {
 	aStat, aOK := a.Sys().(*syscall.Stat_t)
 	bStat, bOK := b.Sys().(*syscall.Stat_t)
 	if aOK && bOK {
-		return aStat.Dev == bStat.Dev && aStat.Ino == bStat.Ino
+		// Inodes can be reused immediately after an unlink. ctime changes for a
+		// replacement (and for any metadata/content mutation), so retain it with
+		// the device/inode identity captured by the directory walk.
+		return aStat.Dev == bStat.Dev && aStat.Ino == bStat.Ino && aStat.Ctim == bStat.Ctim
 	}
 	return a.Size() == b.Size() && a.ModTime().Equal(b.ModTime()) && a.Mode() == b.Mode()
 }
