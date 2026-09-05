@@ -17,6 +17,7 @@ or the import, backup, or recovery filesystem is unavailable or below
 
 ```sh
 journalctl -u stepanel --since today
+journalctl -u caddy --since today       # Caddy (default)
 journalctl -u apache2 --since today
 journalctl -u mysql --since today       # MySQL
 journalctl -u mariadb --since today     # MariaDB
@@ -40,7 +41,8 @@ chain begins. Do not rotate or replace the audit key in place: doing so makes
 the existing chain unverifiable, and the installer refuses the replacement
 while the key file exists.
 
-On RHEL-family systems, the Apache and database unit names may be `httpd` and `mariadb`.
+On RHEL-family systems, the Apache and database unit names may be `httpd` and
+`mariadb`. Use `caddy` for the default webserver on either distribution.
 
 ## Capacity and retention
 
@@ -153,10 +155,16 @@ systemctl status 'stepanel-app-ACCOUNT.service'
 
 Activate a restored PHP document root only after verification by calling
 `POST /api/sites/deploy` with its site and domain. Managed vhosts live under
-`/etc/apache2/stepanel-sites` or `/etc/httpd/conf.d/stepanel-sites`. Apache
-configuration changes are serialized, syntax-tested, and rolled back on reload
-failure. A domain already present in an existing vhost or Node proxy is refused.
-Certificate issuance uses the same Apache lock. Route deletion refuses to
+`/etc/caddy/stepanel.d` by default, or `/etc/apache2/stepanel-sites` and
+`/etc/httpd/conf.d/stepanel-sites` on Apache. Caddy and Apache configuration
+changes are serialized, syntax-tested, and rolled back on reload failure.
+OpenLiteSpeed proxy changes use the same validated, rollback-aware pattern in
+its helper. A domain already present in an existing vhost or Node proxy is
+refused. Use the dashboard or `stepanel convert-htaccess` to review an Apache
+`.htaccess` conversion before applying it to a Caddy PHP route.
+
+Apache certificate issuance uses the same Apache lock; Caddy manages HTTPS
+certificates automatically. Route deletion refuses to
 proceed while another vhost (including a TLS companion) still serves the domain;
 remove that external or certificate-managed vhost first.
 

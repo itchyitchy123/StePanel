@@ -4,7 +4,7 @@
 
 > A modern, safety-first control plane for LAMP hosting and cPanel migrations.
 
-StePanel is an open-source server management panel written in Go. It installs Apache, OpenLiteSpeed, or Caddy, PHP, and a selectable MySQL, MariaDB, or PostgreSQL version, provides a focused operations dashboard, and imports cPanel `cpmove` backups through an asynchronous, validated workflow.
+StePanel is an open-source server management panel written in Go. It installs Caddy by default, with Apache and OpenLiteSpeed available explicitly, plus PHP and a selectable MySQL, MariaDB, or PostgreSQL version. It provides a focused operations dashboard and imports cPanel `cpmove` backups through an asynchronous, validated workflow.
 
 It is designed for people who want a small, understandable hosting control plane instead of a large opaque platform.
 
@@ -21,8 +21,8 @@ It is designed for people who want a small, understandable hosting control plane
 
 | Area | Included today |
 | --- | --- |
-| Installation | Apache, OpenLiteSpeed, or Caddy, PHP, MySQL/MariaDB/PostgreSQL, optional phpMyAdmin/phpPgAdmin, Exim/Dovecot/SpamAssassin/vsftpd, systemd, Debian/Ubuntu and RHEL-family systems |
-| Migration | cPanel `.tar.gz` inspection, safe staging, website, SQL, and staged mailbox restore |
+| Installation | Caddy by default, or Apache/OpenLiteSpeed, PHP, MySQL/MariaDB/PostgreSQL, optional phpMyAdmin/phpPgAdmin, Exim/Dovecot/SpamAssassin/vsftpd, systemd, Debian/Ubuntu and RHEL-family systems |
+| Migration | cPanel `.tar.gz` inspection, safe staging, website, SQL, staged mailbox restore, and fail-closed `.htaccess` conversion for Caddy |
 | Operations | Dashboard, health endpoint, metrics endpoint, audit log, asynchronous restore jobs |
 | Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |
 | Delivery | Dockerfile, ARM64/AMD64 release workflow, checksums, CI, vulnerability scanning |
@@ -56,6 +56,8 @@ Linode snapshots can be listed and safely deleted through
 
 ModSecurity with optional OWASP CRS is available through the installer in
 safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
+For Apache migrations to the default Caddy stack, see the
+[`.htaccess` migration guide](docs/HTACCESS_MIGRATION.md).
 
 > **Status:** StePanel is in early development. It is not yet a complete multi-tenant hosting platform. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
 
@@ -107,7 +109,7 @@ sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
   STEPANEL_DB_VERSION=default ./install.sh
 ```
 
-The installer records the selected database engine/version, creates a restricted `stepanel` service account, writes the requested Apache hostname, and binds the control plane to `127.0.0.1:8090`. Complete HTTPS termination before signing in.
+The installer records the selected database engine/version, creates a restricted `stepanel` service account, writes the requested panel hostname into the selected webserver, and binds the control plane to `127.0.0.1:8090`. Caddy provisions HTTPS automatically; Apache installations must complete TLS termination before signing in.
 
 ## cpmove migration
 
@@ -175,7 +177,7 @@ checkbox and should be backed up first.
 | `GET` | `/api/health` | Version and service health |
 | `GET` | `/livez` | Process-only liveness probe |
 | `GET` | `/readyz` | Job persistence and managed-filesystem readiness probe |
-| `GET` | `/api/services` | Authenticated live Apache, PHP, database, Fail2Ban, and ModSecurity inventory |
+| `GET` | `/api/services` | Authenticated live webserver, PHP, database, Fail2Ban, and ModSecurity inventory |
 | `GET` | `/api/database` | Selected database engine, service/client health, and browser-admin readiness |
 | `GET` | `/api/capabilities` | Runtime feature availability, including database restore compatibility |
 | `GET` | `/api/cloud` | Authenticated Linode/AWS/OpenStack inventory for servers, DNS, load balancers, and snapshots |
@@ -197,6 +199,7 @@ checkbox and should be backed up first.
 | `GET` | `/api/proxy` | List managed reverse proxies |
 | `POST` | `/api/proxy/test` | Test a local/private application backend |
 | `DELETE` | `/api/proxy/<config>` | Remove a managed reverse proxy and reload the selected webserver |
+| `POST` | `/api/caddy/htaccess` | Preview or apply a fail-closed `.htaccess` conversion for a managed Caddy PHP site |
 | `GET` | `/api/sites` | List managed PHP site vhosts |
 | `GET` | `/api/sites/overview` | List site-centric developer workspaces and their managed resources |
 | `GET` | `/api/sites/overview/<site>` | Inspect one site workspace without exposing credentials or environment values |
@@ -234,8 +237,8 @@ checkbox and should be backed up first.
 | `STEPANEL_IMPORT_ROOT` | Private backup staging directory |
 | `STEPANEL_BACKUP_ROOT` | Private published backup directory; use a dedicated backup mount |
 | `STEPANEL_WEB_ROOT` | Site destination root |
-| `STEPANEL_WEBSERVER` | Managed webserver: `apache`, `openlitespeed`, or `caddy` |
-| `STEPANEL_VHOST_ROOT` | Root-owned Apache snippets for managed PHP sites |
+| `STEPANEL_WEBSERVER` | Managed webserver: `caddy` (default), `apache`, or `openlitespeed` |
+| `STEPANEL_VHOST_ROOT` | Root-owned selected-webserver snippets for managed PHP sites |
 | `STEPANEL_PROXY_ROOT` | Managed reverse-proxy state directory |
 | `STEPANEL_APP_ROOT` | Private managed Node application-manifest directory |
 | `STEPANEL_NVM_DIR` | NVM installation root used for managed Node versions |
@@ -287,7 +290,8 @@ only be used on a trusted management network.
 
 Set `STEPANEL_INSTALL_NODE=1 STEPANEL_NODE_VERSIONS=20.18.0,22.14.0` to install
 Node versions through NVM. The panel can select an installed version per site
-and generate a validated Apache reverse proxy for a local app backend.
+and generate a validated reverse proxy for a local app backend in the selected
+webserver.
 Managed apps are supervised by per-site systemd units and can be started,
 stopped, or restarted through the authenticated API.
 

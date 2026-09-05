@@ -50,6 +50,17 @@ func TestEmbeddedDashboardTemplate(t *testing.T) {
 	}
 }
 
+func TestNodeDeploymentBrowserPayloadMatchesStrictAPI(t *testing.T) {
+	data, err := webAssets.ReadFile("web/static/deploy.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	if !strings.Contains(script, "node_version:data.version") || strings.Contains(script, "'/api/apps/deploy',{site:data.site,domain:data.domain,version:") {
+		t.Fatal("Node deployment browser payload does not use the AppManifest JSON contract")
+	}
+}
+
 func TestLoggingAddsBrowserSecurityHeaders(t *testing.T) {
 	handler := logging(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

@@ -2,22 +2,24 @@
 
 ## Supported operating systems
 
-The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Apache or OpenLiteSpeed, MySQL/MariaDB/PostgreSQL, PHP-FPM, ACL and archive utilities, and StePanel.
+The installer supports systems with `apt-get` (Debian/Ubuntu) or `dnf` (Fedora, Rocky, Alma, and compatible RHEL-family systems). It installs Caddy, Apache, or OpenLiteSpeed, MySQL/MariaDB/PostgreSQL, PHP-FPM, ACL and archive utilities, and StePanel.
 
-Set `STEPANEL_WEBSERVER=apache` (the default),
-`STEPANEL_WEBSERVER=openlitespeed`, or `STEPANEL_WEBSERVER=caddy` to choose the webserver. OpenLiteSpeed
+The default is `STEPANEL_WEBSERVER=caddy`. Set `STEPANEL_WEBSERVER=apache` or
+`STEPANEL_WEBSERVER=openlitespeed` to opt into another webserver. OpenLiteSpeed
 installations require the OpenLiteSpeed package repository to be configured;
 the installer verifies that `lswsctrl` is available. Apache-specific optional
-integrations (ModSecurity and the Certbot Apache plugin) are rejected for an
-OpenLiteSpeed install until equivalent OLS integrations are configured.
+integrations (ModSecurity and the Certbot Apache plugin) require an explicitly
+selected Apache install and are rejected for Caddy or OpenLiteSpeed.
 OpenLiteSpeed reverse-proxy snippets are managed by the bundled helper and
 written below `/usr/local/lsws/conf/vhosts/stepanel/proxy`; include that
 directory from the target OLS listener/vhost rewrite configuration before
 serving traffic. PHP site-vhost provisioning still requires an OLS-specific
 listener/vhost template.
-Caddy installs import `/etc/caddy/stepanel.d/*.caddy`; the proxy helper writes
-validated, rollback-safe `reverse_proxy` snippets there and validates/reloads
-Caddy after each change.
+Caddy installs import `/etc/caddy/stepanel.d/*.caddy`. Root-owned helpers write
+validated, rollback-safe PHP site and `reverse_proxy` definitions there and
+validate/reload the complete Caddyfile after each change. Caddy manages HTTPS
+certificates automatically. Apache `.htaccess` migrations are described in
+[`HTACCESS_MIGRATION.md`](HTACCESS_MIGRATION.md).
 
 ## Build and install
 
@@ -51,9 +53,9 @@ When upgrading an older installation, verify that `STEPANEL_DBCTL` is active
 and restores succeed before manually removing the legacy `stepanel_admin`
 database account; the installer does not delete an existing account implicitly.
 It also requires the panel's fully qualified hostname and writes it into the
-Apache virtual host. Production sessions use Secure cookies, so complete TLS
-termination before attempting to sign in. When Certbot integration is
-installed, issuance can be bootstrapped from the host with
+selected webserver route. Caddy obtains a certificate automatically. For an
+explicit Apache install, complete TLS termination before attempting to sign in.
+When Certbot integration is installed, issuance can be bootstrapped from the host with
 `sudo stepanel-certbot panel.example.com admin@example.com`.
 
 ## Upgrades and rollback boundary
@@ -67,12 +69,13 @@ password.
 
 Before replacing StePanel-owned files, the installer snapshots the binary, web
 assets, helpers, environment, sudoers policy, systemd unit, logrotate policy,
-and panel Apache configuration into a private `/var/tmp/stepanel-install.*`
-transaction. It stops the old daemon, installs the candidate, validates the
-complete Apache configuration, starts the candidate, and requires the local
-health endpoint to succeed. A failure restores those files and the prior
-StePanel service state. Apache changes share the same lock as vhost, proxy, and
-certificate operations.
+and selected panel webserver configuration into a private
+`/var/tmp/stepanel-install.*` transaction. It stops the old daemon, installs
+the candidate, validates the complete selected webserver configuration, starts
+the candidate, and requires the local health endpoint to succeed. A failure
+restores those files and the prior StePanel service state. Runtime Caddy and
+Apache changes share their respective lock with site and proxy operations;
+Apache certificate operations use the Apache lock too.
 
 Package-manager transactions and optional third-party mail, FTP, ModSecurity,
 Fail2ban, Node, ClamAV, or Certbot package configuration are outside that file
@@ -116,7 +119,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | --- | --- | --- |
 | `STEPANEL_DB_ENGINE` | `mysql`, `mariadb`, `postgresql` | Database distribution |
 | `STEPANEL_ADMIN_TOTP_SECRET` | Unpadded base32, 160 bits or more | Require TOTP MFA for administrator login |
-| `STEPANEL_PANEL_HOSTNAME` | Fully qualified domain | Required Apache virtual-host name |
+| `STEPANEL_PANEL_HOSTNAME` | Fully qualified domain | Required panel route hostname |
 | `STEPANEL_DB_VERSION` | `default` or an exact package version | Requested repository version |
 | `STEPANEL_INSTALL_DB_ADMIN` | `0` or `1` | Install phpMyAdmin or phpPgAdmin for the selected engine |
 | `STEPANEL_DB_ADMIN_ALLOW` | IP/CIDR list | Apache access allowlist for the database administrator; defaults to `127.0.0.1 ::1` |
@@ -141,9 +144,10 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_MAX_ARCHIVE_ENTRIES` | `1`–`1000000` | Maximum filesystem entries in a restore or backup |
 | `STEPANEL_MAX_CONCURRENT_JOBS` | `1`–`32` | Global restore, backup, and certificate job slots |
 
-It also enables the Apache proxy, proxy_http, proxy_fcgi, setenvif, rewrite, and headers modules on
-Debian-family systems and writes the requested hostname into the generated
-virtual host. The installer creates:
+For Apache installations, it enables proxy, proxy_http, proxy_fcgi, setenvif,
+rewrite, and headers modules on Debian-family systems. For Caddy installations,
+it writes the panel hostname into a managed Caddy site and enables automatic
+HTTPS. The installer creates:
 
 On SELinux systems the installer restores the standard file contexts and
 enables `httpd_can_network_connect`, which is required for Apache reverse
@@ -156,8 +160,9 @@ outbound-network policy.
 | `/var/lib/ste-panel/imports` | Private cpmove staging |
 | `/var/backups/stepanel` | Private, verified site backup artifacts |
 | `/var/lib/ste-panel/mail` | Private staged mailbox data |
-| `/etc/apache2/stepanel-proxy` or `/etc/httpd/conf.d/stepanel-proxy` | Root-owned managed Apache reverse-proxy snippets |
-| `/etc/apache2/stepanel-sites` or `/etc/httpd/conf.d/stepanel-sites` | Root-owned managed PHP site vhosts |
+| `/etc/caddy/stepanel.d` | Default root-owned Caddy panel, PHP-site, and reverse-proxy definitions |
+| `/etc/apache2/stepanel-proxy` or `/etc/httpd/conf.d/stepanel-proxy` | Optional root-owned managed Apache reverse-proxy snippets |
+| `/etc/apache2/stepanel-sites` or `/etc/httpd/conf.d/stepanel-sites` | Optional root-owned managed Apache PHP site vhosts |
 | `/var/lib/ste-panel/apps` | Managed Node application manifests |
 | `/var/lib/ste-panel/quarantine` | Recoverable malware quarantine |
 | `/var/www/sites/.stepanel-recovery` | Journaled site rollback data |
@@ -166,9 +171,10 @@ outbound-network policy.
 | `/etc/systemd/system/stepanel.service` | Service definition |
 | `/etc/logrotate.d/stepanel` | Audit-log retention policy |
 
-The installer enables TLS issuance only when `STEPANEL_INSTALL_TLS=1`. Metrics
-are authenticated by default; set `STEPANEL_METRICS_PUBLIC=1` only on a
-protected monitoring network.
+Caddy obtains and renews HTTPS certificates automatically. On an explicitly
+selected Apache installation, the installer enables Certbot integration only
+when `STEPANEL_INSTALL_TLS=1`. Metrics are authenticated by default; set
+`STEPANEL_METRICS_PUBLIC=1` only on a protected monitoring network.
 
 ## Site isolation
 
@@ -176,15 +182,22 @@ Before a host restore writes a document root, the root-owned site helper creates
 a deterministic system user and unique primary group, establishes inherited
 ACL access for the unprivileged control plane, and renders private PHP-FPM
 pools for installed PHP versions. Restored files are sealed to the site user
-and Apache group afterward. Site users are not added to Apache's shared group;
-Apache receives group read access to static files and PHP-FPM sockets instead.
-The site deployment API renders a validated vhost that routes PHP requests to
-an active pool for that site and refuses domains already claimed by an existing
-Apache vhost or managed Node proxy.
+and selected webserver group afterward. Site users are not added to the shared
+webserver group; Caddy or Apache receives group read access to static files and
+PHP-FPM sockets instead. The site deployment API renders a validated Caddy or
+Apache vhost that routes PHP requests to an active pool and refuses conflicting
+domains. OpenLiteSpeed PHP routing remains operator-integrated.
 
 ## Reverse proxy
 
-Copy `deploy/apache/stepanel.conf` to the Apache configuration directory, replace the example hostname, enable the required proxy modules, and reload Apache. Add TLS with your preferred certificate automation before exposing the host. Container deployments must either mount application TLS certificates or explicitly set `STEPANEL_TLS_TERMINATED=1` only behind a reverse proxy or cluster ingress that enforces HTTPS. Generic Docker, Terraform, and static Kubernetes examples fail closed until that boundary is configured.
+The default host installation creates a Caddy panel route and imports managed
+definitions from `/etc/caddy/stepanel.d`. Apache users can instead copy
+`deploy/apache/stepanel.conf` to the Apache configuration directory, replace
+the example hostname, enable the required modules, and configure TLS.
+Container deployments must either mount application TLS certificates or set
+`STEPANEL_TLS_TERMINATED=1` only behind an ingress that enforces HTTPS. Generic
+Docker, Terraform, and static Kubernetes examples fail closed until that
+boundary is configured.
 
 ### Database engine and administration UI
 

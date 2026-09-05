@@ -101,19 +101,19 @@ totp_remainder=$(( ${#ADMIN_TOTP_SECRET} % 8 ))
 if [[ -n $ADMIN_TOTP_SECRET && ( ! $ADMIN_TOTP_SECRET =~ ^[A-Z2-7]{32,}$ || ! $totp_remainder =~ ^(0|2|4|5|7)$ ) ]]; then echo 'STEPANEL_ADMIN_TOTP_SECRET must be an unpadded base32 secret of at least 160 bits.' >&2; exit 1; fi
 if [[ ! "$ADMIN_USERNAME" =~ ^[a-zA-Z0-9._-]{1,64}$ || "$ADMIN_USERNAME" == *$'\n'* || "$ADMIN_USERNAME" == *$'\r'* ]]; then echo "Invalid admin username." >&2; exit 1; fi
 if [[ -z "$PANEL_HOSTNAME" ]]; then
-  for panel_config in /etc/apache2/sites-available/stepanel.conf /etc/httpd/conf.d/stepanel.conf; do
+  for panel_config in /etc/apache2/sites-available/stepanel.conf /etc/httpd/conf.d/stepanel.conf /etc/caddy/stepanel.d/panel.caddy; do
     [[ -f $panel_config ]] || continue
-    PANEL_HOSTNAME=$(awk 'tolower($1) == "servername" { print tolower($2); exit }' "$panel_config")
+    PANEL_HOSTNAME=$(awk 'tolower($1) == "servername" { print tolower($2); exit } NR == 1 && $1 ~ /^[A-Za-z0-9.-]+$/ && $2 == "{" { print tolower($1); exit }' "$panel_config")
     [[ -n $PANEL_HOSTNAME ]] && break
   done
 fi
 if [[ -z "$WEB_SERVER" && -t 0 ]]; then
-  read -r -p "Web server [apache/openlitespeed/caddy] (apache): " WEB_SERVER
+  read -r -p "Web server [caddy/apache/openlitespeed] (caddy): " WEB_SERVER
 fi
-WEB_SERVER="${WEB_SERVER:-apache}"
+WEB_SERVER="${WEB_SERVER:-caddy}"
 WEB_SERVER="${WEB_SERVER,,}"
 if [[ "$WEB_SERVER" != "apache" && "$WEB_SERVER" != "openlitespeed" && "$WEB_SERVER" != "caddy" ]]; then echo "STEPANEL_WEBSERVER must be apache, openlitespeed, or caddy." >&2; exit 1; fi
-if [[ "$WEB_SERVER" != "apache" && "$INSTALL_TLS" == "1" ]]; then echo 'STEPANEL_INSTALL_TLS is currently supported only with Apache; configure ACME integration separately for this webserver.' >&2; exit 1; fi
+if [[ "$WEB_SERVER" == "openlitespeed" && "$INSTALL_TLS" == "1" ]]; then echo 'STEPANEL_INSTALL_TLS is not integrated with OpenLiteSpeed; configure TLS separately for this webserver.' >&2; exit 1; fi
 if [[ "$WEB_SERVER" == "openlitespeed" && "$INSTALL_MODSEC" == "1" ]]; then echo 'STEPANEL_INSTALL_MODSEC is currently supported only with Apache.' >&2; exit 1; fi
 if [[ "$WEB_SERVER" == "caddy" && "$INSTALL_MODSEC" == "1" ]]; then echo 'STEPANEL_INSTALL_MODSEC is currently supported only with Apache.' >&2; exit 1; fi
 if [[ ! "$PANEL_HOSTNAME" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then echo "Set STEPANEL_PANEL_HOSTNAME to the panel's fully qualified domain name." >&2; exit 1; fi
@@ -474,9 +474,9 @@ if [[ "$WEB_SERVER" == "apache" && "$PKG" == "apt" ]]; then
 elif [[ "$WEB_SERVER" == "apache" ]]; then
   managed_targets+=(/etc/httpd/conf.d/stepanel.conf /etc/httpd/conf.d/stepanel-proxy.conf)
 elif [[ "$WEB_SERVER" == "caddy" ]]; then
-  managed_targets+=(/etc/caddy/stepanel.d/panel.caddy)
+  managed_targets+=(/etc/caddy/Caddyfile /etc/caddy/stepanel.d/panel.caddy)
 fi
-if [[ "$INSTALL_TLS" == "1" ]]; then managed_targets+=(/usr/local/sbin/stepanel-certbot); fi
+if [[ "$INSTALL_TLS" == "1" && "$WEB_SERVER" == "apache" ]]; then managed_targets+=(/usr/local/sbin/stepanel-certbot); fi
 if [[ -n "$FPM_LENS_BINARY" ]]; then managed_targets+=(/usr/local/bin/fpm-lens); fi
 if [[ "$INSTALL_SECURITY" == "1" ]]; then managed_targets+=(/usr/local/sbin/stepanel-malware-guard /etc/systemd/system/stepanel-malware-guard.service); fi
 for managed_target in "${managed_targets[@]}"; do backup_managed_target "$managed_target"; done
@@ -494,7 +494,7 @@ if [[ "$INSTALL_SECURITY" == "1" ]]; then
   if [[ "$PKG" == "apt" ]]; then apt-get install -y clamav clamav-daemon inotify-tools; else dnf install -y clamav clamav-update inotify-tools; fi
   install -d -m 0700 "$DATA_DIR/quarantine"
 fi
-if [[ "$INSTALL_TLS" == "1" ]]; then
+if [[ "$INSTALL_TLS" == "1" && "$WEB_SERVER" == "apache" ]]; then
   if [[ "$PKG" == "apt" ]]; then apt-get install -y certbot python3-certbot-apache; else dnf install -y certbot python3-certbot-apache; fi
 fi
 install -m 0755 "$ROOT_DIR/stepanel" "$APP_DIR/stepanel"
@@ -510,13 +510,17 @@ else
   install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-proxyctl" /usr/local/sbin/stepanel-proxyctl
 fi
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-sitectl" /usr/local/sbin/stepanel-sitectl
-install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-vhostctl" /usr/local/sbin/stepanel-vhostctl
+if [[ "$WEB_SERVER" == "caddy" ]]; then
+  install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-caddy-vhostctl" /usr/local/sbin/stepanel-vhostctl
+else
+  install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-vhostctl" /usr/local/sbin/stepanel-vhostctl
+fi
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-dbctl" /usr/local/sbin/stepanel-dbctl
 printf 'engine=%s\n' "$DB_ENGINE" > "$INSTALL_TXN/stepanel-dbctl.conf"
 install -m 0600 -o root -g root "$INSTALL_TXN/stepanel-dbctl.conf" /etc/stepanel-dbctl.conf
 printf '%s' "$DB_PASSWORD" > "$INSTALL_TXN/stepanel-db.password"
 install -m 0600 -o root -g root "$INSTALL_TXN/stepanel-db.password" /etc/stepanel-db.password
-if [[ "$INSTALL_TLS" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-certbot" /usr/local/sbin/stepanel-certbot; fi
+if [[ "$INSTALL_TLS" == "1" && "$WEB_SERVER" == "apache" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-certbot" /usr/local/sbin/stepanel-certbot; fi
 if [[ -n "$FPM_LENS_BINARY" ]]; then install -m 0755 "$FPM_LENS_BINARY" /usr/local/bin/fpm-lens; fi
 install -m 0644 -D "$ROOT_DIR/web/index.html" "$APP_DIR/web/index.html"
 install -m 0644 -D "$ROOT_DIR/web/static/app.css" "$APP_DIR/web/static/app.css"
@@ -526,6 +530,7 @@ install -m 0644 -D "$ROOT_DIR/web/static/deploy.js" "$APP_DIR/web/static/deploy.
 install -m 0644 -D "$ROOT_DIR/web/static/certificates.js" "$APP_DIR/web/static/certificates.js"
 install -m 0644 -D "$ROOT_DIR/web/static/wpress.js" "$APP_DIR/web/static/wpress.js"
 install -m 0644 -D "$ROOT_DIR/web/static/database.js" "$APP_DIR/web/static/database.js"
+install -m 0644 -D "$ROOT_DIR/web/static/htaccess.js" "$APP_DIR/web/static/htaccess.js"
 install -m 0644 -D "$ROOT_DIR/web/static/favicon.svg" "$APP_DIR/web/static/favicon.svg"
 if [[ "$WEB_SERVER" == "apache" && "$PKG" == "apt" ]]; then
   install -m 0644 "$ROOT_DIR/deploy/apache/stepanel.conf" /etc/apache2/sites-available/stepanel.conf
@@ -628,7 +633,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_MAX_CONCURRENT_JOBS "$MAX_CONCURRENT_JOBS"
   write_env STEPANEL_FTP_PASSIVE_MIN "$FTP_PASSIVE_MIN"
   write_env STEPANEL_FTP_PASSIVE_MAX "$FTP_PASSIVE_MAX"
-  if [[ "$INSTALL_TLS" == "1" || -x /usr/local/sbin/stepanel-certbot ]]; then write_env STEPANEL_CERTBOT /usr/local/sbin/stepanel-certbot; fi
+  if [[ "$WEB_SERVER" == "apache" && ( "$INSTALL_TLS" == "1" || -x /usr/local/sbin/stepanel-certbot ) ]]; then write_env STEPANEL_CERTBOT /usr/local/sbin/stepanel-certbot; fi
 } > "$env_tmp"
 chmod 0600 "$env_tmp"
 mv -f "$env_tmp" "$ENV_FILE"
@@ -640,7 +645,7 @@ TXN_TEMPS+=("$sudoers_tmp")
 printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-appctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-proxyctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-sitectl *\n' "$APP_USER" "$APP_USER" "$APP_USER" > "$sudoers_tmp"
 printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-vhostctl *\n' "$APP_USER" >> "$sudoers_tmp"
 if [[ "$DB_LOCAL_HELPER" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-dbctl *\n' "$APP_USER" >> "$sudoers_tmp"; fi
-if [[ "$INSTALL_TLS" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-certbot *\n' "$APP_USER" >> "$sudoers_tmp"; fi
+if [[ "$INSTALL_TLS" == "1" && "$WEB_SERVER" == "apache" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-certbot *\n' "$APP_USER" >> "$sudoers_tmp"; fi
 visudo -cf "$sudoers_tmp" >/dev/null
 install -m 0440 -o root -g root "$sudoers_tmp" /etc/sudoers.d/stepanel
 if [[ "$INSTALL_SECURITY" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-malware-guard" /usr/local/sbin/stepanel-malware-guard; install -m 0644 "$ROOT_DIR/deploy/stepanel-malware-guard.service" /etc/systemd/system/stepanel-malware-guard.service; fi
@@ -689,7 +694,7 @@ if [[ "$INSTALL_FTP" == "1" && "$ACTIVATE_FTP" == "1" ]]; then
 elif [[ "$INSTALL_FTP" == "1" && "$FTP_PREEXISTING" == "0" ]]; then
   systemctl disable --now vsftpd 2>/dev/null || true
 fi
-if [[ "$INSTALL_TLS" == "1" ]]; then systemctl enable --now certbot.timer 2>/dev/null || true; fi
+if [[ "$INSTALL_TLS" == "1" && "$WEB_SERVER" == "apache" ]]; then systemctl enable --now certbot.timer 2>/dev/null || true; fi
 if [[ "$INSTALL_FAIL2BAN" == "1" ]]; then
   bash "$APP_DIR/integrations/install-fail2ban.sh" --yes --jails "$FAIL2BAN_JAILS" --ignore-ip "$FAIL2BAN_IGNORE_IP"
 fi

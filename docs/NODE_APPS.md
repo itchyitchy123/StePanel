@@ -16,24 +16,28 @@ Managed Node units run as the deterministic Unix identity created for that
 site, with a unique primary group and write access limited to that site's
 public root.
 
-Deploying an app asks the root-owned `stepanel-proxyctl` helper to generate a
-managed Apache virtual host under `/etc/apache2/stepanel-proxy` or
-`/etc/httpd/conf.d/stepanel-proxy`. The service account cannot write those
-directories. The backend must be an `http://` endpoint on
-localhost or a private/link-local IP and must include a port. This prevents
-the proxy endpoint from becoming an SSRF or open-proxy primitive.
+Deploying an app asks the root-owned `stepanel-appctl` helper to atomically
+install and start its hardened systemd unit. Application lifecycle operations
+are serialized, and a failed activation restores the prior unit and runtime
+state. Proxy deployment is a separate operation through the selected
+webserver's `stepanel-proxyctl` helper. The service account cannot write either
+the systemd unit directory or managed webserver configuration directories.
+The backend must be an `http://` endpoint on localhost or a private IP, must
+include a port from 1 through 65535, and cannot target link-local addresses
+(including cloud metadata endpoints). This prevents the proxy endpoint from
+becoming an SSRF or open-proxy primitive.
 
-The installer enables Apache proxy modules, includes the root-owned managed
-snippets, and installs `/usr/local/sbin/stepanel-proxyctl`. The helper validates
-all arguments, renders a fixed virtual-host template, checks the complete
-Apache configuration, and rolls back a failed reload. Optional HTTPS issuance is
-described in `docs/CERTIFICATES.md`. Application process supervision is
-provided by the managed systemd unit; use the rollback endpoint when a release
-needs to be reverted.
+The installer enables the required proxy integration and installs
+`/usr/local/sbin/stepanel-proxyctl`. The Apache, Caddy, and OpenLiteSpeed
+helpers validate all arguments, render fixed configuration templates, and
+restore the prior configuration and attempt to reload it after activation
+failure. Optional HTTPS issuance is described in `docs/CERTIFICATES.md`.
+Application process supervision is provided by the managed systemd unit; use
+the rollback endpoint when a process release needs to be reverted.
 
 Managed proxies can be listed, backend-tested, and removed through the
-authenticated proxy API. A failed Apache reload restores the previous proxy
-configuration automatically.
+authenticated proxy API. A failed webserver validation or reload restores the
+previous proxy configuration automatically.
 
 Git site deployment is independent of Node process deployment. It can
 atomically replace and roll back committed site files, but it does not run

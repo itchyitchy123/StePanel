@@ -1,9 +1,38 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestValidateConfigRejectsCollidingStateFiles(t *testing.T) {
+	cfg := LoadConfig()
+	cfg.SessionState = cfg.JobState
+	if err := ValidateConfig(cfg); err == nil || !strings.Contains(err.Error(), "must use different files") {
+		t.Fatalf("expected state collision error, got %v", err)
+	}
+}
+
+func TestValidateConfigRejectsNonRegularCredentialFile(t *testing.T) {
+	cfg := LoadConfig()
+	cfg.DBPasswordFile = t.TempDir()
+	if err := ValidateConfig(cfg); err == nil || !strings.Contains(err.Error(), "readable regular credential file") {
+		t.Fatalf("expected credential file error, got %v", err)
+	}
+}
+
+func TestLoadConfigReadsCredentialFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db-password")
+	if err := os.WriteFile(path, []byte("secret-value\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("STEPANEL_DB_PASSWORD_FILE", path)
+	if got := LoadConfig().DBPassword; got != "secret-value" {
+		t.Fatalf("DBPassword = %q", got)
+	}
+}
 
 func TestValidateConfigRejectsMalformedSafetyLimit(t *testing.T) {
 	t.Setenv("STEPANEL_MAX_CONCURRENT_JOBS", "many")
@@ -25,6 +54,13 @@ func TestValidateConfigAcceptsCaddy(t *testing.T) {
 	cfg.WebServer = "caddy"
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatalf("Caddy config rejected: %v", err)
+	}
+}
+
+func TestLoadConfigDefaultsToCaddy(t *testing.T) {
+	t.Setenv("STEPANEL_WEBSERVER", "")
+	if got := LoadConfig().WebServer; got != "caddy" {
+		t.Fatalf("WebServer = %q, want caddy", got)
 	}
 }
 

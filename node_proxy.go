@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -190,17 +191,18 @@ func localBackend(value string) (string, error) {
 	if err != nil || u.Scheme != "http" || u.User != nil || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" {
 		return "", errors.New("backend must be a plain http URL")
 	}
-	if u.Port() == "" {
-		return "", errors.New("backend must include a port")
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return "", errors.New("backend must include a port from 1 through 65535")
 	}
 	if strings.EqualFold(u.Hostname(), "localhost") {
-		return u.Host, nil
+		return net.JoinHostPort("localhost", strconv.Itoa(port)), nil
 	}
 	ip := net.ParseIP(u.Hostname())
 	if ip == nil || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || isCloudMetadataIP(ip) || !(ip.IsLoopback() || ip.IsPrivate()) {
 		return "", errors.New("backend must target localhost or a private IP")
 	}
-	return u.Host, nil
+	return net.JoinHostPort(ip.String(), strconv.Itoa(port)), nil
 }
 
 func isCloudMetadataIP(ip net.IP) bool {

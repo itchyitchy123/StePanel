@@ -22,7 +22,7 @@ func (a *App) doctor(w http.ResponseWriter, _ *http.Request) {
 	checks := []DoctorCheck{}
 	web := cfg.WebServer
 	if web == "" {
-		web = "apache"
+		web = "caddy"
 	}
 	unit := map[string]string{"apache": "apache2", "openlitespeed": "lsws", "caddy": "caddy"}[web]
 	state := services[unit]

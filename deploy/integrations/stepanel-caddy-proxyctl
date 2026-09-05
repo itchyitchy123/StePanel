@@ -5,7 +5,18 @@ root=/etc/caddy/stepanel.d
 service=caddy
 install -d -m 0755 -o root -g root "$root"
 exec 9>/run/lock/stepanel-caddy.lock; flock -x 9
-valid_backend() { [[ "$1" =~ ^https?://(127\.0\.0\.1|localhost|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)[0-9A-Za-z:._-]+$ ]]; }
+valid_backend() {
+  local backend=$1 host port first second third fourth
+  port=${backend##*:}
+  host=${backend%:*}
+  [[ $port =~ ^[0-9]{1,5}$ ]] && (( port >= 1 && port <= 65535 )) || return 1
+  [[ $host == localhost || $host == '[::1]' ]] && return 0
+  [[ $host =~ ^\[([fF][cCdD][0-9A-Fa-f:]*|[fF][eE][89aAbB][0-9A-Fa-f:]*)\]$ ]] && return 0
+  [[ $host =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  IFS=. read -r first second third fourth <<< "$host"
+  (( first <= 255 && second <= 255 && third <= 255 && fourth <= 255 )) || return 1
+  (( first == 10 || first == 127 || first == 192 && second == 168 || first == 172 && second >= 16 && second <= 31 ))
+}
 case "${1:-}" in
 apply)
   (( $# == 4 )) || { echo 'usage: stepanel-caddy-proxyctl apply SITE DOMAIN BACKEND' >&2; exit 64; }
@@ -17,6 +28,7 @@ apply)
   printf '%s {\n\treverse_proxy %s\n}\n' "$domain" "$backend" > "$tmp"; chmod 0644 "$tmp"; chown root:root "$tmp"; mv -f "$tmp" "$path"
   if ! caddy validate --config /etc/caddy/Caddyfile >/dev/null || ! systemctl reload "$service"; then
     if [[ -n "$backup" ]]; then mv -f "$backup" "$path"; else rm -f "$path"; fi
+    if caddy validate --config /etc/caddy/Caddyfile >/dev/null; then systemctl reload "$service" || true; fi
     exit 1
   fi
   ;;
@@ -24,7 +36,11 @@ delete)
   (( $# == 2 )) || { echo 'usage: stepanel-caddy-proxyctl delete NAME' >&2; exit 64; }
   [[ $2 =~ ^[a-z0-9_-]{1,32}-[a-z0-9_-]+\.caddy$ ]] || { echo 'invalid proxy name' >&2; exit 1; }
   path="$root/$2"; [[ -f $path ]] || { echo 'proxy not found' >&2; exit 1; }; backup=$(mktemp); cp -p "$path" "$backup"; rm -f "$path"
-  caddy validate --config /etc/caddy/Caddyfile >/dev/null && systemctl reload "$service" || { mv -f "$backup" "$path"; exit 1; }
+  if ! caddy validate --config /etc/caddy/Caddyfile >/dev/null || ! systemctl reload "$service"; then
+    mv -f "$backup" "$path"
+    if caddy validate --config /etc/caddy/Caddyfile >/dev/null; then systemctl reload "$service" || true; fi
+    exit 1
+  fi
   rm -f "$backup"; ;;
 *) echo 'usage: stepanel-caddy-proxyctl apply SITE DOMAIN BACKEND | delete NAME' >&2; exit 64;;
 esac

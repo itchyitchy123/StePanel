@@ -30,9 +30,28 @@ type App struct {
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
 	gitActivationMu          sync.Mutex
+	appLifecycleMu           sync.Mutex
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "convert-htaccess" {
+		content, err := io.ReadAll(io.LimitReader(os.Stdin, maxHTAccessBytes+1))
+		if err != nil || len(content) > maxHTAccessBytes {
+			log.Fatal(".htaccess input exceeds the 256 KiB limit")
+		}
+		conversion, err := translateHTAccess(string(content))
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, _ = fmt.Fprint(os.Stdout, conversion.CaddyDirectives)
+		for _, warning := range conversion.Warnings {
+			_, _ = fmt.Fprintln(os.Stderr, "warning:", warning)
+		}
+		if len(conversion.Warnings) > 0 {
+			os.Exit(2)
+		}
+		return
+	}
 	if len(os.Args) == 3 && os.Args[1] == "verify-backup" {
 		manifest, err := VerifySiteBackup(os.Args[2])
 		if err != nil {
@@ -217,6 +236,7 @@ func main() {
 	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.appDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/git-deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.gitDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/git-rollback", allowMethods(app.Auth.Require(http.HandlerFunc(app.gitRollback)), http.MethodPost))
+	mux.Handle("/api/caddy/htaccess", allowMethods(app.Auth.Require(http.HandlerFunc(app.htaccessMigration)), http.MethodPost))
 	mux.Handle("/api/apps/", allowMethods(app.Auth.Require(http.HandlerFunc(app.appAction)), http.MethodPost))
 	mux.Handle("/api/cpmove/inspect", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.inspect), expensive)), http.MethodPost))
 	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.importBackup)), http.MethodPost))
@@ -311,13 +331,14 @@ func (a *App) Capabilities() map[string]bool {
 		}
 	}
 	return map[string]bool{
-		"certificates":       commandAvailable(a.Config.Certbot),
+		"certificates":       a.Config.WebServer == "apache" && commandAvailable(a.Config.Certbot),
 		"mysql_restores":     mysqlCompatible(a.Config),
 		"database_lifecycle": a.DatabaseAdmin().LifecycleReady,
 		"database_pitr":      false,
 		"database_failover":  false,
 		"node_apps":          hasNode && commandAvailable(a.Config.AppCtl) && commandAvailable(a.Config.ProxyCtl),
 		"wpress":             allReady(WPressPreflight(a.Config)),
+		"htaccess_import":    a.Config.WebServer == "caddy" && commandAvailable(a.Config.VHostCtl),
 	}
 }
 func (a *App) capabilities(w http.ResponseWriter, _ *http.Request) {

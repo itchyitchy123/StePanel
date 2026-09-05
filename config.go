@@ -34,7 +34,7 @@ type Config struct {
 }
 
 func LoadConfig() Config {
-	c := Config{WebServer: "apache", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", GitAllowedHosts: "github.com,gitlab.com,bitbucket.org", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{WebServer: "caddy", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", GitAllowedHosts: "github.com,gitlab.com,bitbucket.org", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_WEBSERVER"); v != "" {
 		c.WebServer = strings.ToLower(strings.TrimSpace(v))
 	}
@@ -193,6 +193,8 @@ func ValidateConfig(c Config) error {
 		info, err := os.Stat(c.DBPasswordFile)
 		if err != nil || !info.Mode().IsRegular() || info.Size() > 4096 {
 			problems = append(problems, errors.New("STEPANEL_DB_PASSWORD_FILE must be a readable regular credential file no larger than 4 KiB"))
+		} else if _, err := os.ReadFile(c.DBPasswordFile); err != nil {
+			problems = append(problems, errors.New("STEPANEL_DB_PASSWORD_FILE must be readable by the StePanel service account"))
 		}
 	}
 	if strings.ContainsAny(c.DBPassword, "\r\n") {
@@ -268,6 +270,24 @@ func ValidateConfig(c Config) error {
 			problems = append(problems, fmt.Errorf("%s must be absolute in production", name))
 		} else if c.Production && filepath.Clean(path) == string(os.PathSeparator) {
 			problems = append(problems, fmt.Errorf("%s must not be the filesystem root", name))
+		}
+	}
+	statePaths := map[string]string{
+		"STEPANEL_AUDIT_LOG":     c.AuditLog,
+		"STEPANEL_JOB_STATE":     c.JobState,
+		"STEPANEL_SESSION_STATE": c.SessionState,
+	}
+	seenStatePaths := make(map[string]string, len(statePaths))
+	for name, path := range statePaths {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			continue
+		}
+		absolute = filepath.Clean(absolute)
+		if previous, exists := seenStatePaths[absolute]; exists {
+			problems = append(problems, fmt.Errorf("%s and %s must use different files", previous, name))
+		} else {
+			seenStatePaths[absolute] = name
 		}
 	}
 	if c.Production {

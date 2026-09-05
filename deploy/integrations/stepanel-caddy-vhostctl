@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $EUID -eq 0 ]] || { echo 'must run as root' >&2; exit 1; }
+
+root=/etc/caddy/stepanel.d
+service=caddy
+action=${1:-}
+command -v caddy >/dev/null 2>&1 || { echo 'caddy is unavailable' >&2; exit 1; }
+command -v flock >/dev/null 2>&1 || { echo 'flock is required for Caddy configuration locking' >&2; exit 1; }
+install -d -m 0755 -o root -g root "$root"
+exec 9>/run/lock/stepanel-caddy.lock
+flock -x 9
+
+if [[ $action == delete ]]; then
+  (( $# == 2 )) || { echo 'usage: stepanel-caddy-vhostctl delete NAME' >&2; exit 64; }
+  name=$2
+  [[ $name =~ ^site-[a-z0-9_-]{1,32}-[a-z0-9_-]+\.caddy$ ]] || { echo 'invalid site route name' >&2; exit 1; }
+  path="$root/$name"
+  [[ -f $path && ! -L $path ]] || { echo 'site route not found or unsafe' >&2; exit 1; }
+  backup=$(mktemp)
+  trap 'rm -f "$backup"' EXIT
+  cp -p "$path" "$backup"
+  rm -f "$path"
+  if ! caddy validate --config /etc/caddy/Caddyfile >/dev/null || ! systemctl reload "$service"; then
+    mv -f "$backup" "$path"
+    if caddy validate --config /etc/caddy/Caddyfile >/dev/null; then systemctl reload "$service" || true; fi
+    exit 1
+  fi
+  exit 0
+fi
+
+site=${2:-}
+domain=${3,,}
+[[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
+[[ $domain =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo 'invalid domain' >&2; exit 1; }
+(( ${#site} + ${#domain} <= 220 )) || { echo 'site and domain combination is too long' >&2; exit 1; }
+public_root="/var/www/sites/$site/public"
+[[ -d $public_root && ! -L $public_root ]] || { echo 'site document root is unavailable or unsafe' >&2; exit 1; }
+socket=
+for candidate in /run/php/stepanel-"$site"-*.sock /run/php-fpm/stepanel-"$site".sock; do
+  [[ -S $candidate ]] || continue
+  socket=$candidate
+  break
+done
+[[ -n $socket ]] || { echo 'an active isolated PHP-FPM socket was not found for this site' >&2; exit 1; }
+
+name="site-${site}-${domain//./_}.caddy"
+path="$root/$name"
+backup=$(mktemp)
+staged=$(mktemp "$root/.stepanel-site.XXXXXX")
+existed=0
+[[ ! -f $path ]] || { cp -p "$path" "$backup"; existed=1; }
+cleanup() { rm -f "$backup" "$staged"; }
+restore() {
+  if (( existed )); then mv -f "$backup" "$path"; else rm -f "$path"; fi
+  if caddy validate --config /etc/caddy/Caddyfile >/dev/null; then systemctl reload "$service" || true; fi
+}
+trap cleanup EXIT
+
+case "$action" in
+  apply|import-htaccess)
+    (( $# == 3 )) || { echo "usage: stepanel-caddy-vhostctl $action SITE DOMAIN" >&2; exit 64; }
+    {
+      printf '# Managed by StePanel. Manual changes will be replaced.\n%s {\n\troot * %s\n\tencode zstd gzip\n' "$domain" "$public_root"
+      if [[ $action == import-htaccess ]]; then
+        count=0
+        while IFS= read -r line; do
+          [[ -n $line ]] || continue
+          (( ++count <= 100 )) || { echo 'too many translated directives' >&2; exit 1; }
+          if [[ $line == 'try_files {path} {path}/ /index.php?{query}' ]]; then
+            printf '\t%s\n' "$line"
+            continue
+          fi
+          read -r directive source destination code extra <<< "$line"
+          [[ $directive == redir && -z ${extra:-} && $source =~ ^/[A-Za-z0-9._~!$\&\(\)*+,\;=:@%/-]*$ && $destination =~ ^(https?://[A-Za-z0-9._~!$\&\(\)*+,\;=:@%/?#:+-]+|/[A-Za-z0-9._~!$\&\(\)*+,\;=:@%/?+-]+)$ && $code =~ ^3[0-9][0-9]$ ]] || { echo 'unsafe translated directive' >&2; exit 1; }
+          printf '\tredir %s %s %s\n' "$source" "$destination" "$code"
+        done
+      fi
+      printf '\tphp_fastcgi unix/%s\n\tfile_server\n}\n' "$socket"
+    } > "$staged"
+    chmod 0644 "$staged"
+    chown root:root "$staged"
+    mv -f "$staged" "$path"
+    if ! caddy validate --config /etc/caddy/Caddyfile >/dev/null || ! systemctl reload "$service"; then
+      restore
+      exit 1
+    fi
+    ;;
+  *) echo 'usage: stepanel-caddy-vhostctl apply|import-htaccess SITE DOMAIN | delete NAME' >&2; exit 64 ;;
+esac

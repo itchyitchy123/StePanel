@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var siteVHostNamePattern = regexp.MustCompile(`^site-[a-z0-9_-]{1,32}-[a-z0-9_-]+\.conf$`)
+var siteVHostNamePattern = regexp.MustCompile(`^site-[a-z0-9_-]{1,32}-[a-z0-9_-]+\.(conf|caddy)$`)
 
 type siteRoute struct {
 	Site   string `json:"site"`
@@ -110,7 +110,9 @@ func siteRoutesFor(root, site string) []siteRoute {
 		if entry.IsDir() || !siteVHostNamePattern.MatchString(name) || !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		domain := strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".conf"), "_", ".")
+		domain := strings.TrimPrefix(name, prefix)
+		domain = strings.TrimSuffix(strings.TrimSuffix(domain, ".conf"), ".caddy")
+		domain = strings.ReplaceAll(domain, "_", ".")
 		routes = append(routes, siteRoute{Site: site, Domain: domain})
 	}
 	return routes
@@ -191,7 +193,11 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site helper rejected the route or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}
-	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + ".conf"
+	extension := ".conf"
+	if a.Config.WebServer == "caddy" {
+		extension = ".caddy"
+	}
+	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + extension
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deployed", input.Site, input.Domain); err != nil {
 		log.Printf("site deployed but audit persistence is unavailable: %v", err)
 	}

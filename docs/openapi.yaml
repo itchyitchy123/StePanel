@@ -128,6 +128,14 @@ paths:
         - {name: name, in: path, required: true, schema: {type: string}}
       responses:
         '200': {description: Proxy removed}
+  /api/caddy/htaccess:
+    post:
+      summary: Preview or apply a constrained Apache .htaccess conversion
+      description: Applying requires Caddy and refuses unsupported directives unless allow_partial is explicitly enabled.
+      responses:
+        '200': {description: Conversion preview}
+        '202': {description: Converted rules validated and applied}
+        '422': {description: Unsupported or invalid directives require operator review}
   /api/apps:
     get:
       summary: List managed Node applications

@@ -45,11 +45,12 @@ func TestSiteDeployRejectsMissingDocumentRoot(t *testing.T) {
 func TestSiteListFiltersUnmanagedFiles(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "site-account-example_com.conf"), "managed")
+	writeTestFile(t, filepath.Join(root, "site-caddy-caddy_example_com.caddy"), "managed")
 	writeTestFile(t, filepath.Join(root, "unmanaged.conf"), "unmanaged")
 	app := &App{Config: Config{VHostRoot: root}}
 	response := httptest.NewRecorder()
 	app.siteList(response, httptest.NewRequest(http.MethodGet, "/api/sites", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "site-account-example_com.conf") || strings.Contains(response.Body.String(), "unmanaged.conf") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "site-account-example_com.conf") || !strings.Contains(response.Body.String(), "site-caddy-caddy_example_com.caddy") || strings.Contains(response.Body.String(), "unmanaged.conf") {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
@@ -62,12 +63,13 @@ func TestSiteOverviewGroupsManagedResources(t *testing.T) {
 	}
 	vhostRoot := filepath.Join(root, "vhosts")
 	writeTestFile(t, filepath.Join(vhostRoot, "site-account-example_com.conf"), "managed")
+	writeTestFile(t, filepath.Join(vhostRoot, "site-account-caddy_example_com.caddy"), "managed")
 	appRoot := filepath.Join(root, "apps")
 	writeTestFile(t, filepath.Join(appRoot, "account.json"), `{"site":"account","domain":"app.example.com","node_version":"v20.1.0","port":3000,"state":"running"}`)
 	app := &App{Config: Config{WebRoot: webRoot, VHostRoot: vhostRoot, AppRoot: appRoot}}
 	response := httptest.NewRecorder()
 	app.siteOverviewList(response, httptest.NewRequest(http.MethodGet, "/api/sites/overview", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"site":"account"`) || !strings.Contains(response.Body.String(), "example.com") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"site":"account"`) || !strings.Contains(response.Body.String(), "example.com") || !strings.Contains(response.Body.String(), "caddy.example.com") {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }

@@ -114,8 +114,16 @@ func (a *App) backupSchedules(w http.ResponseWriter, r *http.Request) {
 		in.Enabled = true
 		in.NextRun = time.Now().UTC().Add(time.Duration(in.IntervalMinutes) * time.Minute)
 		a.Schedules.mu.Lock()
+		previous, existed := a.Schedules.items[in.Site]
 		a.Schedules.items[in.Site] = in
 		err := a.Schedules.persistLocked()
+		if err != nil {
+			if existed {
+				a.Schedules.items[in.Site] = previous
+			} else {
+				delete(a.Schedules.items, in.Site)
+			}
+		}
 		a.Schedules.mu.Unlock()
 		if err != nil {
 			http.Error(w, "could not persist backup schedule", 500)
@@ -134,8 +142,12 @@ func (a *App) backupSchedules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.Schedules.mu.Lock()
+		previous, existed := a.Schedules.items[site]
 		delete(a.Schedules.items, site)
 		err := a.Schedules.persistLocked()
+		if err != nil && existed {
+			a.Schedules.items[site] = previous
+		}
 		a.Schedules.mu.Unlock()
 		if err != nil {
 			http.Error(w, "could not persist backup schedule", 500)

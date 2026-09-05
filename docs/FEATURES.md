@@ -29,7 +29,10 @@ longer-term hosting-panel roadmap.
 - Authenticated security posture endpoint at `/api/security/audit`.
 - Verified, bounded audit-event queries at `/api/audit/events` for deployment and operational history.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
-- Transactional webserver vhosts and reverse proxies with duplicate-domain checks; PHP vhost templates remain Apache-specific.
+- Transactional Caddy and Apache PHP vhosts and reverse proxies with
+  validation, rollback, and duplicate-domain checks.
+- Fail-closed Apache `.htaccess` preview/import for Caddy, covering common
+  front-controller and redirect rules with explicit unsupported-line reports.
 - Read-only site-centric inventory at `/api/sites/overview`, grouping document roots, domains, Node applications, and managed database counts without exposing secrets.
 - Constrained Git releases and one-click rollback at `/api/sites/git-deploy` and `/api/sites/git-rollback`, with HTTPS-only repositories, an exact hostname allowlist, shallow ref checkout, commit identification, symlink rejection, Git-metadata removal, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.

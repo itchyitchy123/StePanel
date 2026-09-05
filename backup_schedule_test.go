@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBackupScheduleLifecycle(t *testing.T) {
@@ -34,5 +35,40 @@ func TestBackupScheduleLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(list.Body.String(), `"site":"demo"`) {
 		t.Fatalf("list: %s", list.Body.String())
+	}
+}
+
+func TestBackupScheduleUpdateRollsBackWhenPersistenceFails(t *testing.T) {
+	root := t.TempDir()
+	web := filepath.Join(root, "web", "sites", "demo", "public")
+	if err := os.MkdirAll(web, 0750); err != nil {
+		t.Fatal(err)
+	}
+	store := &backupSchedules{path: root, items: map[string]BackupSchedule{}}
+	a := &App{Config: Config{WebRoot: filepath.Join(root, "web")}, Auth: Auth{}, Schedules: store}
+	req := httptest.NewRequest(http.MethodPut, "/api/backup-schedules", strings.NewReader(`{"site":"demo","interval_minutes":60}`))
+	res := httptest.NewRecorder()
+	a.backupSchedules(res, req)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", res.Code)
+	}
+	if _, exists := store.items["demo"]; exists {
+		t.Fatal("failed persistence left an uncommitted schedule in memory")
+	}
+}
+
+func TestBackupScheduleDeleteRollsBackWhenPersistenceFails(t *testing.T) {
+	root := t.TempDir()
+	existing := BackupSchedule{Site: "demo", IntervalMinutes: 60, KeepLast: 7, Enabled: true, NextRun: time.Now().Add(time.Hour)}
+	store := &backupSchedules{path: root, items: map[string]BackupSchedule{"demo": existing}}
+	a := &App{Auth: Auth{}, Schedules: store}
+	req := httptest.NewRequest(http.MethodDelete, "/api/backup-schedules?site=demo", nil)
+	res := httptest.NewRecorder()
+	a.backupSchedules(res, req)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", res.Code)
+	}
+	if _, exists := store.items["demo"]; !exists {
+		t.Fatal("failed persistence removed the schedule from memory")
 	}
 }

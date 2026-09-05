@@ -9,17 +9,27 @@ import (
 )
 
 func TestLocalBackendValidation(t *testing.T) {
-	valid := []string{"http://127.0.0.1:3000", "http://localhost:8080", "http://192.168.1.20:9000"}
+	valid := []string{"http://127.0.0.1:3000", "http://localhost:8080", "http://LOCALHOST:8080", "http://192.168.1.20:9000", "http://[::1]:3000"}
 	for _, value := range valid {
 		if _, err := localBackend(value); err != nil {
 			t.Errorf("localBackend(%q) failed: %v", value, err)
 		}
 	}
-	invalid := []string{"https://127.0.0.1:3000", "http://example.com:3000", "http://127.0.0.1", "http://127.0.0.1:3000/admin", "http://user:pass@127.0.0.1:3000", "http://169.254.169.254:80", "http://100.100.100.200:80"}
+	invalid := []string{"https://127.0.0.1:3000", "http://example.com:3000", "http://127.0.0.1", "http://127.0.0.1:0", "http://127.0.0.1:65536", "http://127.0.0.1:not-a-port", "http://127.0.0.1:3000/admin", "http://user:pass@127.0.0.1:3000", "http://169.254.169.254:80", "http://100.100.100.200:80"}
 	for _, value := range invalid {
 		if _, err := localBackend(value); err == nil {
 			t.Errorf("localBackend(%q) unexpectedly passed", value)
 		}
+	}
+}
+
+func TestLocalBackendCanonicalizesHost(t *testing.T) {
+	backend, err := localBackend("http://LOCALHOST:8080/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend != "localhost:8080" {
+		t.Fatalf("backend = %q, want localhost:8080", backend)
 	}
 }
 

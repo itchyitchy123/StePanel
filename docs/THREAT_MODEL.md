@@ -13,7 +13,7 @@
 2. Uploaded archives are untrusted data and may contain malicious paths or files.
 3. StePanel runs as a service account and must not become a general root command
    execution interface.
-4. Apache, PHP, and database services are external system dependencies.
+4. Caddy/Apache/OpenLiteSpeed, PHP, and database services are external system dependencies.
 
 ## Existing controls
 
@@ -27,14 +27,17 @@
 - Restore destinations are account-scoped and SQL restoration is opt-in.
 - Audit events distinguish actor from target, are sequence/HMAC linked, and
   fail closed before authenticated mutating handlers when persistence is down.
-- Active Apache snippets are root-owned and rendered by a fixed-template helper.
+- Active Caddy and Apache snippets are root-owned and rendered by fixed-template helpers.
+- `.htaccess` input is translated into a narrow directive set; the privileged
+  Caddy helper revalidates every translated line and never receives the source
+  file.
 - Concurrent restores targeting the same site are rejected.
 - New database destinations are rolled back on restore failure; existing
   databases and database users are never silently reused.
 - Background job state and site-overwrite transactions are persisted before
   mutations begin; interrupted site transactions are rolled back at startup.
 - Host site workloads use deterministic per-site Unix identities and unique
-  primary groups. Apache receives group access without making site users
+  primary groups. The selected webserver receives group access without making site users
   members of its shared group, and the control plane uses explicit ACLs.
 - Git deployment accepts only allowlisted HTTPS hosts, disables credential
   prompts/helpers, rejects symlinks and special files, strips repository

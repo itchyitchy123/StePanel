@@ -32,9 +32,9 @@ available for presentations and product materials.
 </table>
 
 This illustration mirrors the current development dashboard structure using
-representative values, including the selected webserver, managed-sites
-workspace, database operations panel, matching administrator link, and direct
-operator-diagnostics link.
+representative values, including Caddy as the selected webserver, automatic
+HTTPS, the managed-sites workspace, database operations panel, and the
+Apache-to-Caddy `.htaccess` migration entry point.
 At runtime, all service counts, health states, load, security checks, and jobs
 come from the current server; the application does not ship simulated activity.
 

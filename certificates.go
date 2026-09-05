@@ -16,6 +16,10 @@ type CertificateResult struct {
 }
 
 func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
+	if a.Config.WebServer != "apache" {
+		http.Error(w, "Caddy manages certificates automatically; manual issuance is available only for Apache", http.StatusConflict)
+		return
+	}
 	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
 		http.Error(w, "invalid request", http.StatusForbidden)
 		return

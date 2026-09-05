@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Caddy `.htaccess` migration through the dashboard, API, and
+  `stepanel convert-htaccess` CLI. Common front-controller and redirect rules
+  are translated, unsupported lines are reported, and partial application
+  requires explicit operator acceptance.
+- Root-owned Caddy PHP-site lifecycle with isolated PHP-FPM sockets, atomic
+  configuration replacement, full-Caddyfile validation, automatic HTTPS, and
+  rollback on failed reload.
 - Site-centric developer workspace inventory at `/api/sites/overview`, grouping
   document roots, domains, Node applications, and managed database counts.
 - Dashboard managed-sites cards backed by the same authenticated API.
@@ -21,6 +28,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Caddy is now the runtime and installer default; Apache and OpenLiteSpeed
+  remain explicit options. Documentation and the dashboard now describe
+  Caddy's automatic certificate lifecycle.
+- Node application lifecycle changes are serialized, systemd unit replacement
+  is atomic and rollback-aware, and rollback manifests are validated before
+  they can drive the privileged helper.
+- CI now syntax-checks and shell-lints every bundled integration helper,
+  including the Caddy and OpenLiteSpeed paths.
 - Reconciled installation, architecture, threat-model, production-readiness,
   Node, database, operations, demo, roadmap, API, and release documentation with the current
   site workspace and constrained Git deployment behavior.
@@ -29,6 +44,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Dashboard Node deployment now sends the strict `node_version` application
+  field and excludes proxy-only fields, allowing browser deployments to reach
+  the app and proxy helpers successfully.
+- Caddy and OpenLiteSpeed proxy deployments now accept the canonical
+  `host:port` backend emitted by the API, validate private addresses and port
+  ranges consistently, and attempt to reactivate the prior configuration when
+  a reload fails. OpenLiteSpeed now renders the required `http://` scheme.
+- Backend URLs with invalid ports are rejected, and accepted localhost/IP
+  values are canonicalized before crossing the privileged-helper boundary.
+- Audit, job, and session state files cannot be configured to the same path;
+  database credential files are verified as readable regular files at startup.
+- Failed backup-schedule writes now restore the prior in-memory state instead
+  of exposing changes that were never durably committed.
+- Node app deployment now commits a final running manifest before activation
+  and restores the previous manifest when its systemd helper fails.
 - Site detail responses now include routes, proxies, and applications, including
   resources owned by site names containing hyphens.
 - Git releases now enforce an exact host allowlist, disable interactive Git

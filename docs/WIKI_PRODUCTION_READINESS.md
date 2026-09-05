@@ -15,14 +15,16 @@ host services managed by the installer and helper scripts.
 
 ### Webserver integrations
 
-Apache remains the default and has the broadest site-vhost integration. With
-`STEPANEL_WEBSERVER=openlitespeed`, proxy snippets are written to
+Caddy is the default. Its root-owned PHP-site and proxy snippets are written to
+`/etc/caddy/stepanel.d`, imported by `/etc/caddy/Caddyfile`, validated, and
+loaded with an atomic rollback-aware reload. The `.htaccess` migration tool
+converts a deliberately constrained directive subset and reports every
+unsupported line. With `STEPANEL_WEBSERVER=openlitespeed`, proxy snippets are written to
 `/usr/local/lsws/conf/vhosts/stepanel/proxy` and OpenLiteSpeed is restarted
 after validation; include that directory from the relevant OLS listener/vhost
-rewrite configuration. With `STEPANEL_WEBSERVER=caddy`, snippets are written
-to `/etc/caddy/stepanel.d`, imported by `/etc/caddy/Caddyfile`, validated, and
-loaded with a Caddy reload. PHP site-vhost templates remain Apache-specific,
-so configure equivalent OLS/Caddy site routing before enabling customer sites.
+rewrite configuration. Apache remains available for workloads that require
+direct module compatibility. OpenLiteSpeed PHP site provisioning still needs
+an operator-reviewed listener/vhost integration.
 
 The container and Kubernetes packages run the control plane only. They do not
 provide access to a host's systemd, Apache, PHP-FPM, or database services.
@@ -49,7 +51,9 @@ provide access to a host's systemd, Apache, PHP-FPM, or database services.
 2. Select the database engine and exact repository version where required.
 3. Set a panel FQDN, strong administrator credentials, session secret, and
    optional MFA before exposing the service.
-4. Complete HTTPS termination and verify secure cookies and HSTS in production.
+4. For Caddy, verify DNS, ports 80/443, automatic HTTPS, secure cookies, and
+   HSTS; for Apache/OpenLiteSpeed, complete an equivalent TLS termination
+   configuration before exposure.
 5. Confirm `/livez` and authenticated `/readyz` responses.
 6. Verify helper paths, ownership, sudo policy, writable roots, and free space.
 7. Run a small backup and restore rehearsal before accepting customer data.

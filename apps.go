@@ -68,7 +68,8 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site document root does not exist", 422)
 		return
 	}
-	app.State = "staged"
+	a.appLifecycleMu.Lock()
+	defer a.appLifecycleMu.Unlock()
 	if err := os.MkdirAll(a.Config.AppRoot, 0750); err != nil {
 		http.Error(w, "unable to create app state directory", 500)
 		return
@@ -86,6 +87,7 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	app.State = "running"
 	data, err := json.MarshalIndent(app, "", "  ")
 	if err != nil {
 		http.Error(w, "unable to encode app manifest", 500)
@@ -102,16 +104,6 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 			_ = os.Remove(manifestPath)
 		}
 		http.Error(w, "app manifest saved but systemd helper failed", 503)
-		return
-	}
-	app.State = "running"
-	running, err := json.MarshalIndent(app, "", "  ")
-	if err != nil {
-		http.Error(w, "app is running but its manifest could not be finalized", 500)
-		return
-	}
-	if err := writeAtomic(manifestPath, append(running, '\n'), 0600); err != nil {
-		http.Error(w, "app is running but its manifest could not be finalized", 500)
 		return
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "app.deployed", app.Site, app.Domain+" on port "+strconv.Itoa(app.Port)); err != nil {
@@ -131,6 +123,8 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid app action", 422)
 		return
 	}
+	a.appLifecycleMu.Lock()
+	defer a.appLifecycleMu.Unlock()
 	if parts[1] == "rollback" {
 		manifestPath := filepath.Join(a.Config.AppRoot, parts[0]+".json")
 		backup, err := os.ReadFile(manifestPath + ".bak")
@@ -139,22 +133,36 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var previous AppManifest
-		if json.Unmarshal(backup, &previous) != nil || previous.Site != parts[0] {
+		if json.Unmarshal(backup, &previous) != nil || !validAppManifest(a.Config, previous, parts[0]) {
 			http.Error(w, "invalid previous app release", 500)
+			return
+		}
+		current, err := os.ReadFile(manifestPath)
+		if err != nil {
+			http.Error(w, "current app manifest is unavailable", 500)
+			return
+		}
+		var currentManifest AppManifest
+		if json.Unmarshal(current, &currentManifest) != nil || !validAppManifest(a.Config, currentManifest, parts[0]) {
+			http.Error(w, "current app manifest is invalid", 500)
 			return
 		}
 		if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, "apply", previous.Site, strings.TrimPrefix(previous.Version, "v"), previous.Root, strconv.Itoa(previous.Port)).Run() != nil {
 			http.Error(w, "rollback failed", 502)
 			return
 		}
-		if current, readErr := os.ReadFile(manifestPath); readErr == nil {
-			if err := writeAtomic(manifestPath+".bak", current, 0600); err != nil {
-				http.Error(w, "unable to save current app rollback state", 500)
-				return
-			}
+		if err := writeAtomic(manifestPath+".bak", current, 0600); err != nil {
+			_ = helperCommand(a.Config, a.Config.AppCtl, "apply", currentManifest.Site, strings.TrimPrefix(currentManifest.Version, "v"), currentManifest.Root, strconv.Itoa(currentManifest.Port)).Run()
+			http.Error(w, "rollback state could not be persisted; the previous process configuration was restored", 500)
+			return
 		}
 		if err := writeAtomic(manifestPath, backup, 0600); err != nil {
-			http.Error(w, "rollback applied but manifest could not be saved", 500)
+			_ = writeAtomic(manifestPath+".bak", backup, 0600)
+			if helperCommand(a.Config, a.Config.AppCtl, "apply", currentManifest.Site, strings.TrimPrefix(currentManifest.Version, "v"), currentManifest.Root, strconv.Itoa(currentManifest.Port)).Run() != nil {
+				http.Error(w, "rollback manifest failed and the prior process configuration could not be restored", 503)
+				return
+			}
+			http.Error(w, "rollback manifest could not be persisted; the previous process configuration was restored", 500)
 			return
 		}
 	} else if a.Config.AppCtl == "" || helperCommand(a.Config, a.Config.AppCtl, parts[1], parts[0]).Run() != nil {
@@ -165,4 +173,12 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 		log.Printf("application action completed but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"site": parts[0], "action": parts[1]})
+}
+
+func validAppManifest(cfg Config, app AppManifest, site string) bool {
+	if app.Site != site || safeUser(app.Site) == "" || !domainPattern.MatchString(strings.ToLower(app.Domain)) || !nodeVersionPattern.MatchString(app.Version) || app.Port < 1024 || app.Port > 65535 {
+		return false
+	}
+	expected := filepath.Join(cfg.WebRoot, "sites", site, "public")
+	return filepath.Clean(app.Root) == filepath.Clean(expected) && ensureInside(cfg.WebRoot, app.Root) == nil
 }

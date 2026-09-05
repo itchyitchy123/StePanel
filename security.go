@@ -38,7 +38,7 @@ func (a *App) SecurityChecks() []SecurityCheck {
 	services := ServiceStatus()
 	webserver := a.Config.WebServer
 	if webserver == "" {
-		webserver = "apache"
+		webserver = "caddy"
 	}
 	if services["modsecurity"] == "enabled" {
 		checks = append(checks, SecurityCheck{Name: "ModSecurity", Status: "pass", Severity: "low", Detail: webserver + " reports the security module as enabled."})
