@@ -16,6 +16,7 @@ valid_backend() {
   host=${backend%:*}
   [[ $port =~ ^[0-9]{1,5}$ ]] && (( port >= 1 && port <= 65535 )) || return 1
   [[ $host == localhost || $host == '[::1]' ]] && return 0
+  [[ $host != 169.254.169.254 && $host != 100.100.100.200 && $host != '[fd00:ec2::254]' ]] || return 1
   [[ $host =~ ^\[([fF][cCdD][0-9A-Fa-f:]*|[fF][eE][89aAbB][0-9A-Fa-f:]*)\]$ ]] && return 0
   [[ $host =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
   IFS=. read -r first second third fourth <<< "$host"

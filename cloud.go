@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -312,10 +313,27 @@ func cloudDNSRecordValid(in cloudDNSRequest) bool {
 		return dnsNamePattern.MatchString(strings.TrimSuffix(in.Target, "."))
 	case "MX":
 		parts := strings.Fields(in.Target)
-		return len(parts) == 2 && numeric(parts[0]) && dnsNamePattern.MatchString(strings.TrimSuffix(parts[1], "."))
+		if len(parts) != 2 {
+			return false
+		}
+		priority, err := strconv.Atoi(parts[0])
+		return err == nil && priority >= 0 && priority <= 65535 && dnsNamePattern.MatchString(strings.TrimSuffix(parts[1], "."))
 	case "SRV":
 		parts := strings.Fields(in.Target)
-		return len(parts) == 4 && numeric(parts[0]) && numeric(parts[1]) && numeric(parts[2]) && dnsNamePattern.MatchString(strings.TrimSuffix(parts[3], "."))
+		if len(parts) != 4 {
+			return false
+		}
+		priority, priorityErr := strconv.Atoi(parts[0])
+		weight, weightErr := strconv.Atoi(parts[1])
+		port, portErr := strconv.Atoi(parts[2])
+		return priorityErr == nil && weightErr == nil && portErr == nil && priority >= 0 && priority <= 65535 && weight >= 0 && weight <= 65535 && port >= 0 && port <= 65535 && dnsNamePattern.MatchString(strings.TrimSuffix(parts[3], "."))
+	case "TXT":
+		for _, r := range in.Target {
+			if r < 0x20 || r == 0x7f {
+				return false
+			}
+		}
+		return true
 	default:
 		return true
 	}
@@ -434,7 +452,16 @@ func linodeAPIRequest(ctx context.Context, method, path string, payload any) (an
 		return nil, nil
 	}
 	var value any
-	if err := json.NewDecoder(res.Body).Decode(&value); err != nil {
+	const maxCloudResponseBytes = 8 << 20
+	limited := io.LimitReader(res.Body, maxCloudResponseBytes+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxCloudResponseBytes {
+		return nil, errors.New("Linode API response exceeds the 8 MiB limit")
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
 		return nil, err
 	}
 	return value, nil

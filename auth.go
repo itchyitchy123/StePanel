@@ -313,9 +313,16 @@ func (a Auth) CSRF(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	value := r.FormValue("csrf")
+	// Prefer the header so multipart endpoints never need to parse an
+	// unbounded request body just to validate CSRF. Browser clients send the
+	// token in this header for uploads; URL-encoded forms retain body support.
+	value := r.Header.Get("X-CSRF-Token")
 	if value == "" {
-		value = r.Header.Get("X-CSRF-Token")
+		contentType := strings.ToLower(r.Header.Get("Content-Type"))
+		if strings.HasPrefix(contentType, "multipart/form-data") {
+			return false
+		}
+		value = r.FormValue("csrf")
 	}
 	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(value)) == 1
 }

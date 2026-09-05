@@ -514,6 +514,8 @@ fi
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-sitectl" /usr/local/sbin/stepanel-sitectl
 if [[ "$WEB_SERVER" == "caddy" ]]; then
   install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-caddy-vhostctl" /usr/local/sbin/stepanel-vhostctl
+elif [[ "$WEB_SERVER" == "openlitespeed" ]]; then
+  install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-ols-vhostctl" /usr/local/sbin/stepanel-vhostctl
 else
   install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-vhostctl" /usr/local/sbin/stepanel-vhostctl
 fi

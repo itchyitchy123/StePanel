@@ -205,6 +205,31 @@ func RestoreCPMove(cfg Config, file multipart.File, header *multipart.FileHeader
 			return result, fmt.Errorf("database restore completed with %d error(s)", len(result.DatabaseErrors))
 		}
 	}
+	if cfg.MailRoot != "" {
+		mailSource := filepath.Join(root, "homedir", "mail")
+		if info, statErr := os.Stat(mailSource); statErr == nil && info.IsDir() {
+			txn.MailRoot = filepath.Join(cfg.MailRoot, user)
+			txn.MailBackup = filepath.Join(txn.dir, "mail-before")
+			if existing, destinationErr := os.Lstat(txn.MailRoot); destinationErr == nil {
+				if existing.Mode()&os.ModeSymlink != 0 {
+					return result, errors.New("destination mail root is a symlink")
+				}
+				txn.MailExisting = true
+				if err := txn.persist(); err != nil {
+					return result, fmt.Errorf("record mail recovery state: %w", err)
+				}
+				if err := os.Rename(txn.MailRoot, txn.MailBackup); err != nil {
+					return result, fmt.Errorf("snapshot existing mail: %w", err)
+				}
+			} else if !errors.Is(destinationErr, os.ErrNotExist) {
+				return result, fmt.Errorf("inspect destination mail root: %w", destinationErr)
+			} else if err := txn.persist(); err != nil {
+				return result, fmt.Errorf("record mail recovery state: %w", err)
+			}
+		} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+			return result, fmt.Errorf("inspect staged mail: %w", statErr)
+		}
+	}
 	result.MailStaged, result.MailboxesStaged, result.MailErrors = restoreMail(cfg, root, user)
 	if len(result.MailErrors) > 0 {
 		return result, fmt.Errorf("mail restore completed with %d error(s)", len(result.MailErrors))

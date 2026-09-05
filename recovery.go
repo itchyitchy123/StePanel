@@ -12,18 +12,21 @@ import (
 )
 
 type SiteTransaction struct {
-	Version     int               `json:"version"`
-	ID          string            `json:"id"`
-	Kind        string            `json:"kind"`
-	Site        string            `json:"site"`
-	Home        string            `json:"home"`
-	Backup      string            `json:"backup"`
-	FailedSite  string            `json:"failed_site,omitempty"`
-	HadExisting bool              `json:"had_existing"`
-	State       string            `json:"state"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
-	Databases   []ManagedDatabase `json:"databases,omitempty"`
+	Version      int               `json:"version"`
+	ID           string            `json:"id"`
+	Kind         string            `json:"kind"`
+	Site         string            `json:"site"`
+	Home         string            `json:"home"`
+	Backup       string            `json:"backup"`
+	FailedSite   string            `json:"failed_site,omitempty"`
+	MailRoot     string            `json:"mail_root,omitempty"`
+	MailBackup   string            `json:"mail_backup,omitempty"`
+	MailExisting bool              `json:"mail_existing,omitempty"`
+	HadExisting  bool              `json:"had_existing"`
+	State        string            `json:"state"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
+	Databases    []ManagedDatabase `json:"databases,omitempty"`
 
 	dir string
 }
@@ -222,6 +225,27 @@ func (t *SiteTransaction) Rollback() error {
 			return fmt.Errorf("restore previous site: %w", err)
 		}
 	}
+	if t.MailRoot != "" {
+		if _, err := os.Lstat(t.MailRoot); err == nil {
+			failedMail := filepath.Join(t.dir, "failed-mail")
+			if renameErr := os.Rename(t.MailRoot, failedMail); renameErr != nil {
+				return fmt.Errorf("preserve failed mail tree: %w", renameErr)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect failed mail tree: %w", err)
+		}
+		if t.MailExisting {
+			if _, err := os.Lstat(t.MailBackup); err != nil {
+				return fmt.Errorf("mail recovery backup is unavailable: %w", err)
+			}
+			if err := os.MkdirAll(filepath.Dir(t.MailRoot), 0750); err != nil {
+				return err
+			}
+			if err := os.Rename(t.MailBackup, t.MailRoot); err != nil {
+				return fmt.Errorf("restore previous mail tree: %w", err)
+			}
+		}
+	}
 	t.State = "rolled-back"
 	return t.persist()
 }
@@ -383,6 +407,9 @@ func loadSiteTransaction(dir string) (*SiteTransaction, error) {
 	expectedBackup := filepath.Join(dir, "site-before")
 	if filepath.Clean(txn.Backup) != expectedBackup || txn.FailedSite != "" && !strings.HasPrefix(filepath.Clean(txn.FailedSite), dir+string(os.PathSeparator)) {
 		return nil, fmt.Errorf("recovery transaction %s contains unsafe paths", txn.ID)
+	}
+	if txn.MailRoot != "" && (filepath.IsAbs(txn.MailRoot) == false || filepath.Clean(txn.MailBackup) != filepath.Join(dir, "mail-before")) {
+		return nil, fmt.Errorf("recovery transaction %s contains unsafe mail paths", txn.ID)
 	}
 	txn.dir = dir
 	return &txn, nil

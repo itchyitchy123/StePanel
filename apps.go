@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -98,10 +99,18 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "apply", app.Site, strings.TrimPrefix(app.Version, "v"), app.Root, strconv.Itoa(app.Port)); err != nil {
+		var rollbackErr error
 		if hadPrevious {
-			_ = writeAtomic(manifestPath, previous, 0600)
+			rollbackErr = writeAtomic(manifestPath, previous, 0600)
 		} else {
-			_ = os.Remove(manifestPath)
+			rollbackErr = os.Remove(manifestPath)
+			if errors.Is(rollbackErr, os.ErrNotExist) {
+				rollbackErr = nil
+			}
+		}
+		if rollbackErr != nil {
+			http.Error(w, "app helper failed and manifest rollback failed: "+rollbackErr.Error(), http.StatusServiceUnavailable)
+			return
 		}
 		http.Error(w, "app manifest saved but systemd helper failed", 503)
 		return

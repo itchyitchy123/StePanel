@@ -37,7 +37,15 @@ register_database() {
   staged=$(mktemp "$registry/.database.XXXXXX")
   printf '%s\n' "$value" > "$staged"
   chmod 0600 "$staged"
+  sync -d "$staged"
   mv -f "$staged" "$registry/$database"
+  sync -d "$registry"
+}
+
+remove_record() {
+  local record=$1
+  rm -f "$record"
+  sync -d "$registry"
 }
 
 database_exists() {
@@ -70,8 +78,8 @@ if [[ $action == reconcile ]]; then
     database=${record##*/}; valid_database "$database" || { echo "invalid registry entry: $database" >&2; exit 1; }
     value=$(<"$record")
     case "$value" in
-      pending-cpmove:*) importer=${value##*:}; valid_user "$importer" || exit 1; drop_objects "$database" "$importer"; rm -f "$record" ;;
-      pending-wordpress:*|pending-panel:*) db_user=${value##*:}; valid_user "$db_user" || exit 1; drop_objects "$database" "$db_user"; rm -f "$record" ;;
+      pending-cpmove:*) importer=${value##*:}; valid_user "$importer" || exit 1; drop_objects "$database" "$importer"; remove_record "$record" ;;
+      pending-wordpress:*|pending-panel:*) db_user=${value##*:}; valid_user "$db_user" || exit 1; drop_objects "$database" "$db_user"; remove_record "$record" ;;
     esac
   done
   exit 0
@@ -160,7 +168,7 @@ case "$action" in
     [[ ! -e $record ]] || { echo 'database ownership record already exists' >&2; exit 1; }
     database_exists "$database" && { echo 'database already exists' >&2; exit 1; }; user_exists "$db_user" && { echo 'database user already exists' >&2; exit 1; }
     register_database "$database" "pending-panel:$site:$db_user"
-    cleanup_panel() { local exit_status=$?; trap - EXIT; if (( exit_status != 0 )); then drop_objects "$database" "$db_user" >/dev/null 2>&1 || true; rm -f "$record"; fi; exit "$exit_status"; }
+    cleanup_panel() { local exit_status=$?; trap - EXIT; if (( exit_status != 0 )); then drop_objects "$database" "$db_user" >/dev/null 2>&1 || true; remove_record "$record"; fi; exit "$exit_status"; }
     trap cleanup_panel EXIT
     if [[ $engine == postgresql ]]; then
       sql_secret "CREATE ROLE \"$db_user\" LOGIN PASSWORD '$password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION CONNECTION LIMIT 20"
@@ -183,13 +191,13 @@ case "$action" in
     (( $# == 3 )) || exit 64; db_user=$3; valid_user "$db_user" || exit 1
     [[ -f $record ]] || { echo 'database is not registered to this user' >&2; exit 1; }; value=$(<"$record")
     [[ $value == panel:*:"$db_user" || $value == wordpress:*:"$db_user" || $value == "wordpress:$db_user" ]] || { echo 'database is not registered to this user' >&2; exit 1; }
-    drop_objects "$database" "$db_user"; rm -f "$record"
+    drop_objects "$database" "$db_user"; remove_record "$record"
     ;;
   restore)
     [[ $engine != postgresql ]] || { echo 'cPanel restore is unavailable for PostgreSQL' >&2; exit 1; }; (( $# == 3 )) || exit 64
     site=$3; valid_site "$site" || exit 1; [[ ! -e $record ]] || exit 1; database_exists "$database" && exit 1
     importer="spi_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"; password=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
-    cleanup_cpmove() { local exit_status=$?; trap - EXIT; sql "DROP USER IF EXISTS '$importer'@'localhost'" >/dev/null 2>&1 || true; if (( exit_status != 0 )); then sql "DROP DATABASE IF EXISTS \`$database\`" >/dev/null 2>&1 || true; rm -f "$record"; fi; exit "$exit_status"; }
+    cleanup_cpmove() { local exit_status=$?; trap - EXIT; sql "DROP USER IF EXISTS '$importer'@'localhost'" >/dev/null 2>&1 || true; if (( exit_status != 0 )); then sql "DROP DATABASE IF EXISTS \`$database\`" >/dev/null 2>&1 || true; remove_record "$record"; fi; exit "$exit_status"; }
     register_database "$database" "pending-cpmove:$site:$importer"; trap cleanup_cpmove EXIT
     sql "CREATE DATABASE \`$database\`"; sql_secret "CREATE USER '$importer'@'localhost' IDENTIFIED BY '$password'"; sql "GRANT ALL PRIVILEGES ON \`$database\`.* TO '$importer'@'localhost'"
     MYSQL_PWD="$password" "$client" --protocol=socket --user="$importer" "$database"; register_database "$database" "cpmove:$site"
@@ -198,17 +206,17 @@ case "$action" in
     [[ $engine != postgresql ]] || { echo 'WordPress restore is unavailable for PostgreSQL' >&2; exit 1; }; (( $# == 4 )) || exit 64
     db_user=$3; site=$4; if ! valid_user "$db_user" || ! valid_site "$site"; then exit 1; fi; IFS= read -r password
     [[ $password =~ ^[A-Za-z0-9!@#%^*_=+.,:-]{16,128}$ ]] || exit 1; [[ ! -e $record ]] || exit 1; database_exists "$database" && exit 1; user_exists "$db_user" && exit 1
-    cleanup_wordpress() { local exit_status=$?; trap - EXIT; if (( exit_status != 0 )); then drop_objects "$database" "$db_user" >/dev/null 2>&1 || true; rm -f "$record"; fi; exit "$exit_status"; }
+    cleanup_wordpress() { local exit_status=$?; trap - EXIT; if (( exit_status != 0 )); then drop_objects "$database" "$db_user" >/dev/null 2>&1 || true; remove_record "$record"; fi; exit "$exit_status"; }
     register_database "$database" "pending-wordpress:$site:$db_user"; trap cleanup_wordpress EXIT
     sql "CREATE DATABASE \`$database\`"; sql_secret "CREATE USER '$db_user'@'localhost' IDENTIFIED BY '$password'"; sql "GRANT ALL PRIVILEGES ON \`$database\`.* TO '$db_user'@'localhost'"
     MYSQL_PWD="$password" "$client" --protocol=socket --user="$db_user" "$database"; register_database "$database" "wordpress:$site:$db_user"
     ;;
   cleanup-wordpress)
-    (( $# == 3 )) || exit 64; db_user=$3; [[ -f $record ]] || exit 0; value=$(<"$record"); [[ $value == "wordpress:$db_user" || $value == wordpress:*:"$db_user" ]] || exit 1; drop_objects "$database" "$db_user"; rm -f "$record"
+    (( $# == 3 )) || exit 64; db_user=$3; [[ -f $record ]] || exit 0; value=$(<"$record"); [[ $value == "wordpress:$db_user" || $value == wordpress:*:"$db_user" ]] || exit 1; drop_objects "$database" "$db_user"; remove_record "$record"
     ;;
   drop)
     (( $# == 2 )) || exit 64; [[ -f $record ]] || exit 0; value=$(<"$record"); [[ $value == cpmove || $value == cpmove:* ]] || exit 1
-    if [[ $engine == postgresql ]]; then sql "DROP DATABASE IF EXISTS \"$database\""; else sql "DROP DATABASE IF EXISTS \`$database\`"; fi; rm -f "$record"
+    if [[ $engine == postgresql ]]; then sql "DROP DATABASE IF EXISTS \"$database\""; else sql "DROP DATABASE IF EXISTS \`$database\`"; fi; remove_record "$record"
     ;;
   dump)
     (( $# == 2 )) || exit 64; [[ -f $record ]] || { echo 'database is not registered as managed' >&2; exit 1; }; [[ $(<"$record") != pending-* ]] || exit 1

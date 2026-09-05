@@ -23,8 +23,10 @@ unsupported line. With `STEPANEL_WEBSERVER=openlitespeed`, proxy snippets are wr
 `/usr/local/lsws/conf/vhosts/stepanel/proxy` and OpenLiteSpeed is restarted
 after validation; include that directory from the relevant OLS listener/vhost
 rewrite configuration. Apache remains available for workloads that require
-direct module compatibility. OpenLiteSpeed PHP site provisioning still needs
-an operator-reviewed listener/vhost integration.
+direct module compatibility. OpenLiteSpeed PHP site provisioning requires an
+operator-reviewed listener/vhost template at
+`/etc/stepanel-ols-vhost.template`; the installer will not use the Apache
+vhost helper for OLS.
 
 The container and Kubernetes packages run the control plane only. They do not
 provide access to a host's systemd, Apache, PHP-FPM, or database services.
@@ -155,6 +157,8 @@ During an incident:
 - Git file deployment, app process deployment, and proxy deployment are
   separate API operations. Operators should use the site workspace and audit
   history to reconcile partial failures explicitly.
+- cPanel mailbox restores are staged with the site transaction. Preserve the
+  recovery journal until the restored mail tree has been verified.
 
 ## Release and upgrade policy
 

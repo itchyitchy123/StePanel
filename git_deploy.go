@@ -129,15 +129,18 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := os.Rename(release, publicRoot); err != nil {
 		if previous != "" {
-			_ = os.Rename(previous, publicRoot)
+			if rollbackErr := os.Rename(previous, publicRoot); rollbackErr != nil {
+				http.Error(w, "unable to activate the new release; rollback failed: "+rollbackErr.Error(), http.StatusServiceUnavailable)
+				return
+			}
 		}
 		http.Error(w, "unable to activate the new release", http.StatusInternalServerError)
 		return
 	}
 	if err := siteHelper(a.Config, "seal", input.Site); err != nil {
-		_ = os.RemoveAll(publicRoot)
-		if previous != "" {
-			_ = os.Rename(previous, publicRoot)
+		if rollbackErr := rollbackGitActivation(publicRoot, previous); rollbackErr != nil {
+			http.Error(w, "site isolation failed and release rollback failed: "+rollbackErr.Error(), http.StatusServiceUnavailable)
+			return
 		}
 		http.Error(w, "site isolation could not be restored", http.StatusServiceUnavailable)
 		return
@@ -147,6 +150,18 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Git release activated but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, result)
+}
+
+func rollbackGitActivation(publicRoot, previous string) error {
+	if err := os.RemoveAll(publicRoot); err != nil {
+		return fmt.Errorf("remove failed release: %w", err)
+	}
+	if previous != "" {
+		if err := os.Rename(previous, publicRoot); err != nil {
+			return fmt.Errorf("restore previous release: %w", err)
+		}
+	}
+	return nil
 }
 
 func (a *App) gitRollback(w http.ResponseWriter, r *http.Request) {

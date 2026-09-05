@@ -353,11 +353,11 @@ func (a *App) inspect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	if !a.Auth.CSRF(r) {
 		http.Error(w, "invalid CSRF token", 403)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	file, header, err := r.FormFile("backup")
 	defer cleanupMultipartForm(r)
 	if err != nil {
@@ -377,11 +377,11 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	if !a.Auth.CSRF(r) {
 		http.Error(w, "invalid CSRF token", 403)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, a.Config.MaxUpload)
 	err := r.ParseMultipartForm(32 << 20)
 	defer cleanupMultipartForm(r)
 	if err != nil {

@@ -9,7 +9,7 @@ func TestCloudDNSRecordValidation(t *testing.T) {
 			t.Errorf("valid record rejected: %#v", record)
 		}
 	}
-	invalid := []cloudDNSRequest{{Type: "A", Name: "@", Target: "example.com", TTL: 300}, {Type: "A", Name: "@", Target: "192.0.2.1", TTL: 10}, {Type: "MX", Name: "@", Target: "mail.example.com", TTL: 300}}
+	invalid := []cloudDNSRequest{{Type: "A", Name: "@", Target: "example.com", TTL: 300}, {Type: "A", Name: "@", Target: "192.0.2.1", TTL: 10}, {Type: "MX", Name: "@", Target: "mail.example.com", TTL: 300}, {Type: "MX", Name: "@", Target: "70000 mail.example.com", TTL: 300}, {Type: "SRV", Name: "_https._tcp", Target: "10 5 70000 service.example.com", TTL: 300}, {Type: "TXT", Name: "@", Target: "safe\nvalue", TTL: 300}}
 	for _, record := range invalid {
 		if cloudDNSRecordValid(record) {
 			t.Errorf("invalid record accepted: %#v", record)

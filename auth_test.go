@@ -85,6 +85,21 @@ func TestAuthSessionAndCSRF(t *testing.T) {
 	}
 }
 
+func TestCSRFMultipartRequiresHeaderWithoutParsingBody(t *testing.T) {
+	auth := Auth{Enabled: true}
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", strings.NewReader("csrf=body-token"))
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+	cookie := &http.Cookie{Name: "stepanel_csrf", Value: "body-token"}
+	req.AddCookie(cookie)
+	if auth.CSRF(req) {
+		t.Fatal("multipart body token should not be parsed for CSRF validation")
+	}
+	req.Header.Set("X-CSRF-Token", "body-token")
+	if !auth.CSRF(req) {
+		t.Fatal("multipart header token should validate")
+	}
+}
+
 func TestLogoutRevokesPersistedSession(t *testing.T) {
 	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
 	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")

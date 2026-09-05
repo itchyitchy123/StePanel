@@ -13,8 +13,12 @@ selected Apache install and are rejected for Caddy or OpenLiteSpeed.
 OpenLiteSpeed reverse-proxy snippets are managed by the bundled helper and
 written below `/usr/local/lsws/conf/vhosts/stepanel/proxy`; include that
 directory from the target OLS listener/vhost rewrite configuration before
-serving traffic. PHP site-vhost provisioning still requires an OLS-specific
-listener/vhost template.
+serving traffic. PHP site-vhost provisioning uses the root-owned
+`stepanel-ols-vhostctl` helper and requires `/etc/stepanel-ols-vhost.template`.
+The template is rendered with `{{SITE}}`, `{{DOMAIN}}`, and `{{ROOT}}`
+placeholders and must be included by the target OLS listener/vhost. Validate
+the template against the host's OpenLiteSpeed configuration before enabling
+customer traffic.
 Caddy installs import `/etc/caddy/stepanel.d/*.caddy`. Root-owned helpers write
 validated, rollback-safe PHP site and `reverse_proxy` definitions there and
 validate/reload the complete Caddyfile after each change. Caddy manages HTTPS

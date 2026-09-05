@@ -15,6 +15,8 @@ import (
 
 var ErrJobBusy = errors.New("too many long-running jobs or target is already active")
 
+const maxJobStateBytes = 16 << 20
+
 func newJobID(kind string) (string, error) {
 	random, err := randomSecret()
 	if err != nil {
@@ -127,7 +129,7 @@ func (j *Jobs) load() error {
 	if err != nil {
 		return fmt.Errorf("read job state: %w", err)
 	}
-	if len(data) > 16<<20 {
+	if len(data) > maxJobStateBytes {
 		return errors.New("job state exceeds 16 MiB")
 	}
 	var store jobStore
@@ -182,6 +184,9 @@ func (j *Jobs) persistLocked() error {
 	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode job state: %w", err)
+	}
+	if len(data)+1 > maxJobStateBytes {
+		return errors.New("job state exceeds 16 MiB; prune completed jobs before retrying")
 	}
 	tmp, err := os.CreateTemp(root, ".jobs-*.tmp")
 	if err != nil {
