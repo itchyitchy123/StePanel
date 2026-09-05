@@ -35,6 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   and per-site domain connection and verified-backup actions.
 - Read-only per-database detail and atomic one-click Git rollback that preserves
   the replaced release for recovery.
+- Release metadata validation covering the Go version, Helm chart, OpenAPI
+  document, and changelog before CI and tagged-release publication.
 
 ### Changed
 
