@@ -39,6 +39,11 @@ longer-term hosting-panel roadmap.
   domains, and verified-backup counts. Site workspaces can queue a verified
   file-and-managed-database backup and connect a validated web route; the UI
   explains the required DNS cutover after a route is created.
+- Shared-hosting beta: administrator-provisioned customer accounts with
+  independently hashed passwords, mandatory per-customer TOTP, plan-enforced
+  assigned-site limits, and authorization that scopes customer site workspace,
+  backup, and job access to their assignments. Provider operations remain
+  administrator-only.
 - Constrained Git releases and one-click rollback at `/api/sites/git-deploy` and `/api/sites/git-rollback`, with HTTPS-only repositories, an exact hostname allowlist, shallow ref checkout, commit identification, symlink rejection, Git-metadata removal, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
@@ -63,8 +68,9 @@ longer-term hosting-panel roadmap.
   and external providers.
 - Backup verification is available, but snapshot-backed rollback and a full
   customer self-service restore workflow are not complete.
-- The hosting workspace is an administrator experience, not a tenant portal:
-  it does not assign sites to customers or authorize customer actions.
+- The customer workspace currently authorizes assigned site viewing, verified
+  backup creation, domain routing, and job history only. It is not yet a full
+  tenant self-service portal.
 - PITR/WAL or binlog management, replication orchestration, configuration
   mutation, and automatic failover remain operator-managed and deliberately
   have no unsafe simulated controls.
@@ -75,8 +81,8 @@ StePanel is currently a single-administrator, single-host control plane. It is
 not yet a cPanel/Plesk-equivalent multi-tenant hosting product. The following
 must be implemented before offering untrusted customer access:
 
-- Tenant/account isolation, scoped roles, API tokens, OIDC/WebAuthn, and
-  approval/audit workflows.
+- Durable tenant/account isolation beyond a single host, scoped support and
+  reseller roles, API tokens, OIDC/WebAuthn, and approval/audit workflows.
 - Durable relational state and a distributed job/agent model for multiple
   servers, retries, cancellation, idempotency, and event delivery.
 - Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, cron, SSH, quota,

@@ -17,7 +17,9 @@ cluster ingress controller. The chart explicitly enables trusted upstream TLS
 termination only when ingress is enabled and configured with TLS; do not expose
 its Service directly. Label the ingress namespace `stepanel.ingress=true` or
 override the selector. The chart enforces one replica because restore
-jobs and managed site state are local to the control plane.
+jobs and managed site state are local to the control plane. Its control-plane
+PVC also retains shared-hosting customer account state beside durable sessions;
+back it up as encrypted sensitive state if customer accounts are provisioned.
 
 The default values expect a `stepanel-tls` Secret for
 `stepanel.example.com`; replace the host and secret name with the certificate

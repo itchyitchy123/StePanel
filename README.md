@@ -24,6 +24,7 @@ It is designed for people who want a small, understandable hosting control plane
 | Installation | Caddy by default, or Apache/OpenLiteSpeed, PHP, MySQL/MariaDB/PostgreSQL, optional phpMyAdmin/phpPgAdmin, Exim/Dovecot/SpamAssassin/vsftpd, systemd, Debian/Ubuntu and RHEL-family systems |
 | Migration | cPanel `.tar.gz` inspection, safe staging, website, SQL, staged mailbox restore, and fail-closed `.htaccess` conversion for Caddy |
 | Operations | Dashboard, health endpoint, metrics endpoint, audit log, asynchronous restore jobs |
+| Shared-hosting beta | Administrator-provisioned customer accounts with independent TOTP MFA, enforced assigned-site limits, and customer-scoped site/backup/job access |
 | Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |
 | Delivery | Dockerfile, ARM64/AMD64 release workflow, checksums, CI, vulnerability scanning |
 
@@ -59,7 +60,7 @@ safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
 For Apache migrations to the default Caddy stack, see the
 [`.htaccess` migration guide](docs/HTACCESS_MIGRATION.md).
 
-> **Status:** StePanel is in early development. It is not yet a complete multi-tenant hosting platform. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
+> **Status:** StePanel includes a constrained single-host shared-hosting beta. It is not yet a complete multi-tenant hosting platform: plans currently limit assigned sites, not host resources, and customer mail/file/database/restore lifecycle remains unavailable. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
 
 ## See it quickly
 
@@ -148,6 +149,7 @@ checkbox and should be backed up first.
 - [Architecture and safety model](docs/ARCHITECTURE.md)
 - [Engineering decisions and interview walkthrough](docs/ENGINEERING_DECISIONS.md)
 - [Feature catalog](docs/FEATURES.md)
+- [Shared-hosting beta](docs/SHARED_HOSTING.md)
 - [Threat model](docs/THREAT_MODEL.md)
 - [Malware guard](docs/MALWARE_GUARD.md)
 - [HTTPS certificates](docs/CERTIFICATES.md)
@@ -181,6 +183,7 @@ checkbox and should be backed up first.
 | `GET` | `/api/services` | Authenticated live webserver, PHP, database, Fail2Ban, and ModSecurity inventory |
 | `GET` | `/api/database` | Selected database engine, service/client health, and browser-admin readiness |
 | `GET` | `/api/capabilities` | Runtime feature availability, including database restore compatibility |
+| `GET` / `POST` | `/api/accounts` | Administrator-only shared-hosting account inventory and provisioning |
 | `GET` | `/api/cloud` | Authenticated Linode/AWS/OpenStack inventory for servers, DNS, load balancers, and snapshots |
 | `POST` | `/api/cloud/action` | Queue a cloud server start, stop, reboot, or snapshot action |
 | `GET` | `/api/cloud/dns` | List Linode DNS records |
@@ -248,6 +251,7 @@ checkbox and should be backed up first.
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |
 | `STEPANEL_JOB_STATE` | Durable restore and certificate job state file |
 | `STEPANEL_SESSION_STATE` | Durable revocable administrator session state file |
+| `STEPANEL_ACCOUNT_STATE` | Private JSON state for shared-hosting customer accounts; defaults beside session state in production |
 | `STEPANEL_RECOVERY_ROOT` | Durable site rollback transactions on the site filesystem |
 | `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; production default `/usr/local/bin/wpress-extract` |
 | `STEPANEL_WPCLI` | WP-CLI executable; production default `/usr/local/bin/wp` |

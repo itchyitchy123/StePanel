@@ -33,16 +33,20 @@ platform.
 - Restore uploads are synced before queue admission, backup inventory tolerates
   isolated corrupt artifacts, and audit-event filtering performs one verified
   file pass.
+- The shared-hosting beta persists customer credentials separately from the
+  administrator, requires per-customer TOTP, caps explicit site assignments by
+  plan, and restricts customer site, backup, and job visibility to assignments.
 
 ## Required before exposing the panel to customers
 
 ### Identity and tenancy
 
-Add a durable tenant/account model, scoped RBAC, API-token management,
-OIDC/WebAuthn, session revocation, approval workflows for destructive actions,
-and tenant-aware audit/event records. Every object and background job must be
-authorized against the tenant at the data-access boundary, not only in HTTP
-handlers.
+The shipped customer-account beta is limited to a single host and assigned-site
+authorization. Add durable tenant/account ownership for every object, scoped
+support/reseller RBAC, API-token management, OIDC/WebAuthn, session revocation,
+approval workflows for destructive actions, and tenant-aware audit/event
+records. Every object and background job must be authorized against the tenant
+at the data-access boundary, not only in HTTP handlers.
 
 ### Durable control plane
 

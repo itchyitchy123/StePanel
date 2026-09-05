@@ -32,6 +32,7 @@ type Auth struct {
 	totpReplay                               *totpReplayState
 	loginLimiter                             *loginLimiter
 	sessions                                 *sessionRegistry
+	Accounts                                 *AccountStore
 }
 
 type sessionRegistry struct {
@@ -43,7 +44,7 @@ type sessionRegistry struct {
 
 type totpReplayState struct {
 	mu          sync.Mutex
-	lastCounter uint64
+	lastCounter map[string]uint64
 }
 
 func NewAuth(secureCookies bool) (Auth, error) {
@@ -61,7 +62,7 @@ func NewAuth(secureCookies bool) (Auth, error) {
 		hash = generated
 	}
 	if hash != "" {
-		if _, err := bcrypt.Cost([]byte(hash)); err != nil {
+		if _, err := bcryptCost(hash); err != nil {
 			return Auth{}, errors.New("STEPANEL_ADMIN_PASSWORD_HASH must be a valid bcrypt hash")
 		}
 	}
@@ -91,7 +92,7 @@ func NewAuth(secureCookies bool) (Auth, error) {
 		passwordDigest := sha256.Sum256([]byte(password))
 		credentialKey = "password-digest:" + hex.EncodeToString(passwordDigest[:])
 	}
-	return Auth{Username: username, PasswordHash: hash, Secret: secret, credentialKey: credentialKey, credentialHash: hash, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{}, loginLimiter: newLoginLimiter(), sessions: &sessionRegistry{entries: make(map[string]int64)}}, nil
+	return Auth{Username: username, PasswordHash: hash, Secret: secret, credentialKey: credentialKey, credentialHash: hash, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{lastCounter: make(map[string]uint64)}, loginLimiter: newLoginLimiter(), sessions: &sessionRegistry{entries: make(map[string]int64)}}, nil
 }
 
 func (a *Auth) ConfigureSessionStore(path string) error {
@@ -203,7 +204,7 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(loginPage("", a.TOTPEnabled)))
+		_, _ = w.Write([]byte(loginPage("", true)))
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -221,14 +222,21 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := r.FormValue("username")
+	passwordHash, knownAccount := a.passwordHashFor(username)
 	// Always run bcrypt after parsing a syntactically valid login request. The
 	// previous short-circuit made an unknown username substantially cheaper to
 	// reject than a known one, exposing an avoidable username timing oracle.
-	usernameMatches := subtle.ConstantTimeCompare([]byte(username), []byte(a.Username)) == 1
-	passwordMatches := bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(r.FormValue("password"))) == nil
-	credentialsValid := usernameMatches && passwordMatches
-	if credentialsValid && a.TOTPEnabled {
-		credentialsValid = a.consumeTOTP(r.FormValue("totp"), time.Now())
+	// For an unknown username use the administrator hash only as constant-work
+	// cover; it never grants access because knownAccount remains false.
+	if passwordHash == "" {
+		passwordHash = a.PasswordHash
+	}
+	passwordMatches := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(r.FormValue("password"))) == nil
+	credentialsValid := knownAccount && passwordMatches
+	if credentialsValid {
+		if secret, required := a.totpFor(username); required {
+			credentialsValid = a.consumeTOTPFor(username, secret, r.FormValue("totp"), time.Now())
+		}
 	}
 	if !credentialsValid {
 		actor := username
@@ -238,13 +246,13 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		_ = AuditAs(a.AuditLog, actor, "auth.login.failed", clientIP(r), "invalid credentials")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(loginPage("Invalid credentials", a.TOTPEnabled)))
+		_, _ = w.Write([]byte(loginPage("Invalid credentials", true)))
 		return
 	}
 	if a.loginLimiter != nil {
 		a.loginLimiter.Reset(clientIP(r))
 	}
-	if err := AuditAs(a.AuditLog, a.Username, "auth.login.succeeded", clientIP(r), "administrator session issued"); err != nil {
+	if err := AuditAs(a.AuditLog, username, "auth.login.succeeded", clientIP(r), "session issued"); err != nil {
 		http.Error(w, "audit persistence is unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -259,7 +267,7 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not create a secure session", http.StatusInternalServerError)
 		return
 	}
-	payload := a.Username + "|" + strconv.FormatInt(expiry, 10) + "|" + sessionID + "|" + a.credentialFingerprint()
+	payload := username + "|" + strconv.FormatInt(expiry, 10) + "|" + sessionID + "|" + a.credentialFingerprintFor(username, passwordHash)
 	token := payload + "|" + a.sign(payload)
 	if a.sessions != nil {
 		if err := a.sessions.add(sessionID, expiry); err != nil {
@@ -288,7 +296,11 @@ func (a Auth) Logout(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	_ = AuditAs(a.AuditLog, a.Username, "auth.logout", clientIP(r), "administrator session ended")
+	actor := a.UsernameForRequest(r)
+	if actor == "" {
+		actor = a.Username
+	}
+	_ = AuditAs(a.AuditLog, actor, "auth.logout", clientIP(r), "session ended")
 	http.SetCookie(w, &http.Cookie{Name: "stepanel_session", MaxAge: -1, Path: "/", HttpOnly: true, Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
 	http.SetCookie(w, &http.Cookie{Name: "stepanel_csrf", MaxAge: -1, Path: "/", Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -301,7 +313,7 @@ func (a Auth) Require(next http.Handler) http.Handler {
 		}
 		if a.validSession(r) {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
-				if err := AuditAs(a.AuditLog, a.Username, "http.request", r.URL.Path, clientIP(r)); err != nil {
+				if err := AuditAs(a.AuditLog, a.UsernameForRequest(r), "http.request", r.URL.Path, clientIP(r)); err != nil {
 					http.Error(w, "audit persistence is unavailable", http.StatusServiceUnavailable)
 					return
 				}
@@ -348,13 +360,14 @@ func (a Auth) validSession(r *http.Request) bool {
 	}
 	parts := strings.Split(string(raw), "|")
 	if len(parts) == 3 && a.sessions == nil {
-		if parts[0] != a.Username || !hmac.Equal([]byte(a.sign(parts[0]+"|"+parts[1])), []byte(parts[2])) {
+		if _, known := a.passwordHashFor(parts[0]); !known || !hmac.Equal([]byte(a.sign(parts[0]+"|"+parts[1])), []byte(parts[2])) {
 			return false
 		}
 		expiry, err := strconv.ParseInt(parts[1], 10, 64)
 		return err == nil && time.Now().Unix() < expiry
 	}
-	if len(parts) != 5 || parts[0] != a.Username || !hmac.Equal([]byte(parts[3]), []byte(a.credentialFingerprint())) || !hmac.Equal([]byte(a.sign(strings.Join(parts[:4], "|"))), []byte(parts[4])) {
+	passwordHash, knownAccount := a.passwordHashFor(parts[0])
+	if len(parts) != 5 || !knownAccount || !hmac.Equal([]byte(parts[3]), []byte(a.credentialFingerprintFor(parts[0], passwordHash))) || !hmac.Equal([]byte(a.sign(strings.Join(parts[:4], "|"))), []byte(parts[4])) {
 		return false
 	}
 	expiry, err := strconv.ParseInt(parts[1], 10, 64)
@@ -377,12 +390,61 @@ func (a Auth) sessionID(r *http.Request) string {
 	return parts[2]
 }
 func (a Auth) credentialFingerprint() string {
-	key := a.credentialKey
-	if key == "" || (strings.HasPrefix(key, "password-digest:") && a.credentialHash != a.PasswordHash) {
-		key = a.PasswordHash
+	return a.credentialFingerprintFor(a.Username, a.PasswordHash)
+}
+
+func (a Auth) credentialFingerprintFor(username, passwordHash string) string {
+	key := passwordHash
+	if username == a.Username && a.credentialKey != "" && !(strings.HasPrefix(a.credentialKey, "password-digest:") && a.credentialHash != a.PasswordHash) {
+		key = a.credentialKey
 	}
-	digest := sha256.Sum256([]byte(a.Username + "\x00" + key))
+	digest := sha256.Sum256([]byte(username + "\x00" + key))
 	return hex.EncodeToString(digest[:16])
+}
+
+func (a Auth) passwordHashFor(username string) (string, bool) {
+	if subtle.ConstantTimeCompare([]byte(username), []byte(a.Username)) == 1 {
+		return a.PasswordHash, true
+	}
+	if a.Accounts != nil {
+		if account, ok := a.Accounts.Get(username); ok {
+			return account.PasswordHash, true
+		}
+	}
+	return "", false
+}
+
+func (a Auth) UsernameForRequest(r *http.Request) string {
+	if !a.validSession(r) {
+		return ""
+	}
+	cookie, err := r.Cookie("stepanel_session")
+	if err != nil {
+		return ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(string(raw), "|")
+	if len(parts) != 5 {
+		return ""
+	}
+	return parts[0]
+}
+
+func (a Auth) IsAdministrator(r *http.Request) bool {
+	return subtle.ConstantTimeCompare([]byte(a.UsernameForRequest(r)), []byte(a.Username)) == 1
+}
+
+func (a Auth) RequireAdministrator(next http.Handler) http.Handler {
+	return a.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.IsAdministrator(r) {
+			http.Error(w, "administrator access required", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
 }
 func (a Auth) sign(value string) string {
 	mac := hmac.New(sha256.New, []byte(a.Secret))
@@ -398,7 +460,11 @@ func randomSecret() (string, error) {
 }
 
 func (a Auth) consumeTOTP(code string, now time.Time) bool {
-	if len(code) != 6 || a.totpReplay == nil {
+	return a.consumeTOTPFor(a.Username, a.totpSecret, code, now)
+}
+
+func (a Auth) consumeTOTPFor(username string, secret []byte, code string, now time.Time) bool {
+	if len(code) != 6 || len(secret) < 20 || a.totpReplay == nil {
 		return false
 	}
 	for _, character := range code {
@@ -413,18 +479,31 @@ func (a Auth) consumeTOTP(code string, now time.Time) bool {
 			continue
 		}
 		candidate := uint64(candidateCounter)
-		if subtle.ConstantTimeCompare([]byte(totpCode(a.totpSecret, candidate)), []byte(code)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(totpCode(secret, candidate)), []byte(code)) != 1 {
 			continue
 		}
 		a.totpReplay.mu.Lock()
 		defer a.totpReplay.mu.Unlock()
-		if candidate <= a.totpReplay.lastCounter {
+		if candidate <= a.totpReplay.lastCounter[username] {
 			return false
 		}
-		a.totpReplay.lastCounter = candidate
+		a.totpReplay.lastCounter[username] = candidate
 		return true
 	}
 	return false
+}
+
+func (a Auth) totpFor(username string) ([]byte, bool) {
+	if username == a.Username {
+		return a.totpSecret, a.TOTPEnabled
+	}
+	if a.Accounts != nil {
+		if account, ok := a.Accounts.Get(username); ok {
+			secret, err := decodeTOTPSecret(account.TOTPSecret)
+			return secret, err == nil
+		}
+	}
+	return nil, false
 }
 
 func totpCode(secret []byte, counter uint64) string {
@@ -444,7 +523,7 @@ func totpCode(secret []byte, counter uint64) string {
 func loginPage(message string, totpEnabled bool) string {
 	totp := ""
 	if totpEnabled {
-		totp = `<input name="totp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" placeholder="6-digit authenticator code" required>`
+		totp = `<input name="totp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" placeholder="Authenticator code, if required">`
 	}
 	return fmt.Sprintf(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · StePanel</title><style>body{font:15px system-ui;background:linear-gradient(145deg,#edf6fa,#f7fbfd);color:#172b3a;display:grid;place-items:center;min-height:100vh}main{background:#fbfdff;border:1px solid #c8e3ed;box-shadow:0 16px 40px rgba(45,92,113,.10);padding:36px;width:min(360px,calc(100%% - 40px))}input,button{display:block;width:100%%;height:44px;margin:12px 0;padding:0 12px;box-sizing:border-box}button{background:#17364a;color:#fff;border:0;border-radius:5px}</style></head><body><main><h1>StePanel</h1><p>%s</p><form method="post"><input name="username" autocomplete="username" placeholder="Username" required><input name="password" type="password" autocomplete="current-password" placeholder="Password" required>%s<button>Sign in</button></form></main></body></html>`, message, totp)
 }

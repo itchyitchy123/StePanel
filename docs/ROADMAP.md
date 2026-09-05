@@ -20,6 +20,9 @@
 - Customer-first hosting workspace with per-site domain connection and
   verified-backup actions (available in `Unreleased` after 0.6.0); DNS
   lifecycle and customer authorization remain future work.
+- Constrained shared-hosting customer accounts, assigned-site plan limits, and
+  customer-scoped site/backup/job visibility (available in `Unreleased`);
+  resource accounting and lifecycle controls remain future work.
 
 ## 0.3 — Recovery and scale
 

@@ -69,6 +69,31 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 			}
 			limit = parsed
 		}
+		if !a.Auth.IsAdministrator(r) {
+			username := a.Auth.UsernameForRequest(r)
+			if site == "" {
+				backups := []BackupResult{}
+				if a.Accounts != nil {
+					for _, assignedSite := range a.Accounts.GetSites(username) {
+						items, err := listBackupsPage(a.Config.BackupRoot, assignedSite, limit)
+						if err != nil {
+							http.Error(w, "unable to inspect backups", http.StatusInternalServerError)
+							return
+						}
+						backups = append(backups, items...)
+					}
+				}
+				if len(backups) > limit {
+					backups = backups[:limit]
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"backups": backups})
+				return
+			}
+			if !a.canAccessSite(r, site) {
+				http.Error(w, "site is not assigned to this account", http.StatusForbidden)
+				return
+			}
+		}
 		manifests, err := listBackupsPage(a.Config.BackupRoot, site, limit)
 		if err != nil {
 			http.Error(w, "unable to inspect backups", http.StatusInternalServerError)
@@ -91,6 +116,10 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 		input.Site = safeUser(input.Site)
 		if input.Site == "" {
 			http.Error(w, "invalid site", http.StatusUnprocessableEntity)
+			return
+		}
+		if !a.canAccessSite(r, input.Site) {
+			http.Error(w, "site is not assigned to this account", http.StatusForbidden)
 			return
 		}
 		if input.IncludeDatabases && a.Config.DBCtl == "" {

@@ -27,6 +27,7 @@ type App struct {
 	Jobs                     *Jobs
 	Metrics                  *Metrics
 	Schedules                *backupSchedules
+	Accounts                 *AccountStore
 	RecoveryError            error
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
@@ -81,8 +82,14 @@ func main() {
 		return
 	}
 	cfg := LoadConfig()
+	if cfg.Production && os.Getenv("STEPANEL_ACCOUNT_STATE") == "" {
+		cfg.AccountState = filepath.Join(filepath.Dir(cfg.SessionState), "accounts.json")
+	}
 	if err := ValidateConfig(cfg); err != nil {
 		log.Fatalf("invalid configuration: %v", err)
+	}
+	if strings.TrimSpace(cfg.AccountState) == "" || strings.ContainsAny(cfg.AccountState, "\x00\r\n") || cfg.Production && !filepath.IsAbs(cfg.AccountState) {
+		log.Fatal("STEPANEL_ACCOUNT_STATE must be a non-empty filesystem path and absolute in production")
 	}
 	auth, err := NewAuth(cfg.Production)
 	if err != nil {
@@ -95,7 +102,7 @@ func main() {
 	for _, directory := range []struct {
 		path string
 		mode os.FileMode
-	}{{cfg.ImportRoot, 0700}, {cfg.BackupRoot, 0700}, {filepath.Dir(cfg.JobState), 0750}, {filepath.Dir(cfg.SessionState), 0750}, {cfg.RecoveryRoot, 0700}} {
+	}{{cfg.ImportRoot, 0700}, {cfg.BackupRoot, 0700}, {filepath.Dir(cfg.JobState), 0750}, {filepath.Dir(cfg.SessionState), 0750}, {filepath.Dir(cfg.AccountState), 0750}, {cfg.RecoveryRoot, 0700}} {
 		if err := os.MkdirAll(directory.path, directory.mode); err != nil {
 			log.Fatalf("initialize managed directory %s: %v", directory.path, err)
 		}
@@ -108,6 +115,11 @@ func main() {
 	if err := auth.ConfigureSessionStore(cfg.SessionState); err != nil {
 		log.Fatalf("open persistent session state: %v", err)
 	}
+	accounts, err := OpenAccountStore(cfg.AccountState)
+	if err != nil {
+		log.Fatalf("open persistent shared-hosting account state: %v", err)
+	}
+	auth.Accounts = accounts
 	if cfg.DBCtl != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "reconcile"))
@@ -169,7 +181,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open backup schedules: %v", err)
 	}
-	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, RecoveryError: errors.Join(recoveryFailures...)}
+	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, RecoveryError: errors.Join(recoveryFailures...)}
 	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
 		log.Printf("initialize audit chain: %v", err)
 	}
@@ -210,56 +222,57 @@ func main() {
 	mux.Handle("/logout", allowMethods(http.HandlerFunc(app.Auth.Logout), http.MethodPost))
 	mux.Handle("/", allowMethods(app.Auth.Require(http.HandlerFunc(app.dashboard)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/health", allowMethods(http.HandlerFunc(app.health), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/services", allowMethods(app.Auth.Require(http.HandlerFunc(app.services)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/database", allowMethods(app.Auth.Require(http.HandlerFunc(app.database)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/database/diagnostics", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseDiagnostics)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/database/sessions", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseSessions)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/database/sessions/", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseSessionTerminate)), http.MethodDelete))
-	mux.Handle("/api/database/settings", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseSettings)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/databases", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseCollection)), http.MethodGet, http.MethodHead, http.MethodPost))
-	mux.Handle("/api/databases/", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseResource)), http.MethodGet, http.MethodHead, http.MethodPatch, http.MethodDelete))
-	mux.Handle("/api/ftp", allowMethods(app.Auth.Require(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/security/audit", allowMethods(app.Auth.Require(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/audit/events", allowMethods(app.Auth.Require(http.HandlerFunc(app.auditEvents)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/doctor", allowMethods(app.Auth.Require(http.HandlerFunc(app.doctor)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/cloud", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudInventory)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/cloud/action", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudAction)), http.MethodPost))
-	mux.Handle("/api/cloud/dns", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudDNS)), http.MethodGet, http.MethodHead, http.MethodPost, http.MethodDelete))
-	mux.Handle("/api/cloud/loadbalancer", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudLoadBalancer)), http.MethodPost))
-	mux.Handle("/api/cloud/snapshots", allowMethods(app.Auth.Require(http.HandlerFunc(app.cloudSnapshots)), http.MethodGet, http.MethodHead, http.MethodDelete))
-	mux.Handle("/api/ssh", allowMethods(app.Auth.Require(http.HandlerFunc(app.sshInventory)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/ssh/action", allowMethods(app.Auth.Require(http.HandlerFunc(app.sshAction)), http.MethodPost))
-	mux.Handle("/api/capabilities", allowMethods(app.Auth.Require(http.HandlerFunc(app.capabilities)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/security/scan", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.malwareScan), expensive)), http.MethodPost))
-	mux.Handle("/api/certificates/issue", allowMethods(app.Auth.Require(http.HandlerFunc(app.issueCertificate)), http.MethodPost))
-	mux.Handle("/api/node/versions", allowMethods(app.Auth.Require(http.HandlerFunc(app.nodeVersions)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/node/select", allowMethods(app.Auth.Require(http.HandlerFunc(app.selectNode)), http.MethodPost))
-	mux.Handle("/api/proxy/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.deployProxy)), http.MethodPost))
-	mux.Handle("/api/proxy", allowMethods(app.Auth.Require(http.HandlerFunc(app.proxyList)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/proxy/test", allowMethods(app.Auth.Require(http.HandlerFunc(app.proxyTest)), http.MethodPost))
-	mux.Handle("/api/proxy/", allowMethods(app.Auth.Require(http.HandlerFunc(app.proxyManage)), http.MethodDelete))
-	mux.Handle("/api/sites", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteList)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/services", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.services)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/database", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.database)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/database/diagnostics", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseDiagnostics)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/database/sessions", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseSessions)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/database/sessions/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseSessionTerminate)), http.MethodDelete))
+	mux.Handle("/api/database/settings", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseSettings)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/databases", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseCollection)), http.MethodGet, http.MethodHead, http.MethodPost))
+	mux.Handle("/api/databases/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseResource)), http.MethodGet, http.MethodHead, http.MethodPatch, http.MethodDelete))
+	mux.Handle("/api/ftp", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/security/audit", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/audit/events", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.auditEvents)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/doctor", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.doctor)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/cloud", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudInventory)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/cloud/action", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudAction)), http.MethodPost))
+	mux.Handle("/api/cloud/dns", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudDNS)), http.MethodGet, http.MethodHead, http.MethodPost, http.MethodDelete))
+	mux.Handle("/api/cloud/loadbalancer", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudLoadBalancer)), http.MethodPost))
+	mux.Handle("/api/cloud/snapshots", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudSnapshots)), http.MethodGet, http.MethodHead, http.MethodDelete))
+	mux.Handle("/api/ssh", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.sshInventory)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/ssh/action", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.sshAction)), http.MethodPost))
+	mux.Handle("/api/capabilities", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.capabilities)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/security/scan", allowMethods(app.Auth.RequireAdministrator(limitConcurrent(http.HandlerFunc(app.malwareScan), expensive)), http.MethodPost))
+	mux.Handle("/api/certificates/issue", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.issueCertificate)), http.MethodPost))
+	mux.Handle("/api/node/versions", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.nodeVersions)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/node/select", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.selectNode)), http.MethodPost))
+	mux.Handle("/api/proxy/deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.deployProxy)), http.MethodPost))
+	mux.Handle("/api/proxy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.proxyList)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/proxy/test", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.proxyTest)), http.MethodPost))
+	mux.Handle("/api/proxy/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.proxyManage)), http.MethodDelete))
+	mux.Handle("/api/sites", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.siteList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/overview", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteOverviewList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/overview/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteOverviewResource)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteDeploy)), http.MethodPost))
-	mux.Handle("/api/sites/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteManage)), http.MethodDelete))
+	mux.Handle("/api/sites/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.siteManage)), http.MethodDelete))
 	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
-	mux.Handle("/api/backup-schedules", allowMethods(app.Auth.Require(http.HandlerFunc(app.backupSchedules)), http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete))
-	mux.Handle("/api/apps", allowMethods(app.Auth.Require(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.appDeploy)), http.MethodPost))
-	mux.Handle("/api/sites/git-deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.gitDeploy)), http.MethodPost))
-	mux.Handle("/api/sites/git-rollback", allowMethods(app.Auth.Require(http.HandlerFunc(app.gitRollback)), http.MethodPost))
-	mux.Handle("/api/caddy/htaccess", allowMethods(app.Auth.Require(http.HandlerFunc(app.htaccessMigration)), http.MethodPost))
-	mux.Handle("/api/apps/", allowMethods(app.Auth.Require(http.HandlerFunc(app.appAction)), http.MethodPost))
-	mux.Handle("/api/cpmove/inspect", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.inspect), expensive)), http.MethodPost))
-	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.importBackup), uploads)), http.MethodPost))
-	mux.Handle("/api/wpress/preflight", allowMethods(app.Auth.Require(http.HandlerFunc(app.wpressPreflight)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/wpress/import", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.wpressImport), uploads)), http.MethodPost))
+	mux.Handle("/api/backup-schedules", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.backupSchedules)), http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete))
+	mux.Handle("/api/apps", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appDeploy)), http.MethodPost))
+	mux.Handle("/api/sites/git-deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.gitDeploy)), http.MethodPost))
+	mux.Handle("/api/sites/git-rollback", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.gitRollback)), http.MethodPost))
+	mux.Handle("/api/caddy/htaccess", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.htaccessMigration)), http.MethodPost))
+	mux.Handle("/api/apps/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appAction)), http.MethodPost))
+	mux.Handle("/api/cpmove/inspect", allowMethods(app.Auth.RequireAdministrator(limitConcurrent(http.HandlerFunc(app.inspect), expensive)), http.MethodPost))
+	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.RequireAdministrator(limitConcurrent(http.HandlerFunc(app.importBackup), uploads)), http.MethodPost))
+	mux.Handle("/api/wpress/preflight", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.wpressPreflight)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/wpress/import", allowMethods(app.Auth.RequireAdministrator(limitConcurrent(http.HandlerFunc(app.wpressImport), uploads)), http.MethodPost))
+	mux.Handle("/api/accounts", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodGet, http.MethodHead, http.MethodPost))
 	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/jobs", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobList)), http.MethodGet, http.MethodHead))
 	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))
 	if os.Getenv("STEPANEL_METRICS_PUBLIC") != "1" {
-		metricsHandler = app.Auth.Require(metricsHandler)
+		metricsHandler = app.Auth.RequireAdministrator(metricsHandler)
 	}
 	mux.Handle("/metrics", allowMethods(metricsHandler, http.MethodGet, http.MethodHead))
 	server := &http.Server{Addr: cfg.Listen, Handler: logging(normalizeAPIErrors(mux), app.Metrics, cfg.Production), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
@@ -297,7 +310,19 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("stepanel_csrf"); err == nil {
 		csrf = cookie.Value
 	}
+	isAdministrator := a.Auth.IsAdministrator(r)
 	servers := ServiceSummaries(a.Config)
+	jobs := a.Jobs.List(8)
+	var account HostingAccount
+	accountSiteCount := 0
+	if !isAdministrator {
+		servers = nil
+		jobs = filterAccountJobs(jobs, a.Accounts, a.Auth.UsernameForRequest(r))
+		if a.Accounts != nil {
+			account, _ = a.Accounts.Get(a.Auth.UsernameForRequest(r))
+			accountSiteCount = len(account.Sites)
+		}
+	}
 	healthy, alerts := 0, 0
 	for _, server := range servers {
 		switch server.Status {
@@ -307,13 +332,30 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 			alerts++
 		}
 	}
-	if err := a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.Username, "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": a.SecurityChecks(), "Jobs": a.Jobs.List(8), "Capabilities": a.Capabilities(), "Database": a.DatabaseAdmin()}); err != nil {
+	security := []SecurityCheck{}
+	if isAdministrator {
+		security = a.SecurityChecks()
+	}
+	if err := a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.UsernameForRequest(r), "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": security, "Jobs": jobs, "Capabilities": a.Capabilities(), "Database": a.DatabaseAdmin(), "IsAdministrator": isAdministrator, "Account": account, "AccountSiteCount": accountSiteCount}); err != nil {
 		log.Printf("dashboard render failed: %v", err)
 	}
 }
+
+func filterAccountJobs(jobs []Job, accounts *AccountStore, username string) []Job {
+	if accounts == nil {
+		return nil
+	}
+	filtered := make([]Job, 0, len(jobs))
+	for _, job := range jobs {
+		if accounts.OwnsSite(username, job.User) {
+			filtered = append(filtered, job)
+		}
+	}
+	return filtered
+}
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	response := map[string]any{"ok": true, "version": Version, "commit": Commit, "time": time.Now().UTC()}
-	if !a.Auth.Enabled || a.Auth.validSession(r) {
+	if !a.Auth.Enabled || a.Auth.IsAdministrator(r) {
 		response["services"] = ServiceStatus()
 	}
 	writeJSON(w, http.StatusOK, response)
@@ -501,10 +543,18 @@ func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !a.Auth.IsAdministrator(r) && !a.canAccessSite(r, job.User) {
+		http.Error(w, "job is not assigned to this account", http.StatusForbidden)
+		return
+	}
 	writeJSON(w, http.StatusOK, job)
 }
 func (a *App) jobList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"jobs": a.Jobs.List(100), "time": time.Now().UTC()})
+	jobs := a.Jobs.List(100)
+	if !a.Auth.IsAdministrator(r) {
+		jobs = filterAccountJobs(jobs, a.Accounts, a.Auth.UsernameForRequest(r))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs, "time": time.Now().UTC()})
 }
 func logging(next http.Handler, metrics *Metrics, production bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

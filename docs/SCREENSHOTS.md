@@ -1,10 +1,10 @@
 # Product preview
 
 The assets in this document are synchronized with the current development
-dashboard after `0.6.0`, including the managed-sites workspace. They are
-deterministic product illustrations, not captures from a live host; values are
-representative and the real dashboard renders service, site, database,
-capability, and job state from the configured server.
+administrator dashboard after `0.6.0`, including the managed-sites workspace.
+They are deterministic product illustrations, not captures from a live host;
+values are representative and the real dashboard renders service, site,
+database, capability, job state, and user role from the configured server.
 
 ## Dashboard
 
@@ -37,6 +37,21 @@ HTTPS, the managed-sites workspace, database operations panel, and the
 Apache-to-Caddy `.htaccess` migration entry point.
 At runtime, all service counts, health states, load, security checks, and jobs
 come from the current server; the application does not ship simulated activity.
+
+## Customer workspace
+
+The shared-hosting beta has a separate, role-aware customer workspace. It uses
+the same professional navigation, responsive task cards, and accessible visual
+system as the administrator dashboard, but it shows the customer's plan,
+assigned-site count, assigned site cards, and matching backup/job activity.
+Infrastructure, security, database, migration, cloud, SSH, and account
+administration controls are intentionally absent. The server enforces the same
+scope at the API boundary; this is not only a visual simplification.
+
+The preview above is an administrator illustration, not a customer screenshot.
+For release review, capture both roles from the tagged build with synthetic
+data and verify the mobile layout as well as the role boundary. See
+[`SHARED_HOSTING.md`](SHARED_HOSTING.md) for the supported customer scope.
 
 For release reviews, capture a screenshot from the tagged build as a supplement
 to this deterministic preview. Real screenshots are useful for verifying theme,

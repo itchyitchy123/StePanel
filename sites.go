@@ -33,7 +33,11 @@ type siteOverview struct {
 	Exists        bool          `json:"exists"`
 }
 
-func (a *App) siteOverviewList(w http.ResponseWriter, _ *http.Request) {
+func (a *App) canAccessSite(r *http.Request, site string) bool {
+	return a.Auth.IsAdministrator(r) || a.Accounts != nil && a.Accounts.OwnsSite(a.Auth.UsernameForRequest(r), site)
+}
+
+func (a *App) siteOverviewList(w http.ResponseWriter, r *http.Request) {
 	sites := map[string]*siteOverview{}
 	entries, _ := os.ReadDir(filepath.Join(a.Config.WebRoot, "sites"))
 	for _, entry := range entries {
@@ -57,6 +61,9 @@ func (a *App) siteOverviewList(w http.ResponseWriter, _ *http.Request) {
 	}
 	result := make([]*siteOverview, 0, len(sites))
 	for _, site := range sites {
+		if !a.canAccessSite(r, site.Site) {
+			continue
+		}
 		site.Routes = siteRoutesFor(a.Config.VHostRoot, site.Site)
 		site.Proxies = siteProxiesFor(a.Config.ProxyRoot, site.Site)
 		sort.Slice(site.Routes, func(i, j int) bool { return site.Routes[i].Domain < site.Routes[j].Domain })
@@ -71,6 +78,10 @@ func (a *App) siteOverviewResource(w http.ResponseWriter, r *http.Request) {
 	site := strings.TrimPrefix(r.URL.Path, "/api/sites/overview/")
 	if site == "" || strings.Contains(site, "/") || safeUser(site) == "" {
 		http.Error(w, "invalid site", http.StatusUnprocessableEntity)
+		return
+	}
+	if !a.canAccessSite(r, site) {
+		http.Error(w, "site is not assigned to this account", http.StatusForbidden)
 		return
 	}
 	overview := newSiteOverview(a.Config, site)
@@ -180,6 +191,10 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid site or domain", http.StatusUnprocessableEntity)
 		return
 	}
+	if !a.canAccessSite(r, input.Site) {
+		http.Error(w, "site is not assigned to this account", http.StatusForbidden)
+		return
+	}
 	publicRoot := filepath.Join(a.Config.WebRoot, "sites", input.Site, "public")
 	if err := ensureInside(a.Config.WebRoot, publicRoot); err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
@@ -198,7 +213,7 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		extension = ".caddy"
 	}
 	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + extension
-	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deployed", input.Site, input.Domain); err != nil {
+	if err := AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.deployed", input.Site, input.Domain); err != nil {
 		log.Printf("site deployed but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"site": input.Site, "domain": input.Domain, "config": filepath.Join(a.Config.VHostRoot, name)})

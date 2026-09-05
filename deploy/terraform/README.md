@@ -23,3 +23,7 @@ TLS before forwarding to the Service; do not expose its Service directly.
 Label the ingress namespace `stepanel.ingress=true`. The Kubernetes provider is deliberately used instead of
 provisioning a cloud account, keeping the example portable across managed or
 on-premises clusters.
+
+The control-plane claim includes durable sessions and, when shared-hosting
+accounts are used, their bcrypt password hashes and TOTP seeds. Treat its
+backup and restore path as encrypted sensitive control-plane state.

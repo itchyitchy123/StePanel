@@ -73,7 +73,11 @@ backup RPO signals are available as `stepanel_backup_oldest_age_seconds`,
 `stepanel_backup_schedules_without_success`, and
 `stepanel_backup_consecutive_failures`.
 Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
-`/var/lib/ste-panel` before upgrading.
+`/var/lib/ste-panel` before upgrading. If shared-hosting accounts are enabled,
+that state directory includes `accounts.json` by default. It contains customer
+password hashes and TOTP seeds, so keep it mode `0600`, include it only in
+encrypted control-plane backups, and never place it in support bundles or
+public backup artifacts.
 
 For an in-place upgrade, build the candidate binary, ensure no restore or backup
 job is active, then run `install.sh` without re-supplying secrets. The installer
@@ -82,6 +86,42 @@ waits for the old service to stop, and health-checks the candidate. If core
 configuration or startup fails it restores the previous files and service
 state. Package-manager and optional integration changes are not automatically
 reverted; retain the host snapshot and inspect the package transaction log.
+
+## Shared-hosting customer accounts
+
+Create a customer only after its managed site already exists. From an
+administrator session, provision an explicit plan and explicit assignments:
+
+```json
+{
+  "username": "acme",
+  "password": "a unique password with at least 20 characters",
+  "totp_secret": "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+  "plan": "starter",
+  "sites": ["acme-site"]
+}
+```
+
+Send that body to `POST /api/accounts` with the normal authenticated session
+and CSRF token. Generate a unique, unpadded Base32 TOTP seed of at least 20
+random bytes for every customer; deliver the seed and initial password through
+separate secure channels. `GET /api/accounts` deliberately never returns TOTP
+seeds or password hashes.
+
+After provisioning, sign in as the customer and verify that the assigned site
+appears in `/api/sites/overview`, its own backup/job history is visible, and
+`/api/services` returns `403`. Keep a record of the assignment and recovery
+contact outside the panel. This beta has no account update, password reset,
+suspension, deletion, billing, or resource-quota workflow. Do not represent
+`starter`, `professional`, or `agency` as a CPU, memory, bandwidth, disk, or
+support entitlement: they enforce only 1, 5, or 25 assigned sites.
+
+`STEPANEL_ACCOUNT_STATE` selects the account-state file. In production it
+defaults beside `STEPANEL_SESSION_STATE` as `accounts.json`; use a dedicated
+absolute, root/service-account-only path if operational policy requires it.
+Restore it together with session and site state during disaster recovery, and
+revoke sessions or rotate credentials if its confidentiality may have been
+lost.
 
 ## Verified site backups
 
@@ -128,8 +168,10 @@ confirmation phrase. Use an engine-native DBA client when query text or plans
 are necessary, and apply the normal sensitive-data handling policy.
 
 Job records are persisted in `/var/lib/ste-panel/jobs.json`. Revocable administrator
-sessions are persisted in `/var/lib/ste-panel/sessions.json`; include this file in
-protected control-plane state backups and never publish it. Site overwrites
+and customer sessions are persisted in `/var/lib/ste-panel/sessions.json`.
+Customer account credentials are persisted separately in
+`/var/lib/ste-panel/accounts.json` by default. Include both files in protected
+control-plane state backups and never publish them. Site overwrites
 move the previous document root into a journaled transaction under
 `/var/www/sites/.stepanel-recovery`. On startup, StePanel marks interrupted jobs
 failed, removes databases recorded by uncommitted restore transactions, and

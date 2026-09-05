@@ -8,6 +8,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Shared-hosting beta with administrator-provisioned customer accounts,
+  independent bcrypt credentials and mandatory per-customer TOTP, persisted
+  account state, `starter`/`professional`/`agency` assignment limits, and
+  customer-scoped site, backup, and job access.
+- Administrator-only account API and a documented shared-hosting operating
+  contract that distinguishes enforced assigned-site limits from future
+  resource quotas and customer lifecycle features.
+- Customer workspace visual refresh with a role-aware welcome panel, plan and
+  assigned-site summary, simplified navigation, and improved responsive cards.
+- Professional workspace design layer with an accessible visual token system,
+  sticky navigation, clearer task and form hierarchy, responsive small-screen
+  layouts, and an in-product resource footer.
+
 - Production-readiness doctor checks for mandatory launch MFA, enforced
   offsite-backup policy, transport-security boundary, and audit persistence.
 - Production configuration now refuses startup unless administrator TOTP MFA

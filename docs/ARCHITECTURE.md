@@ -112,6 +112,12 @@ systemd application units cross narrowly validated, root-owned helper
 boundaries; the service account cannot edit active configuration directly.
 Request-facing helper invocations are context-bound with bounded lifetimes and
 output, preventing a wedged service command from exhausting worker capacity.
+The shared-hosting beta adds separately persisted customer credentials with
+customer-specific TOTP and an explicit assignment allowlist. Customer sessions
+may see only their assigned site workspaces, matching backups, and matching job
+records; administrator-only APIs retain the privileged operational boundary.
+This is intentionally single-host authorization, not a replacement for durable
+tenant ownership in a future multi-host control plane.
 Cloud CLI children receive a filtered environment so panel session, audit, and
 database secrets are not inherited.
 Local database administration crosses a root-owned helper boundary. Uploaded

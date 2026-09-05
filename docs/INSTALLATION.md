@@ -106,6 +106,14 @@ lost, a local root operator can rerun the installer with
 single-administrator system; teams should not share the account when individual
 attribution is required.
 
+Customer accounts are provisioned after installation by an authenticated
+administrator, not by installer variables. They require their own TOTP seed
+and explicit site assignments. The service stores their private account state
+as `/var/lib/ste-panel/accounts.json` by default, beside the durable session
+state; preserve it as encrypted control-plane state and never expose it through
+a site or support archive. See [`SHARED_HOSTING.md`](SHARED_HOSTING.md) for the
+enforced beta scope and limitations.
+
 The installer generates a separate audit HMAC key, stores a root-only copy at
 `/etc/stepanel-audit.key`, and supplies it through the protected service
 environment. Preserve both in the host's secret backup.
@@ -153,6 +161,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_MAX_UPLOAD_BYTES` | Bytes, up to 20 GiB | Maximum compressed restore request size |
 | `STEPANEL_MAX_ARCHIVE_ENTRIES` | `1`–`1000000` | Maximum filesystem entries in a restore or backup |
 | `STEPANEL_MAX_CONCURRENT_JOBS` | `1`–`32` | Global restore, backup, and certificate job slots |
+| `STEPANEL_ACCOUNT_STATE` | Absolute path in production | Optional private customer-account state file; defaults beside session state |
 
 For Apache installations, it enables proxy, proxy_http, proxy_fcgi, setenvif,
 rewrite, and headers modules on Debian-family systems. For Caddy installations,
@@ -175,6 +184,7 @@ outbound-network policy.
 | `/etc/apache2/stepanel-sites` or `/etc/httpd/conf.d/stepanel-sites` | Optional root-owned managed Apache PHP site vhosts |
 | `/var/lib/ste-panel/apps` | Managed Node application manifests |
 | `/var/lib/ste-panel/quarantine` | Recoverable malware quarantine |
+| `/var/lib/ste-panel/accounts.json` | Private shared-hosting customer account state when enabled |
 | `/var/www/sites/.stepanel-recovery` | Journaled site rollback data |
 | `/etc/ste-panel.env` | Runtime configuration |
 | `/etc/stepanel-audit.key` | Root-only HMAC key for audit verification |

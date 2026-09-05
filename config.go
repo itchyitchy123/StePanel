@@ -14,27 +14,27 @@ import (
 var dbVersionPattern = regexp.MustCompile(`^(default|[0-9][0-9A-Za-z.+:~-]*)$`)
 
 type Config struct {
-	WebServer                                                                          string
-	Listen, TLSCertFile, TLSKeyFile, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir string
-	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl                       string
-	SiteCtl, VHostCtl, Certbot, DBCtl                                                  string
-	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo         string
-	DBHost, DBUser, DBPassword, DBPasswordFile                                         string
-	DBEngine, DBVersion, DBAdminURL                                                    string
-	GitAllowedHosts                                                                    string
-	OffsiteTarget                                                                      string
-	CloudProvider                                                                      string
-	RequireOffsiteBackup                                                               bool
-	TLSAlreadyTerminated                                                               bool
-	Production                                                                         bool
-	MaxUpload                                                                          int64
-	MaxEntries, MaxConcurrentJobs, StageRetentionHours                                 int
-	FTPPassiveMin, FTPPassiveMax                                                       int
-	MinFreeBytes                                                                       uint64
+	WebServer                                                                                string
+	Listen, TLSCertFile, TLSKeyFile, ImportRoot, BackupRoot, WebRoot, MailRoot, NVMDir       string
+	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl                             string
+	SiteCtl, VHostCtl, Certbot, DBCtl                                                        string
+	WPressExtract, WPCLI, AuditLog, JobState, SessionState, AccountState, RecoveryRoot, Sudo string
+	DBHost, DBUser, DBPassword, DBPasswordFile                                               string
+	DBEngine, DBVersion, DBAdminURL                                                          string
+	GitAllowedHosts                                                                          string
+	OffsiteTarget                                                                            string
+	CloudProvider                                                                            string
+	RequireOffsiteBackup                                                                     bool
+	TLSAlreadyTerminated                                                                     bool
+	Production                                                                               bool
+	MaxUpload                                                                                int64
+	MaxEntries, MaxConcurrentJobs, StageRetentionHours                                       int
+	FTPPassiveMin, FTPPassiveMax                                                             int
+	MinFreeBytes                                                                             uint64
 }
 
 func LoadConfig() Config {
-	c := Config{WebServer: "caddy", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", GitAllowedHosts: "github.com,gitlab.com,bitbucket.org", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{WebServer: "caddy", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", AccountState: "data/accounts.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", GitAllowedHosts: "github.com,gitlab.com,bitbucket.org", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_WEBSERVER"); v != "" {
 		c.WebServer = strings.ToLower(strings.TrimSpace(v))
 	}
@@ -105,6 +105,9 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("STEPANEL_SESSION_STATE"); v != "" {
 		c.SessionState = v
+	}
+	if v := os.Getenv("STEPANEL_ACCOUNT_STATE"); v != "" {
+		c.AccountState = v
 	}
 	if v := os.Getenv("STEPANEL_RECOVERY_ROOT"); v != "" {
 		c.RecoveryRoot = v

@@ -27,6 +27,11 @@ TLS before forwarding to the Service; label that ingress namespace
 `stepanel.ingress=true`. The included NetworkPolicy denies other ingress
 traffic, so do not expose the Service directly.
 
+The control-plane claim also holds durable session and shared-hosting customer
+account state. Back up that claim as encrypted sensitive data; account state
+contains bcrypt password hashes and TOTP seeds and must never be mounted into a
+customer-facing workload or exported in support artifacts.
+
 This container is a control-plane packaging target, not a host-management
 agent. Kubernetes pods do not have the host's Apache, PHP-FPM, systemd, local
 accounts, or privileged StePanel helpers. Endpoints that provision host

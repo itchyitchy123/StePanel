@@ -231,6 +231,17 @@ paths:
       summary: Report features available in the current deployment
       responses:
         '200': {description: Capability flags derived from installed helpers and dependencies}
+  /api/accounts:
+    get:
+      summary: List shared-hosting customer accounts and plan limits (administrator only)
+      responses:
+        '200': {description: Customer account metadata without password hashes or TOTP secrets}
+        '403': {description: Administrator access required}
+    post:
+      summary: Create a shared-hosting customer account with explicit site assignments (administrator only)
+      responses:
+        '201': {description: Customer account created without password or TOTP secret disclosure}
+        '422': {description: Invalid plan, assigned sites, password, or TOTP seed}
   /api/security/scan:
     post:
       summary: Scan a managed site for suspicious PHP
