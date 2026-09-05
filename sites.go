@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 var siteVHostNamePattern = regexp.MustCompile(`^site-[a-z0-9_-]{1,32}-[a-z0-9_-]+\.conf$`)
@@ -16,6 +18,117 @@ var siteVHostNamePattern = regexp.MustCompile(`^site-[a-z0-9_-]{1,32}-[a-z0-9_-]
 type siteRoute struct {
 	Site   string `json:"site"`
 	Domain string `json:"domain"`
+}
+
+// siteOverview is the read-only, site-centric view consumed by the dashboard
+// and API clients. It deliberately reports paths and states, never credentials
+// or environment values.
+type siteOverview struct {
+	Site          string        `json:"site"`
+	DocumentRoot  string        `json:"document_root"`
+	Routes        []siteRoute   `json:"routes"`
+	Applications  []AppManifest `json:"applications"`
+	Proxies       []proxyInfo   `json:"proxies"`
+	DatabaseCount int           `json:"database_count"`
+	Exists        bool          `json:"exists"`
+}
+
+func (a *App) siteOverviewList(w http.ResponseWriter, _ *http.Request) {
+	sites := map[string]*siteOverview{}
+	entries, _ := os.ReadDir(filepath.Join(a.Config.WebRoot, "sites"))
+	for _, entry := range entries {
+		if entry.IsDir() && safeUser(entry.Name()) != "" {
+			sites[entry.Name()] = newSiteOverview(a.Config, entry.Name())
+		}
+	}
+	for _, route := range managedSiteRoutes(a.Config.VHostRoot) {
+		if sites[route.Site] == nil {
+			sites[route.Site] = newSiteOverview(a.Config, route.Site)
+		}
+		sites[route.Site].Routes = append(sites[route.Site].Routes, route)
+	}
+	for _, app := range managedApps(a.Config.AppRoot) {
+		if sites[app.Site] == nil {
+			sites[app.Site] = newSiteOverview(a.Config, app.Site)
+		}
+		sites[app.Site].Applications = append(sites[app.Site].Applications, app)
+	}
+	if databases, err := managedDatabaseInventory(a.Config); err == nil {
+		for _, database := range databases {
+			if sites[database.Site] == nil {
+				sites[database.Site] = newSiteOverview(a.Config, database.Site)
+			}
+			sites[database.Site].DatabaseCount++
+		}
+	}
+	result := make([]*siteOverview, 0, len(sites))
+	for _, site := range sites {
+		sort.Slice(site.Routes, func(i, j int) bool { return site.Routes[i].Domain < site.Routes[j].Domain })
+		sort.Slice(site.Applications, func(i, j int) bool { return site.Applications[i].Domain < site.Applications[j].Domain })
+		result = append(result, site)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Site < result[j].Site })
+	writeJSON(w, http.StatusOK, map[string]any{"sites": result, "time": time.Now().UTC()})
+}
+
+func (a *App) siteOverviewResource(w http.ResponseWriter, r *http.Request) {
+	site := strings.TrimPrefix(r.URL.Path, "/api/sites/overview/")
+	if site == "" || strings.Contains(site, "/") || safeUser(site) == "" {
+		http.Error(w, "invalid site", http.StatusUnprocessableEntity)
+		return
+	}
+	overview := newSiteOverview(a.Config, site)
+	if databases, err := managedDatabaseInventory(a.Config); err == nil {
+		for _, database := range databases {
+			if database.Site == site {
+				overview.DatabaseCount++
+			}
+		}
+	}
+	if !overview.Exists && len(overview.Routes) == 0 && len(overview.Applications) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
+}
+
+func newSiteOverview(cfg Config, site string) *siteOverview {
+	root := filepath.Join(cfg.WebRoot, "sites", site, "public")
+	_, err := os.Stat(root)
+	return &siteOverview{Site: site, DocumentRoot: root, Exists: err == nil}
+}
+
+func managedSiteRoutes(root string) []siteRoute {
+	entries, _ := os.ReadDir(root)
+	routes := []siteRoute{}
+	for _, entry := range entries {
+		match := siteVHostNamePattern.FindStringSubmatch(entry.Name())
+		if entry.IsDir() || match == nil {
+			continue
+		}
+		domain := strings.ReplaceAll(strings.TrimSuffix(match[0], ".conf"), "_", ".")
+		parts := strings.SplitN(strings.TrimPrefix(domain, "site-"), "-", 2)
+		if len(parts) == 2 {
+			routes = append(routes, siteRoute{Site: parts[0], Domain: parts[1]})
+		}
+	}
+	return routes
+}
+
+func managedApps(root string) []AppManifest {
+	entries, _ := os.ReadDir(root)
+	apps := []AppManifest{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(root, entry.Name()))
+		var app AppManifest
+		if err == nil && json.Unmarshal(data, &app) == nil && safeUser(app.Site) != "" {
+			apps = append(apps, app)
+		}
+	}
+	return apps
 }
 
 func (a *App) siteList(w http.ResponseWriter, _ *http.Request) {

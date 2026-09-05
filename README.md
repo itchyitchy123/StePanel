@@ -196,6 +196,8 @@ checkbox and should be backed up first.
 | `POST` | `/api/proxy/test` | Test a local/private application backend |
 | `DELETE` | `/api/proxy/<config>` | Remove a managed reverse proxy and reload the selected webserver |
 | `GET` | `/api/sites` | List managed PHP site vhosts |
+| `GET` | `/api/sites/overview` | List site-centric developer workspaces and their managed resources |
+| `GET` | `/api/sites/overview/<site>` | Inspect one site workspace without exposing credentials or environment values |
 | `POST` | `/api/sites/deploy` | Validate and route a domain to its isolated PHP-FPM pool |
 | `DELETE` | `/api/sites/<config>` | Remove a managed PHP site vhost |
 | `GET` | `/api/backups` | List private verified backup artifacts |

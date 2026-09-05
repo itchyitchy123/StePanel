@@ -53,3 +53,21 @@ func TestSiteListFiltersUnmanagedFiles(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
+
+func TestSiteOverviewGroupsManagedResources(t *testing.T) {
+	root := t.TempDir()
+	webRoot := filepath.Join(root, "www")
+	if err := os.MkdirAll(filepath.Join(webRoot, "sites", "account", "public"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	vhostRoot := filepath.Join(root, "vhosts")
+	writeTestFile(t, filepath.Join(vhostRoot, "site-account-example_com.conf"), "managed")
+	appRoot := filepath.Join(root, "apps")
+	writeTestFile(t, filepath.Join(appRoot, "account.json"), `{"site":"account","domain":"app.example.com","node_version":"v20.1.0","port":3000,"state":"running"}`)
+	app := &App{Config: Config{WebRoot: webRoot, VHostRoot: vhostRoot, AppRoot: appRoot}}
+	response := httptest.NewRecorder()
+	app.siteOverviewList(response, httptest.NewRequest(http.MethodGet, "/api/sites/overview", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"site":"account"`) || !strings.Contains(response.Body.String(), "example.com") {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}

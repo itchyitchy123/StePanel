@@ -29,6 +29,7 @@ longer-term hosting-panel roadmap.
 - Authenticated security posture endpoint at `/api/security/audit`.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
 - Transactional webserver vhosts and reverse proxies with duplicate-domain checks; PHP vhost templates remain Apache-specific.
+- Read-only site-centric inventory at `/api/sites/overview`, grouping document roots, domains, Node applications, and managed database counts without exposing secrets.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
 - Independently verified site and registered-database backups.
 - Scheduled local backup jobs with retention controls and optional enforced

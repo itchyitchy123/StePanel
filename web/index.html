@@ -11,7 +11,7 @@
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="StePanel home"><span class="brand-mark">S</span><span>StePanel</span></a>
-      <nav class="topnav" aria-label="Primary"><a href="#resources">Resources</a><a href="#database">Database</a><a href="#jobs">Jobs</a><a href="#migrations">Migrations</a><a href="#deploy">Deploy</a><a href="#security">Security</a><a href="/api/doctor">Doctor</a></nav>
+      <nav class="topnav" aria-label="Primary"><a href="#resources">Resources</a><a href="#sites">Sites</a><a href="#database">Database</a><a href="#jobs">Jobs</a><a href="#migrations">Migrations</a><a href="#deploy">Deploy</a><a href="#security">Security</a><a href="/api/doctor">Doctor</a></nav>
       <div class="topbar-meta"><span class="pulse" aria-hidden="true"></span> Connected <span class="divider"></span> <time datetime="{{ .Now.Format "2006-01-02" }}">{{ .Now.Format "02 Jan 2006" }}</time>{{ if .AuthEnabled }}<form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ .CSRF }}"><button class="avatar" type="submit" aria-label="Sign out {{ .Username }}">{{ if .Username }}{{ .Username }}{{ else }}admin{{ end }} · Sign out</button></form>{{ end }}</div>
     </header>
     <main class="content" id="main">
@@ -33,6 +33,12 @@
       <section class="resource-table" aria-label="Infrastructure resources">
         <div class="table-head"><span>Resource</span><span>Location</span><span>State</span><span>Load</span><span>Uptime</span><span></span></div>
         {{ range .Servers }}<div class="table-row"><span class="resource-name"><span class="server-icon" aria-hidden="true">⌁</span><span><strong>{{ .Name }}</strong><small>Local service</small></span></span><span class="muted">{{ .Region }}</span><span><span class="status {{ if or (eq .Status "active") (eq .Status "installed") (eq .Status "enabled") }}status-ok{{ else }}status-warn{{ end }}"><i aria-hidden="true"></i>{{ .Status }}</span></span><span class="mono">{{ .Load }}</span><span class="mono muted">{{ .Uptime }}</span><span></span></div>{{ end }}
+      </section>
+      <section class="import-panel site-overview" id="sites" aria-labelledby="sites-heading">
+        <div class="section-heading"><div><p class="eyebrow">Developer workspace</p><h2 id="sites-heading">Managed sites</h2></div><a class="quiet-action" href="/api/sites/overview">View JSON →</a></div>
+        <p class="import-copy">A site-centric view of domains, application runtimes, databases, and document roots. Select a site to continue managing its resources.</p>
+        <p class="import-note" id="siteOverviewStatus" role="status" aria-live="polite">Loading managed sites…</p>
+        <div id="siteOverview" class="site-overview-grid"></div>
       </section>
       <section class="database-admin" id="database" aria-labelledby="database-heading">
         <div class="section-heading"><div><p class="eyebrow">Database operations</p><h2 id="database-heading">{{ .Database.Engine }} management</h2></div><a class="quiet-action" href="/api/database">View JSON →</a></div>
@@ -59,5 +65,6 @@
 <script src="/static/certificates.js" defer></script>
 <script src="/static/wpress.js" defer></script>
 <script src="/static/database.js" defer></script>
+<script src="/static/sites.js" defer></script>
 </body>
 </html>

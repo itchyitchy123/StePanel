@@ -6,7 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- Site-centric developer workspace inventory at `/api/sites/overview`, grouping
+  document roots, domains, Node applications, and managed database counts.
+- Dashboard managed-sites cards backed by the same authenticated API.
 
 ## [0.6.0] - 2026-09-04
 

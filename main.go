@@ -205,6 +205,8 @@ func main() {
 	mux.Handle("/api/proxy/test", allowMethods(app.Auth.Require(http.HandlerFunc(app.proxyTest)), http.MethodPost))
 	mux.Handle("/api/proxy/", allowMethods(app.Auth.Require(http.HandlerFunc(app.proxyManage)), http.MethodDelete))
 	mux.Handle("/api/sites", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteList)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/sites/overview", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteOverviewList)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/sites/overview/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteOverviewResource)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteManage)), http.MethodDelete))
 	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
