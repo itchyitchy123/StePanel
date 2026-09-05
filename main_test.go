@@ -45,8 +45,8 @@ func TestEmbeddedDashboardTemplate(t *testing.T) {
 	if err := view.Execute(&rendered, map[string]any{"Title": "StePanel", "Now": time.Now(), "Servers": []ServiceSummary{{Name: "apache2", Status: "active"}}, "Healthy": 1, "Alerts": 0, "Security": []SecurityCheck{}, "Jobs": []Job{}, "Capabilities": map[string]bool{}, "Database": DatabaseAdmin{Engine: "mysql", Version: "default", Host: "local socket", Service: "mysql", Status: "missing", Client: "mariadb", AdminProduct: "phpMyAdmin", AdminURL: "/phpmyadmin"}}); err != nil {
 		t.Fatalf("render embedded dashboard: %v", err)
 	}
-	if strings.Contains(rendered.String(), "Stephan") || !strings.Contains(rendered.String(), "Infrastructure overview") {
-		t.Fatal("dashboard contains simulated content or is missing its live overview")
+	if strings.Contains(rendered.String(), "Stephan") || !strings.Contains(rendered.String(), "Manage your sites with confidence") {
+		t.Fatal("dashboard contains simulated content or is missing its customer workspace")
 	}
 }
 

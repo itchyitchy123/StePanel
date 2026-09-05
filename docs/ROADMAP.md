@@ -17,6 +17,9 @@
 - Customer-visible operation history and notification delivery
 - Site-centric inventory and constrained pre-built Git deployment/rollback
   (available in `Unreleased` after 0.6.0)
+- Customer-first hosting workspace with per-site domain connection and
+  verified-backup actions (available in `Unreleased` after 0.6.0); DNS
+  lifecycle and customer authorization remain future work.
 
 ## 0.3 — Recovery and scale
 

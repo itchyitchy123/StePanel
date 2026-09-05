@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ .Title }} · operations cockpit</title><link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <title>{{ .Title }} · hosting workspace</title><link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css"><link rel="stylesheet" href="/static/import.css">
 </head>
 <body>
@@ -11,32 +11,36 @@
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="StePanel home"><span class="brand-mark">S</span><span>StePanel</span></a>
-      <nav class="topnav" aria-label="Primary"><a href="#resources">Resources</a><a href="#sites">Sites</a><a href="#database">Database</a><a href="#jobs">Jobs</a><a href="#migrations">Migrations</a><a href="#deploy">Deploy</a><a href="#security">Security</a><a href="/api/doctor">Doctor</a></nav>
+      <nav class="topnav" aria-label="Primary"><a href="#sites">My sites</a><a href="#start">Get started</a><a href="#migrations">Migrate</a><a href="#database">Databases</a><a href="#operations">Operations</a></nav>
       <div class="topbar-meta"><span class="pulse" aria-hidden="true"></span> Connected <span class="divider"></span> <time datetime="{{ .Now.Format "2006-01-02" }}">{{ .Now.Format "02 Jan 2006" }}</time>{{ if .AuthEnabled }}<form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ .CSRF }}"><button class="avatar" type="submit" aria-label="Sign out {{ .Username }}">{{ if .Username }}{{ .Username }}{{ else }}admin{{ end }} · Sign out</button></form>{{ end }}</div>
     </header>
     <main class="content" id="main">
       <section class="hero">
-        <div><p class="eyebrow">This server / Overview</p><h1>Infrastructure overview</h1><p class="lede">Live service state, security checks, and recent control-plane jobs.</p><p class="import-note">Webserver: <strong>{{ .Config.WebServer }}</strong> · <a href="/api/doctor">Run operator diagnostics</a></p></div>
-        <a class="primary-action button-link" href="#deploy">Provision resource</a>
+        <div><p class="eyebrow">Hosting workspace</p><h1>Manage your sites with confidence</h1><p class="lede">Domains, applications, databases, and verified backups in one place.</p><p class="import-note">Every change is recorded. Backups are verified before they are marked ready.</p></div>
+        <a class="primary-action button-link" href="#start">Set up a site</a>
       </section>
-      <section class="metrics" aria-label="Fleet summary">
-        <article class="metric"><span class="metric-label">Services tracked</span><strong>{{ len .Servers }}</strong><span class="metric-note">Live local inventory</span></article>
-        <article class="metric"><span class="metric-label">Healthy services</span><strong>{{ .Healthy }}</strong><span class="metric-note">Active, enabled, or installed</span></article>
-        <article class="metric"><span class="metric-label">Server load</span><strong>{{ (index .Servers 0).Load }}</strong><span class="metric-note">Current 1-minute average</span></article>
-        <article class="metric"><span class="metric-label">Needs attention</span><strong>{{ .Alerts }}</strong><span class="metric-note warning">Missing, failed, inactive, or unknown</span></article>
+      <section class="metrics customer-summary" aria-label="Hosting summary">
+        <article class="metric"><span class="metric-label">Managed sites</span><strong id="siteCount">—</strong><span class="metric-note">Sites you can manage here</span></article>
+        <article class="metric"><span class="metric-label">Domains connected</span><strong id="domainCount">—</strong><span class="metric-note">Managed web routes</span></article>
+        <article class="metric"><span class="metric-label">Verified backups</span><strong id="backupCount">—</strong><span class="metric-note">Private recovery points</span></article>
+        <article class="metric"><span class="metric-label">Needs attention</span><strong>{{ .Alerts }}</strong><span class="metric-note warning">Platform checks requiring review</span></article>
+      </section>
+      <section class="onboarding" id="start" aria-labelledby="start-heading">
+        <div><p class="eyebrow">Start here</p><h2 id="start-heading">What would you like to do?</h2><p>Start with a guided task. You can review the result and recent activity from the site workspace.</p></div>
+        <div class="onboarding-actions"><a class="task-card" href="#migrations"><strong>Move a cPanel site</strong><span>Inspect a backup before restoring it.</span></a><a class="task-card" href="#sites"><strong>Connect a domain</strong><span>Add a managed route to an existing site.</span></a><a class="task-card" href="#deploy"><strong>Deploy an application</strong><span>Route a local Node application safely.</span></a></div>
       </section>
       <section class="security-card" id="security">
         <div class="section-heading"><div><p class="eyebrow">Security posture</p><h2>Operator checks</h2></div><a class="quiet-action" href="/api/security/audit">View JSON →</a></div>
         <div class="security-grid">{{ range .Security }}<article class="security-item"><span class="status {{ if eq .Status "pass" }}status-ok{{ else }}status-warn{{ end }}"><i></i>{{ .Status }}</span><strong>{{ .Name }}</strong><small>{{ .Detail }}</small></article>{{ end }}</div>
       </section>
-      <div class="section-heading" id="resources"><div><p class="eyebrow">This server</p><h2>Resources</h2></div><a class="quiet-action" href="/api/services">View JSON →</a></div>
+      <div class="section-heading operator-section" id="operations"><div><p class="eyebrow">Administrator view</p><h2>Platform operations</h2></div><a class="quiet-action" href="/api/services">View JSON →</a></div>
       <section class="resource-table" aria-label="Infrastructure resources">
         <div class="table-head"><span>Resource</span><span>Location</span><span>State</span><span>Load</span><span>Uptime</span><span></span></div>
         {{ range .Servers }}<div class="table-row"><span class="resource-name"><span class="server-icon" aria-hidden="true">⌁</span><span><strong>{{ .Name }}</strong><small>Local service</small></span></span><span class="muted">{{ .Region }}</span><span><span class="status {{ if or (eq .Status "active") (eq .Status "installed") (eq .Status "enabled") }}status-ok{{ else }}status-warn{{ end }}"><i aria-hidden="true"></i>{{ .Status }}</span></span><span class="mono">{{ .Load }}</span><span class="mono muted">{{ .Uptime }}</span><span></span></div>{{ end }}
       </section>
       <section class="import-panel site-overview" id="sites" aria-labelledby="sites-heading">
         <div class="section-heading"><div><p class="eyebrow">Developer workspace</p><h2 id="sites-heading">Managed sites</h2></div><a class="quiet-action" href="/api/sites/overview">View JSON →</a></div>
-        <p class="import-copy">A site-centric view of domains, application runtimes, databases, and document roots. Select a site to continue managing its resources.</p>
+        <p class="import-copy">See the essentials for each site, then connect a domain, create a verified backup, or inspect its resources. Sensitive credentials are never displayed.</p>
         <p class="import-note" id="siteOverviewStatus" role="status" aria-live="polite">Loading managed sites…</p>
         <div id="siteOverview" class="site-overview-grid"></div>
         <div id="siteDetail" class="site-detail" hidden aria-live="polite"></div>

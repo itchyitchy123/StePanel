@@ -34,6 +34,10 @@ longer-term hosting-panel roadmap.
 - Fail-closed Apache `.htaccess` preview/import for Caddy, covering common
   front-controller and redirect rules with explicit unsupported-line reports.
 - Read-only site-centric inventory at `/api/sites/overview`, grouping document roots, domains, Node applications, and managed database counts without exposing secrets.
+- Customer-first hosting workspace that leads with managed sites, connected
+  domains, and verified-backup counts. Site workspaces can queue a verified
+  file-and-managed-database backup and connect a validated web route; the UI
+  explains the required DNS cutover after a route is created.
 - Constrained Git releases and one-click rollback at `/api/sites/git-deploy` and `/api/sites/git-rollback`, with HTTPS-only repositories, an exact hostname allowlist, shallow ref checkout, commit identification, symlink rejection, Git-metadata removal, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
@@ -53,6 +57,8 @@ longer-term hosting-panel roadmap.
   and external providers.
 - Backup verification is available, but snapshot-backed rollback and a full
   customer self-service restore workflow are not complete.
+- The hosting workspace is an administrator experience, not a tenant portal:
+  it does not assign sites to customers or authorize customer actions.
 - PITR/WAL or binlog management, replication orchestration, configuration
   mutation, and automatic failover remain operator-managed and deliberately
   have no unsafe simulated controls.

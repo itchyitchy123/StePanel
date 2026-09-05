@@ -23,11 +23,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   atomic activation, previous-release preservation, and audit records.
 - In-dashboard site workspace details covering domains, applications, proxies,
   databases, and verified recent activity.
+- A customer-first dashboard landing view with managed-site, connected-domain,
+  and verified-backup counts; guided migration, domain, and deployment tasks;
+  and per-site domain connection and verified-backup actions.
 - Read-only per-database detail and atomic one-click Git rollback that preserves
   the replaced release for recovery.
 
 ### Changed
 
+- The dashboard now opens as a hosting workspace rather than an infrastructure
+  cockpit. Server service inventory remains available in the clearly labelled
+  administrator operations section.
 - Caddy is now the runtime and installer default; Apache and OpenLiteSpeed
   remain explicit options. Documentation and the dashboard now describe
   Caddy's automatic certificate lifecycle.
