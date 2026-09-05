@@ -61,9 +61,12 @@ safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
 
 ## See it quickly
 
-![StePanel dashboard preview](docs/assets/dashboard-preview.png)
+![StePanel 0.5.0 dashboard preview](docs/assets/dashboard-preview.png)
 
-See the [product preview](docs/SCREENSHOTS.md) for the current dashboard direction.
+See the [0.5.0 product preview](docs/SCREENSHOTS.md) for the current dashboard
+layout. The repository image is a deterministic illustration with
+representative values; capture a tagged-build screenshot for host-specific
+service and capability states.
 
 ### Local development
 
