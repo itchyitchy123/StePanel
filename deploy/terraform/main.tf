@@ -165,8 +165,8 @@ resource "kubernetes_deployment" "stepanel" {
             name = "STEPANEL_ADMIN_TOTP_SECRET"
             value_from {
               secret_key_ref {
-                name     = "stepanel-secrets"
-                key      = "admin-totp-secret"
+                name = "stepanel-secrets"
+                key  = "admin-totp-secret"
               }
             }
           }
