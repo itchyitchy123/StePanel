@@ -36,6 +36,7 @@ jobs:
             echo "release tag must point to a commit already reachable from main" >&2
             exit 1
           }
+          make release-check
       - name: Build and publish release artifacts with GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:

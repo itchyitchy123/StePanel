@@ -29,6 +29,7 @@ jobs:
           go-version: ${{ matrix.go_version }}
           cache: true
       - run: test -z "$(gofmt -l .)"
+      - run: make release-check
       - run: go vet ./...
       - run: go test ./... -coverprofile=coverage.out -covermode=atomic
       - run: go test -race ./...
@@ -74,6 +75,7 @@ jobs:
           done
           test "$ready" = 1
       - run: bash -n install.sh
+      - run: bash -n scripts/check-release.sh
       - run: bash -n deploy/integrations/install-fail2ban.sh
       - run: bash -n deploy/integrations/*
       - name: Lint shell scripts
