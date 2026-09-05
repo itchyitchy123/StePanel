@@ -12,6 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   document roots, domains, Node applications, and managed database counts.
 - Dashboard managed-sites cards backed by the same authenticated API.
 - Verified, bounded, filterable audit-event history at `/api/audit/events`.
+- Constrained HTTPS Git site releases with validated refs, shallow checkout,
+  atomic activation, previous-release preservation, and audit records.
 
 ## [0.6.0] - 2026-09-04
 

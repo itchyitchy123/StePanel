@@ -241,6 +241,19 @@ paths:
       summary: List managed PHP site routes
       responses:
         '200': {description: Managed site vhost names}
+  /api/sites/overview:
+    get:
+      summary: List site-centric developer workspaces
+      responses:
+        '200': {description: Sites with document roots, routes, applications, and managed database counts}
+  /api/sites/overview/{site}:
+    get:
+      summary: Inspect one site-centric developer workspace
+      parameters:
+        - {name: site, in: path, required: true, schema: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}}
+      responses:
+        '200': {description: Site workspace details}
+        '404': {description: Site not found}
   /api/sites/deploy:
     post:
       summary: Deploy a PHP site through its isolated PHP-FPM pool
@@ -258,6 +271,25 @@ paths:
         '202': {description: Vhost validated, activated, and Apache reloaded}
         '422': {description: Invalid route or missing site document root}
         '503': {description: Host validation or Apache reload failed}
+  /api/sites/git-deploy:
+    post:
+      summary: Checkout and atomically activate an HTTPS Git release
+      description: Repository build scripts are not executed. Use a separately sandboxed build runner for source builds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site, repository]
+              properties:
+                site: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}
+                repository: {type: string, format: uri, pattern: '^https://.*\\.git$'}
+                ref: {type: string, default: main}
+      responses:
+        '202': {description: Release activated and previous site release preserved}
+        '422': {description: Invalid site, repository, or ref}
+        '502': {description: Git checkout or commit identification failed}
   /api/sites/{name}:
     delete:
       summary: Remove a managed PHP site route

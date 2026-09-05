@@ -214,6 +214,7 @@ func main() {
 	mux.Handle("/api/backup-schedules", allowMethods(app.Auth.Require(http.HandlerFunc(app.backupSchedules)), http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete))
 	mux.Handle("/api/apps", allowMethods(app.Auth.Require(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.appDeploy)), http.MethodPost))
+	mux.Handle("/api/sites/git-deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.gitDeploy)), http.MethodPost))
 	mux.Handle("/api/apps/", allowMethods(app.Auth.Require(http.HandlerFunc(app.appAction)), http.MethodPost))
 	mux.Handle("/api/cpmove/inspect", allowMethods(app.Auth.Require(limitConcurrent(http.HandlerFunc(app.inspect), expensive)), http.MethodPost))
 	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.Require(http.HandlerFunc(app.importBackup)), http.MethodPost))

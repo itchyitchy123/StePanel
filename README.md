@@ -205,6 +205,7 @@ checkbox and should be backed up first.
 | `POST` | `/api/backups` | Queue a site backup with optional managed database dumps |
 | `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
+| `POST` | `/api/sites/git-deploy` | Checkout a validated HTTPS Git ref into an atomic site release |
 | `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
 | `POST` | `/api/cpmove/import` | Start an authorized restore job |

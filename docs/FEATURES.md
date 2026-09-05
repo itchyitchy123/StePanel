@@ -31,6 +31,7 @@ longer-term hosting-panel roadmap.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
 - Transactional webserver vhosts and reverse proxies with duplicate-domain checks; PHP vhost templates remain Apache-specific.
 - Read-only site-centric inventory at `/api/sites/overview`, grouping document roots, domains, Node applications, and managed database counts without exposing secrets.
+- Constrained Git releases at `/api/sites/git-deploy` with HTTPS-only repositories, shallow ref checkout, commit identification, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
 - Independently verified site and registered-database backups.
 - Scheduled local backup jobs with retention controls and optional enforced
