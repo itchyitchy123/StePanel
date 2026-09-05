@@ -1,9 +1,10 @@
 # Product preview
 
-The assets in this document are synchronized with the `0.6.0` dashboard
-layout. They are deterministic product illustrations, not captures from a
-live host; values are representative and the real dashboard renders service,
-database, capability, and job state from the configured server.
+The assets in this document are synchronized with the current development
+dashboard after `0.6.0`, including the managed-sites workspace. They are
+deterministic product illustrations, not captures from a live host; values are
+representative and the real dashboard renders service, site, database,
+capability, and job state from the configured server.
 
 ## Dashboard
 
@@ -26,13 +27,14 @@ available for presentations and product materials.
 </tr>
 <tr>
 <td><strong>Security posture</strong><br>Operator checks, readiness, request correlation, and capability-aware controls are surfaced before changes are made.</td>
-<td></td>
+<td><strong>Developer workspace</strong><br>Managed sites group domains, application state, proxies, database counts, and verified recent activity.</td>
 </tr>
 </table>
 
-This illustration mirrors the current `0.6.0` dashboard structure using
-representative values, including the selected webserver, database operations
-panel, matching administrator link, and direct operator-diagnostics link.
+This illustration mirrors the current development dashboard structure using
+representative values, including the selected webserver, managed-sites
+workspace, database operations panel, matching administrator link, and direct
+operator-diagnostics link.
 At runtime, all service counts, health states, load, security checks, and jobs
 come from the current server; the application does not ship simulated activity.
 

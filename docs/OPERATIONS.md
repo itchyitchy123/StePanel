@@ -47,6 +47,7 @@ On RHEL-family systems, the Apache and database unit names may be `httpd` and `m
 ```sh
 df -h /var/lib/ste-panel /var/www/sites
 du -sh /var/lib/ste-panel/imports /var/lib/ste-panel/mail /var/lib/ste-panel/quarantine
+du -sh /var/www/sites/*/.stepanel-previous-* 2>/dev/null
 logrotate --debug /etc/logrotate.d/stepanel
 ```
 
@@ -103,6 +104,13 @@ consistent backup is required. Staging retention never deletes published
 backups. A scheduled backup's `keep_last` policy prunes its oldest verified
 local copies only after a replacement succeeds; safety dumps made before
 database deletion remain under `.database-deletions` for explicit DBA review.
+
+Git deployments retain replaced public trees as
+`/var/www/sites/<site>/.stepanel-previous-*`; they are not governed by backup
+retention. Review and remove them only after a verified backup and rollback
+window. Use the authenticated site workspace and `/api/audit/events` to
+correlate file releases with process, proxy, and database changes. See
+[`GIT_DEPLOYMENTS.md`](GIT_DEPLOYMENTS.md).
 
 Use the authenticated database endpoints during an incident:
 

@@ -21,6 +21,8 @@ platform.
   trust a proxy.
 - Prometheus metrics and alert rules are included for availability, restore
   failures, and stuck jobs.
+- Operators have site-centric inventory, constrained pre-built HTTPS Git
+  deployment with atomic file rollback, and credential-safe database detail.
 
 ## Required before exposing the panel to customers
 
@@ -50,9 +52,10 @@ removing only a vhost is not account deletion.
 
 ### Customer experience
 
-Add a customer portal, file manager, deployment/Git integration, WordPress
-updates and staging, backup browsing/restore, notifications, API/webhooks,
-and clear operation progress. All customer-visible operations should be
+Add a customer portal, file manager, Git-provider webhooks and deploy keys,
+sandboxed build pipelines, WordPress updates and staging, backup
+browsing/restore, notifications, API/webhooks, and clear operation progress.
+All customer-visible operations should be
 idempotent and explain what changed.
 
 ## Release gates

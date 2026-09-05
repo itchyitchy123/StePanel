@@ -15,6 +15,8 @@
 - Per-site PHP version selection
 - General-purpose database and database-user lifecycle (shipped in 0.6 for local single-host engines)
 - Customer-visible operation history and notification delivery
+- Site-centric inventory and constrained pre-built Git deployment/rollback
+  (available in `Unreleased` after 0.6.0)
 
 ## 0.3 — Recovery and scale
 
@@ -41,5 +43,6 @@
   lifecycle
 - Database PITR/WAL or binlog orchestration, replication topology, controlled
   switchover, and externally fenced automatic failover
-- Customer portal, file manager, deployment integrations, WordPress tooling,
-  notifications, and self-service backup/restore
+- Customer portal, file manager, Git-provider/webhook and sandboxed-build
+  integrations, WordPress tooling, notifications, and self-service
+  backup/restore

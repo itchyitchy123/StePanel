@@ -66,8 +66,9 @@ must be implemented before offering untrusted customer access:
   servers, retries, cancellation, idempotency, and event delivery.
 - Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, cron, SSH, quota,
   resource-plan, and billing lifecycle management.
-- Customer-facing file manager, deployment/Git integration, WordPress
-  lifecycle tooling, notifications, and self-service backup/restore.
+- Customer-facing file manager, private-repository/provider webhooks,
+  sandboxed builds, WordPress lifecycle tooling, notifications, and
+  self-service backup/restore.
 
 These are product and architecture work items, not safe one-file patches. The
 sequencing, acceptance gates, and operational prerequisites are tracked in

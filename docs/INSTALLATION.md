@@ -128,6 +128,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_FTP_PASSIVE_MIN` / `STEPANEL_FTP_PASSIVE_MAX` | Port range | Passive FTP port range; defaults to `40100-40200` |
 | `STEPANEL_INSTALL_NODE` | `0` or `1` | Install NVM for the StePanel service account |
 | `STEPANEL_NODE_VERSIONS` | Comma-separated versions | Node versions to install through NVM |
+| `STEPANEL_GIT_ALLOWED_HOSTS` | Comma-separated hostnames | Exact HTTPS repository hosts allowed for Git deployment; defaults to GitHub, GitLab, and Bitbucket |
 | `STEPANEL_INSTALL_SECURITY` | `0` or `1` | Install ClamAV and the PHP malware guard |
 | `STEPANEL_OFFSITE_TARGET` | rclone destination | Optional offsite copy target, for example `s3:bucket/stepanel` |
 | `STEPANEL_REQUIRE_OFFSITE_BACKUP` | `0` or `1` | Reject production startup unless an offsite target is configured |

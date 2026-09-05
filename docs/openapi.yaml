@@ -156,6 +156,16 @@ paths:
       summary: Security posture checks
       responses:
         '200': {description: Security checks}
+  /api/audit/events:
+    get:
+      summary: Query verified audit and deployment history
+      parameters:
+        - {name: target, in: query, schema: {type: string}, description: Exact case-insensitive target filter}
+        - {name: action, in: query, schema: {type: string}, description: Exact case-insensitive action filter}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        '200': {description: Bounded events with verified, empty, or unconfigured integrity state}
+        '503': {description: Audit-chain integrity verification failed}
   /api/doctor:
     get:
       summary: Run read-only operator diagnostics

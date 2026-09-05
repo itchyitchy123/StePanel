@@ -13,8 +13,10 @@ Required deployment fields are:
 - optional domain for the proxy configuration
 
 The application must already exist in the site's `public` directory and must
-provide a working `npm start` script. Upload/build pipelines and environment
-secret storage remain separate deployment steps.
+provide a working `npm start` script. The constrained Git endpoint can replace
+that public tree with pre-built repository contents, but build pipelines and
+environment secret storage remain separate deployment steps. See
+[`GIT_DEPLOYMENTS.md`](GIT_DEPLOYMENTS.md).
 
 ## Rollback
 
@@ -27,5 +29,7 @@ curl -X POST https://panel.example.test/api/apps/example/rollback \
 ```
 
 The root-owned app helper applies the previous Node version, root, and port
-before the manifest is switched. Rollback changes the process definition; it
-does not restore application files, database data, or secrets.
+before the manifest is switched. This rollback changes the process definition;
+it does not restore application files, database data, or secrets. Git file
+rollback is a separate `/api/sites/git-rollback` operation documented in
+[`GIT_DEPLOYMENTS.md`](GIT_DEPLOYMENTS.md).

@@ -36,6 +36,9 @@
 - Host site workloads use deterministic per-site Unix identities and unique
   primary groups. Apache receives group access without making site users
   members of its shared group, and the control plane uses explicit ACLs.
+- Git deployment accepts only allowlisted HTTPS hosts, disables credential
+  prompts/helpers, rejects symlinks and special files, strips repository
+  metadata, and does not execute repository-provided build scripts.
 
 ## Residual risks
 
@@ -48,6 +51,9 @@
   the built-in administrator is still a single shared identity.
 - Backup checksums detect corruption but are not signatures. An actor able to
   modify both an archive and its manifest can replace both.
+- An allowlisted Git provider and repository contents remain trusted inputs.
+  Compromise of either can publish malicious application code even though the
+  deployment path prevents control-plane command execution.
 
 ## Operator requirements
 

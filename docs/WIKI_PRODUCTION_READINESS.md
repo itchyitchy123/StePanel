@@ -89,6 +89,12 @@ configuration is managed separately. Treat a proxy-helper failure after an app
 deployment as a partial deployment and reconcile the app and proxy state before
 retrying.
 
+Git deployment is a separate file-release operation for pre-built public trees.
+Configure `STEPANEL_GIT_ALLOWED_HOSTS`, monitor retained
+`.stepanel-previous-*` directories, and use `/api/sites/git-rollback` for an
+atomic file rollback. It does not restart Node, migrate databases, run package
+managers, or inject secrets; coordinate those operations explicitly.
+
 ## Cloud and SSH operations
 
 Configure one provider with `STEPANEL_CLOUD_PROVIDER` for authenticated cloud
@@ -128,8 +134,9 @@ During an incident:
 - Job and session state use atomic JSON snapshots. Retention and bounded
   admission keep normal installations manageable, but very high-volume fleets
   should monitor persistence latency and plan a transactional store.
-- App and proxy deployment are separate API operations. Operators should use
-  the UI status and reconcile partial failures explicitly.
+- Git file deployment, app process deployment, and proxy deployment are
+  separate API operations. Operators should use the site workspace and audit
+  history to reconcile partial failures explicitly.
 
 ## Release and upgrade policy
 

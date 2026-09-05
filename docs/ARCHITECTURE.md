@@ -11,6 +11,7 @@ Browser
 StePanel HTTP server
    ├── dashboard and static assets
    ├── process liveness and persistent-storage readiness endpoints
+   ├── site/database inventory and constrained Git release switching
    └── cpmove inspection/import API
           ├── staging area: /var/lib/ste-panel/imports
           ├── site roots: /var/www/sites/<account>/public
@@ -47,6 +48,14 @@ configuration changes with Node proxy changes, rejects a domain already present
 in managed or existing Apache vhosts, binds PHP requests to an active per-site
 FPM socket, validates the complete Apache configuration, and restores the prior
 snippet if validation or reload fails.
+
+Git site deployment runs as the unprivileged control-plane account and accepts
+only HTTPS repositories from an exact hostname allowlist. Checkout disables
+interactive credentials, applies a time and entry limit, rejects symlinks and
+special files, and removes Git metadata before activation. The final directory
+switch is serialized and atomic on the site filesystem; ownership/isolation is
+then restored through the site helper. Repository code is never executed as a
+build step by the control plane.
 
 ## Durable restore state
 

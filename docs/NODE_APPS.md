@@ -34,3 +34,9 @@ needs to be reverted.
 Managed proxies can be listed, backend-tested, and removed through the
 authenticated proxy API. A failed Apache reload restores the previous proxy
 configuration automatically.
+
+Git site deployment is independent of Node process deployment. It can
+atomically replace and roll back committed site files, but it does not run
+`npm install`, execute build scripts, restart the systemd unit, or alter the
+proxy. See [`GIT_DEPLOYMENTS.md`](GIT_DEPLOYMENTS.md) and coordinate file,
+process, proxy, and database changes as separate audited operations.

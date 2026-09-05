@@ -1,5 +1,11 @@
 # Database operations
 
+The dashboard provides engine health, managed database lifecycle controls, and
+credential-safe per-database metadata. `GET /api/databases/<name>` returns the
+managed owner, user name, encoding, and allocated bytes; it never returns a
+password or arbitrary query text. The site workspace groups these records by
+their owning site.
+
 StePanel installs and monitors one selected database engine. Local MySQL,
 MariaDB, and PostgreSQL installations support native managed-database
 inventory, least-privilege provisioning, password rotation, logical backup,

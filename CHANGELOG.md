@@ -19,6 +19,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Read-only per-database detail and atomic one-click Git rollback that preserves
   the replaced release for recovery.
 
+### Changed
+
+- Reconciled installation, architecture, threat-model, production-readiness,
+  Node, database, operations, demo, roadmap, API, and release documentation with the current
+  site workspace and constrained Git deployment behavior.
+- Updated the deterministic dashboard SVG/PNG preview to include managed sites
+  and clearly identify it as a development preview after version 0.6.0.
+
 ### Fixed
 
 - Site detail responses now include routes, proxies, and applications, including
