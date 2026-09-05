@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/itchyitchy123/stepanel
-  tag: v0.4.0
+  digest: sha256:23ac17a2092ce8153ff85dc7662883bedb018615b016586a3643f96d22cdd6d0
   pullPolicy: IfNotPresent
 replicaCount: 1
 service:
@@ -21,3 +21,7 @@ ingress:
   host: stepanel.example.com
   annotations: {}
   tls: []
+networkPolicy:
+  enabled: true
+  ingressNamespaceSelector:
+    stepanel.ingress: "true"

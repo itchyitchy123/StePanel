@@ -65,7 +65,6 @@ resource "kubernetes_deployment" "stepanel" {
             name  = "STEPANEL_LISTEN"
             value = ":8080"
           }
-          env { name = "STEPANEL_TLS_TERMINATED" value = "1" }
           env { name = "STEPANEL_IMPORT_ROOT" value = "/var/lib/ste-panel/imports" }
           env { name = "STEPANEL_BACKUP_ROOT" value = "/var/lib/ste-panel/backups" }
           env { name = "STEPANEL_WEB_ROOT" value = "/var/www" }
@@ -188,5 +187,38 @@ resource "kubernetes_persistent_volume_claim" "stepanel_sites" {
   spec {
     access_modes = ["ReadWriteOnce"]
     resources { requests = { storage = "10Gi" } }
+  }
+}
+
+resource "kubernetes_pod_disruption_budget_v1" "stepanel" {
+  metadata {
+    name      = "stepanel"
+    namespace = kubernetes_namespace.stepanel.metadata[0].name
+  }
+  spec {
+    min_available = 1
+    selector {
+      match_labels = { "app.kubernetes.io/name" = "stepanel" }
+    }
+  }
+}
+
+resource "kubernetes_network_policy_v1" "stepanel_ingress" {
+  metadata {
+    name      = "stepanel-ingress"
+    namespace = kubernetes_namespace.stepanel.metadata[0].name
+  }
+  spec {
+    pod_selector { match_labels = { "app.kubernetes.io/name" = "stepanel" } }
+    policy_types = ["Ingress"]
+    ingress {
+      from {
+        namespace_selector { match_labels = { "stepanel.ingress" = "true" } }
+      }
+      ports {
+        protocol = "TCP"
+        port     = 8080
+      }
+    }
   }
 }

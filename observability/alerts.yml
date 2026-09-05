@@ -1,0 +1,46 @@
+groups:
+  - name: stepanel-availability
+    interval: 30s
+    rules:
+      - alert: StePanelTargetDown
+        expr: up{job="stepanel"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: StePanel target is unavailable
+          description: Prometheus cannot scrape the StePanel metrics endpoint for five minutes.
+
+      - alert: StePanelHTTP5xxRateHigh
+        expr: |
+          sum(rate(stepanel_http_errors_total{job="stepanel"}[5m]))
+          /
+          clamp_min(sum(rate(stepanel_http_requests_total{job="stepanel"}[5m])), 1)
+          > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: StePanel HTTP error rate is elevated
+          description: More than five percent of StePanel requests returned 5xx responses for ten minutes.
+
+  - name: stepanel-restore-operations
+    interval: 30s
+    rules:
+      - alert: StePanelRestoreFailures
+        expr: increase(stepanel_restore_jobs_failed_total{job="stepanel"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: StePanel restore jobs are failing
+          description: At least one restore failed in the last fifteen minutes; inspect the audit log and job error.
+
+      - alert: StePanelRestoreJobsStuck
+        expr: stepanel_restore_jobs_active{job="stepanel"} > 0
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: StePanel restore job has been active too long
+          description: A restore job has remained active for two hours; inspect worker and storage health.

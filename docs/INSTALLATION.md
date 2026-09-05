@@ -125,6 +125,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_NODE_VERSIONS` | Comma-separated versions | Node versions to install through NVM |
 | `STEPANEL_INSTALL_SECURITY` | `0` or `1` | Install ClamAV and the PHP malware guard |
 | `STEPANEL_OFFSITE_TARGET` | rclone destination | Optional offsite copy target, for example `s3:bucket/stepanel` |
+| `STEPANEL_REQUIRE_OFFSITE_BACKUP` | `0` or `1` | Reject production startup unless an offsite target is configured |
 | `STEPANEL_CLOUD_PROVIDER` | `linode`, `aws`, or `openstack` | Optional provider for cloud inventory and lifecycle actions |
 | `STEPANEL_SSH_SERVERS` | comma-separated SSH aliases | Optional strict-host-key inventory and allowlisted actions |
 | `STEPANEL_INSTALL_TLS` | `0` or `1` | Install Certbot and the Apache certificate integration |
@@ -177,7 +178,7 @@ Apache vhost or managed Node proxy.
 
 ## Reverse proxy
 
-Copy `deploy/apache/stepanel.conf` to the Apache configuration directory, replace the example hostname, enable the required proxy modules, and reload Apache. Add TLS with your preferred certificate automation before exposing the host. Kubernetes and Helm deployments set `STEPANEL_TLS_TERMINATED=1`; expose their Service only through an ingress or reverse proxy that actually enforces HTTPS.
+Copy `deploy/apache/stepanel.conf` to the Apache configuration directory, replace the example hostname, enable the required proxy modules, and reload Apache. Add TLS with your preferred certificate automation before exposing the host. Container deployments must either mount application TLS certificates or explicitly set `STEPANEL_TLS_TERMINATED=1` only behind a reverse proxy or cluster ingress that enforces HTTPS. Generic Docker, Terraform, and static Kubernetes examples fail closed until that boundary is configured.
 
 ## Operations
 

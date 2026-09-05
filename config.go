@@ -19,6 +19,7 @@ type Config struct {
 	DBHost, DBUser, DBPassword                                                         string
 	OffsiteTarget                                                                      string
 	CloudProvider                                                                      string
+	RequireOffsiteBackup                                                               bool
 	TLSAlreadyTerminated                                                               bool
 	Production                                                                         bool
 	MaxUpload                                                                          int64
@@ -108,6 +109,9 @@ func LoadConfig() Config {
 	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
 	c.OffsiteTarget = strings.TrimSpace(os.Getenv("STEPANEL_OFFSITE_TARGET"))
 	c.CloudProvider = strings.ToLower(strings.TrimSpace(os.Getenv("STEPANEL_CLOUD_PROVIDER")))
+	if v := strings.TrimSpace(os.Getenv("STEPANEL_REQUIRE_OFFSITE_BACKUP")); v == "1" {
+		c.RequireOffsiteBackup = true
+	}
 	if v := strings.TrimSpace(os.Getenv("STEPANEL_TLS_TERMINATED")); v == "1" {
 		c.TLSAlreadyTerminated = true
 	}
@@ -150,6 +154,12 @@ func ValidateConfig(c Config) error {
 	}
 	if c.CloudProvider != "" && c.CloudProvider != "linode" && c.CloudProvider != "aws" && c.CloudProvider != "openstack" {
 		problems = append(problems, errors.New("STEPANEL_CLOUD_PROVIDER must be linode, aws, or openstack"))
+	}
+	if raw := os.Getenv("STEPANEL_REQUIRE_OFFSITE_BACKUP"); raw != "" && raw != "0" && raw != "1" {
+		problems = append(problems, errors.New("STEPANEL_REQUIRE_OFFSITE_BACKUP must be 0 or 1"))
+	}
+	if c.RequireOffsiteBackup && c.OffsiteTarget == "" {
+		problems = append(problems, errors.New("STEPANEL_REQUIRE_OFFSITE_BACKUP=1 requires STEPANEL_OFFSITE_TARGET"))
 	}
 	if err := validateSSHServers(); err != nil {
 		problems = append(problems, err)

@@ -126,3 +126,10 @@ func TestValidateConfigRejectsInvalidTLSTerminationFlag(t *testing.T) {
 		t.Fatalf("expected TLS termination validation error, got %v", err)
 	}
 }
+
+func TestValidateConfigRequiresOffsiteBackupTarget(t *testing.T) {
+	t.Setenv("STEPANEL_REQUIRE_OFFSITE_BACKUP", "1")
+	if err := ValidateConfig(LoadConfig()); err == nil || !strings.Contains(err.Error(), "STEPANEL_OFFSITE_TARGET") {
+		t.Fatalf("expected offsite target validation error, got %v", err)
+	}
+}

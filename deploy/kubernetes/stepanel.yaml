@@ -70,7 +70,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: stepanel
-          image: ghcr.io/itchyitchy123/stepanel:v0.4.0
+          image: ghcr.io/itchyitchy123/stepanel@sha256:23ac17a2092ce8153ff85dc7662883bedb018615b016586a3643f96d22cdd6d0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -85,9 +85,6 @@ spec:
               value: "production"
             - name: STEPANEL_LISTEN
               value: ":8080"
-            # The cluster ingress must terminate HTTPS before forwarding here.
-            - name: STEPANEL_TLS_TERMINATED
-              value: "1"
             - name: STEPANEL_SESSION_STATE
               value: "/var/lib/ste-panel/sessions.json"
             - name: STEPANEL_IMPORT_ROOT
@@ -168,3 +165,33 @@ spec:
           persistentVolumeClaim: {claimName: stepanel-sites}
         - name: tmp
           emptyDir: {sizeLimit: 64Mi}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: stepanel
+  namespace: stepanel
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stepanel
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stepanel-ingress
+  namespace: stepanel
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: stepanel
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              stepanel.ingress: "true"
+      ports:
+        - protocol: TCP
+          port: 8080

@@ -17,7 +17,9 @@ terraform apply tfplan
 
 The example creates one replica with a `Recreate` rollout, persistent claims
 for control-plane data and site files, and an unprivileged pod with a read-only
-root filesystem. The pod explicitly expects TLS to be terminated by a trusted
-cluster ingress; do not expose its Service directly. The Kubernetes provider is deliberately used instead of
+root filesystem. The pod intentionally fails closed until TLS termination is
+explicitly configured; set `STEPANEL_TLS_TERMINATED=1` only behind a trusted
+cluster ingress and do not expose its Service directly. Label the ingress
+namespace `stepanel.ingress=true`. The Kubernetes provider is deliberately used instead of
 provisioning a cloud account, keeping the example portable across managed or
 on-premises clusters.

@@ -23,8 +23,8 @@ jobs:
         # after setup-go publishes that version for all runner architectures.
         go_version: ['1.26.x']
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ matrix.go_version }}
           cache: true
@@ -32,11 +32,44 @@ jobs:
       - run: go vet ./...
       - run: go test ./... -coverprofile=coverage.out -covermode=atomic
       - run: go test -race ./...
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: go-coverage
           path: coverage.out
       - run: go build -trimpath -o stepanel .
+      - name: Production startup smoke test
+        run: |
+          set -eu
+          smoke_root=$(mktemp -d)
+          cleanup() { kill "$smoke_pid" 2>/dev/null || true; rm -rf "$smoke_root"; }
+          trap cleanup EXIT
+          STEPANEL_ENV=production \
+          STEPANEL_LISTEN=127.0.0.1:18090 \
+          STEPANEL_TLS_TERMINATED=0 \
+          STEPANEL_ADMIN_PASSWORD=ci-only-password \
+          STEPANEL_SESSION_SECRET=ci-session-secret-012345678901234567890123 \
+          STEPANEL_AUDIT_KEY=ci-audit-key-012345678901234567890123456789 \
+          STEPANEL_IMPORT_ROOT="$smoke_root/imports" \
+          STEPANEL_BACKUP_ROOT="$smoke_root/backups" \
+          STEPANEL_WEB_ROOT="$smoke_root/www" \
+          STEPANEL_MAIL_ROOT="$smoke_root/mail" \
+          STEPANEL_NVM_DIR="$smoke_root/nvm" \
+          STEPANEL_PROXY_ROOT="$smoke_root/proxy" \
+          STEPANEL_VHOST_ROOT="$smoke_root/vhosts" \
+          STEPANEL_APP_ROOT="$smoke_root/apps" \
+          STEPANEL_MALWARE_ROOT="$smoke_root/quarantine" \
+          STEPANEL_AUDIT_LOG="$smoke_root/audit.jsonl" \
+          STEPANEL_JOB_STATE="$smoke_root/jobs.json" \
+          STEPANEL_SESSION_STATE="$smoke_root/sessions.json" \
+          STEPANEL_RECOVERY_ROOT="$smoke_root/recovery" \
+          ./stepanel >"$smoke_root/service.log" 2>&1 &
+          smoke_pid=$!
+          ready=0
+          for _ in $(seq 1 20); do
+            if curl --fail --silent --max-time 1 http://127.0.0.1:18090/livez >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = 1
       - run: bash -n install.sh
       - run: bash -n deploy/integrations/install-fail2ban.sh
       - run: bash -n deploy/integrations/install-node-nvm.sh deploy/integrations/stepanel-apache-reload deploy/integrations/stepanel-appctl deploy/integrations/stepanel-proxyctl deploy/integrations/stepanel-sitectl deploy/integrations/stepanel-vhostctl deploy/integrations/stepanel-dbctl deploy/integrations/stepanel-certbot deploy/integrations/stepanel-malware-guard
@@ -47,7 +80,7 @@ jobs:
       - name: Build container
         run: docker build --tag stepanel:ci .
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
         with:
           version: v3.16.4
       - name: Lint Helm chart
@@ -56,15 +89,21 @@ jobs:
         run: helm template stepanel deploy/helm/stepanel >/tmp/stepanel-rendered.yaml && test -s /tmp/stepanel-rendered.yaml
       - name: Validate Kubernetes manifests
         run: docker run --rm -v "$PWD:/work:ro" -v /tmp:/tmp:ro ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary /work/deploy/kubernetes/stepanel.yaml /tmp/stepanel-rendered.yaml
+      - name: Enforce immutable deployment references
+        run: |
+          ! rg -n --glob '!**/.terraform/**' 'stepanel:(latest|v[0-9])' deploy Dockerfile
+          grep -Eq 'stepanel@sha256:[a-f0-9]{64}' deploy/kubernetes/stepanel.yaml
+          grep -Eq 'stepanel@sha256:[a-f0-9]{64}' deploy/terraform/variables.tf
+          grep -Eq 'digest: sha256:[a-f0-9]{64}' deploy/helm/stepanel/values.yaml
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.9.8
       - name: Validate Terraform
         working-directory: deploy/terraform
         run: terraform fmt -check -recursive && terraform init -backend=false && terraform validate
       - name: Scan container
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: stepanel:ci
           format: table

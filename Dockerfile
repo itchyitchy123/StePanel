@@ -1,11 +1,11 @@
-FROM golang:1.26.7-bookworm AS build
+FROM golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.Commit=docker -X main.BuildDate=container" -o /out/stepanel .
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl mariadb-client \
     && rm -rf /var/lib/apt/lists/* \
@@ -20,7 +20,6 @@ WORKDIR /opt/stepanel
 ENV HOME=/opt/stepanel \
     STEPANEL_ENV=production \
     STEPANEL_LISTEN=:8080 \
-    STEPANEL_TLS_TERMINATED=1 \
     STEPANEL_IMPORT_ROOT=/var/lib/ste-panel/imports \
     STEPANEL_BACKUP_ROOT=/var/lib/ste-panel/backups \
     STEPANEL_WEB_ROOT=/var/www \
