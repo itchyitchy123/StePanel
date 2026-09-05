@@ -4,15 +4,15 @@ This file contains copy and metadata suggestions for announcing StePanel.
 
 ## Suggested GitHub topics
 
-`hosting-panel`, `server-management`, `lamp-stack`, `cPanel-migration`, `cpmove`, `mysql`, `mariadb`, `apache`, `php`, `golang`, `self-hosted`, `devops`, `system-administration`, `backup-restore`
+`hosting-panel`, `server-management`, `lamp-stack`, `cPanel-migration`, `cpmove`, `mysql`, `mariadb`, `postgresql`, `phpmyadmin`, `phppgadmin`, `apache`, `php`, `golang`, `self-hosted`, `devops`, `system-administration`, `backup-restore`
 
 ## Short description
 
-Modern Go control plane for LAMP hosting and cPanel cpmove migrations.
+Modern Go control plane for PHP hosting and cPanel cpmove migrations with MySQL, MariaDB, and PostgreSQL support.
 
 ## Launch post
 
-StePanel is an open-source, Go-based control plane for small LAMP hosting fleets. It installs Apache/PHP with a selectable MySQL or MariaDB version, validates cPanel cpmove archives, stages migrations safely, and exposes restore jobs through a focused operator dashboard.
+StePanel is an open-source, Go-based control plane for small PHP hosting fleets. It installs Apache/PHP with a selectable MySQL, MariaDB, or PostgreSQL version, optionally installs phpMyAdmin or phpPgAdmin, validates cPanel cpmove archives, stages migrations safely, and exposes restore jobs through a focused operator dashboard.
 
 Repository: https://github.com/itchyitchy123/StePanel
 

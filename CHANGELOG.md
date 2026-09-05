@@ -8,6 +8,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 No unreleased changes.
 
+## [0.5.0] - 2026-09-04
+
+### Added
+
+- PostgreSQL installation support with optional default package installation on
+  Debian/Ubuntu and validated PostgreSQL AppStream stream selection on
+  RHEL-family systems.
+- PHP PostgreSQL support through the distribution `php-pgsql` package.
+- Optional phpMyAdmin installation for MySQL/MariaDB and phpPgAdmin installation
+  for PostgreSQL through `STEPANEL_INSTALL_DB_ADMIN=1`.
+- Authenticated `/api/database` status reporting and a dashboard database
+  operations panel showing engine, version, host, service state, client, and
+  the matching administration UI link.
+
+### Changed
+
+- Database service discovery and operator diagnostics now identify the selected
+  PostgreSQL service instead of assuming MySQL/MariaDB.
+- Database administration URLs can be customized with
+  `STEPANEL_DB_ADMIN_URL`; Apache package integrations are linked automatically,
+  while Caddy and OpenLiteSpeed require an explicitly reviewed PHP route.
+- Synchronized release metadata to version `0.5.0` across Go, Helm, OpenAPI,
+  and release documentation.
+
 ## [0.4.0] - 2026-09-04
 
 ### Added
