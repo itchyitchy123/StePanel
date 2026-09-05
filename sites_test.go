@@ -71,3 +71,24 @@ func TestSiteOverviewGroupsManagedResources(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
+
+func TestSiteOverviewResourceIncludesHyphenatedSiteResources(t *testing.T) {
+	root := t.TempDir()
+	webRoot := filepath.Join(root, "www")
+	if err := os.MkdirAll(filepath.Join(webRoot, "sites", "my-site", "public"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	vhostRoot := filepath.Join(root, "vhosts")
+	proxyRoot := filepath.Join(root, "proxies")
+	appRoot := filepath.Join(root, "apps")
+	writeTestFile(t, filepath.Join(vhostRoot, "site-my-site-www_example_com.conf"), "managed")
+	writeTestFile(t, filepath.Join(proxyRoot, "my-site-api_example_com.conf"), "managed")
+	writeTestFile(t, filepath.Join(appRoot, "my-site.json"), `{"site":"my-site","domain":"api.example.com","node_version":"v20.1.0","port":3000,"state":"running"}`)
+	app := &App{Config: Config{WebRoot: webRoot, VHostRoot: vhostRoot, ProxyRoot: proxyRoot, AppRoot: appRoot}}
+	response := httptest.NewRecorder()
+	app.siteOverviewResource(response, httptest.NewRequest(http.MethodGet, "/api/sites/overview/my-site", nil))
+	body := response.Body.String()
+	if response.Code != http.StatusOK || !strings.Contains(body, "www.example.com") || !strings.Contains(body, "api_example_com") || !strings.Contains(body, `"applications":[{`) {
+		t.Fatalf("status = %d, body = %s", response.Code, body)
+	}
+}

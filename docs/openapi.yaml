@@ -274,7 +274,7 @@ paths:
   /api/sites/git-deploy:
     post:
       summary: Checkout and atomically activate an HTTPS Git release
-      description: Repository build scripts are not executed. Use a separately sandboxed build runner for source builds.
+      description: The repository hostname must be present in STEPANEL_GIT_ALLOWED_HOSTS. Symlinks and non-regular files are rejected, Git metadata is removed, and repository build scripts are not executed. Use a separately sandboxed build runner for source builds.
       requestBody:
         required: true
         content:

@@ -41,12 +41,6 @@ func (a *App) siteOverviewList(w http.ResponseWriter, _ *http.Request) {
 			sites[entry.Name()] = newSiteOverview(a.Config, entry.Name())
 		}
 	}
-	for _, route := range managedSiteRoutes(a.Config.VHostRoot) {
-		if sites[route.Site] == nil {
-			sites[route.Site] = newSiteOverview(a.Config, route.Site)
-		}
-		sites[route.Site].Routes = append(sites[route.Site].Routes, route)
-	}
 	for _, app := range managedApps(a.Config.AppRoot) {
 		if sites[app.Site] == nil {
 			sites[app.Site] = newSiteOverview(a.Config, app.Site)
@@ -63,6 +57,8 @@ func (a *App) siteOverviewList(w http.ResponseWriter, _ *http.Request) {
 	}
 	result := make([]*siteOverview, 0, len(sites))
 	for _, site := range sites {
+		site.Routes = siteRoutesFor(a.Config.VHostRoot, site.Site)
+		site.Proxies = siteProxiesFor(a.Config.ProxyRoot, site.Site)
 		sort.Slice(site.Routes, func(i, j int) bool { return site.Routes[i].Domain < site.Routes[j].Domain })
 		sort.Slice(site.Applications, func(i, j int) bool { return site.Applications[i].Domain < site.Applications[j].Domain })
 		result = append(result, site)
@@ -78,6 +74,13 @@ func (a *App) siteOverviewResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	overview := newSiteOverview(a.Config, site)
+	overview.Routes = siteRoutesFor(a.Config.VHostRoot, site)
+	overview.Proxies = siteProxiesFor(a.Config.ProxyRoot, site)
+	for _, app := range managedApps(a.Config.AppRoot) {
+		if app.Site == site {
+			overview.Applications = append(overview.Applications, app)
+		}
+	}
 	if databases, err := managedDatabaseInventory(a.Config); err == nil {
 		for _, database := range databases {
 			if database.Site == site {
@@ -85,7 +88,7 @@ func (a *App) siteOverviewResource(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if !overview.Exists && len(overview.Routes) == 0 && len(overview.Applications) == 0 {
+	if !overview.Exists && len(overview.Routes) == 0 && len(overview.Applications) == 0 && len(overview.Proxies) == 0 {
 		http.NotFound(w, r)
 		return
 	}
@@ -95,24 +98,37 @@ func (a *App) siteOverviewResource(w http.ResponseWriter, r *http.Request) {
 func newSiteOverview(cfg Config, site string) *siteOverview {
 	root := filepath.Join(cfg.WebRoot, "sites", site, "public")
 	_, err := os.Stat(root)
-	return &siteOverview{Site: site, DocumentRoot: root, Exists: err == nil}
+	return &siteOverview{Site: site, DocumentRoot: root, Routes: []siteRoute{}, Applications: []AppManifest{}, Proxies: []proxyInfo{}, Exists: err == nil}
 }
 
-func managedSiteRoutes(root string) []siteRoute {
+func siteRoutesFor(root, site string) []siteRoute {
 	entries, _ := os.ReadDir(root)
 	routes := []siteRoute{}
+	prefix := "site-" + site + "-"
 	for _, entry := range entries {
-		match := siteVHostNamePattern.FindStringSubmatch(entry.Name())
-		if entry.IsDir() || match == nil {
+		name := entry.Name()
+		if entry.IsDir() || !siteVHostNamePattern.MatchString(name) || !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		domain := strings.ReplaceAll(strings.TrimSuffix(match[0], ".conf"), "_", ".")
-		parts := strings.SplitN(strings.TrimPrefix(domain, "site-"), "-", 2)
-		if len(parts) == 2 {
-			routes = append(routes, siteRoute{Site: parts[0], Domain: parts[1]})
-		}
+		domain := strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".conf"), "_", ".")
+		routes = append(routes, siteRoute{Site: site, Domain: domain})
 	}
 	return routes
+}
+
+func siteProxiesFor(root, site string) []proxyInfo {
+	entries, _ := os.ReadDir(root)
+	proxies := []proxyInfo{}
+	prefix := site + "-"
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".conf") && !strings.HasSuffix(name, ".caddy") {
+			continue
+		}
+		proxies = append(proxies, proxyInfo{Name: strings.TrimSuffix(strings.TrimSuffix(name, ".conf"), ".caddy"), Config: filepath.Join(root, name)})
+	}
+	sort.Slice(proxies, func(i, j int) bool { return proxies[i].Name < proxies[j].Name })
+	return proxies
 }
 
 func managedApps(root string) []AppManifest {

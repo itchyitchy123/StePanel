@@ -2,6 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -52,8 +57,12 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repository, err := url.Parse(input.Repository)
-	if err != nil || repository.Scheme != "https" || repository.User != nil || repository.Host == "" || repository.RawQuery != "" || repository.Fragment != "" || !strings.HasSuffix(strings.ToLower(repository.Path), ".git") {
+	if err != nil || repository.Scheme != "https" || repository.User != nil || repository.Host == "" || repository.Port() != "" || repository.RawQuery != "" || repository.Fragment != "" || strings.ContainsAny(input.Repository, "\x00\r\n") || !strings.HasSuffix(strings.ToLower(repository.Path), ".git") {
 		http.Error(w, "repository must be an HTTPS .git URL without credentials or query parameters", http.StatusUnprocessableEntity)
+		return
+	}
+	if !gitHostAllowed(a.Config.GitAllowedHosts, repository.Hostname()) {
+		http.Error(w, "repository host is not in STEPANEL_GIT_ALLOWED_HOSTS", http.StatusUnprocessableEntity)
 		return
 	}
 	publicRoot := filepath.Join(a.Config.WebRoot, "sites", input.Site, "public")
@@ -79,7 +88,9 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(release)
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
-	if output, err := runBoundedCommand(ctx, exec.CommandContext(ctx, gitPath, "clone", "--depth", "1", "--branch", input.Ref, "--single-branch", input.Repository, release)); err != nil {
+	clone := exec.CommandContext(ctx, gitPath, "-c", "credential.helper=", "clone", "--depth", "1", "--branch", input.Ref, "--single-branch", "--no-tags", input.Repository, release)
+	clone.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/false", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+	if output, err := runBoundedCommand(ctx, clone); err != nil {
 		http.Error(w, "Git checkout failed: "+strings.TrimSpace(string(output)), http.StatusBadGateway)
 		return
 	}
@@ -93,9 +104,19 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Git returned an invalid commit identifier", http.StatusBadGateway)
 		return
 	}
+	if err := validateGitRelease(release, a.Config.MaxEntries); err != nil {
+		http.Error(w, "repository contains an unsafe release tree: "+err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if err := os.RemoveAll(filepath.Join(release, ".git")); err != nil {
+		http.Error(w, "unable to remove Git metadata from release", http.StatusInternalServerError)
+		return
+	}
+	a.gitActivationMu.Lock()
+	defer a.gitActivationMu.Unlock()
 	previous := ""
 	if _, err := os.Stat(publicRoot); err == nil {
-		previous = filepath.Join(siteRoot, ".stepanel-previous-"+time.Now().UTC().Format("20060102-150405"))
+		previous = filepath.Join(siteRoot, ".stepanel-previous-"+strings.ReplaceAll(newRequestID(), "-", ""))
 		if err := os.Rename(publicRoot, previous); err != nil {
 			http.Error(w, "unable to preserve the current release", http.StatusInternalServerError)
 			return
@@ -117,8 +138,60 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := gitDeployResult{Site: input.Site, Repository: input.Repository, Ref: input.Ref, Commit: commit, Previous: previous}
-	_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.git-deployed", input.Site, input.Repository+"@"+commit)
+	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.git-deployed", input.Site, input.Repository+"@"+commit); err != nil {
+		log.Printf("Git release activated but audit persistence is unavailable: %v", err)
+	}
 	writeJSON(w, http.StatusAccepted, result)
+}
+
+func validateGitAllowedHosts(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return errors.New("STEPANEL_GIT_ALLOWED_HOSTS must contain at least one hostname")
+	}
+	for _, host := range strings.Split(value, ",") {
+		host = strings.TrimSpace(strings.ToLower(host))
+		if host == "" || strings.ContainsAny(host, "\x00\r\n:/") || net.ParseIP(host) != nil || !domainPattern.MatchString(host) {
+			return fmt.Errorf("STEPANEL_GIT_ALLOWED_HOSTS contains invalid hostname %q", host)
+		}
+	}
+	return nil
+}
+
+func gitHostAllowed(allowed, host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, candidate := range strings.Split(allowed, ",") {
+		if host == strings.TrimSpace(strings.ToLower(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateGitRelease(root string, maxEntries int) error {
+	if maxEntries < 1 {
+		maxEntries = 100000
+	}
+	entries := 0
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		entries++
+		if entries > maxEntries {
+			return errors.New("release exceeds the configured entry limit")
+		}
+		if path == root || strings.HasPrefix(path, filepath.Join(root, ".git")+string(os.PathSeparator)) || path == filepath.Join(root, ".git") {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() && !info.Mode().IsRegular() {
+			return fmt.Errorf("%s is not a regular file or directory", filepath.Base(path))
+		}
+		return nil
+	})
 }
 
 func newRequestID() string {

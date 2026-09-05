@@ -29,6 +29,7 @@ type App struct {
 	Schedules                *backupSchedules
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
+	gitActivationMu          sync.Mutex
 }
 
 func main() {

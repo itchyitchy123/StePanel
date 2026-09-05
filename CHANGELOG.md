@@ -15,6 +15,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Constrained HTTPS Git site releases with validated refs, shallow checkout,
   atomic activation, previous-release preservation, and audit records.
 
+### Fixed
+
+- Site detail responses now include routes, proxies, and applications, including
+  resources owned by site names containing hyphens.
+- Git releases now enforce an exact host allowlist, disable interactive Git
+  credentials, reject symlink/device payloads and oversized trees, remove
+  repository metadata before activation, and serialize release switching.
+
 ## [0.6.0] - 2026-09-04
 
 ### Added

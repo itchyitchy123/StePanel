@@ -21,6 +21,7 @@ type Config struct {
 	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo         string
 	DBHost, DBUser, DBPassword, DBPasswordFile                                         string
 	DBEngine, DBVersion, DBAdminURL                                                    string
+	GitAllowedHosts                                                                    string
 	OffsiteTarget                                                                      string
 	CloudProvider                                                                      string
 	RequireOffsiteBackup                                                               bool
@@ -33,7 +34,7 @@ type Config struct {
 }
 
 func LoadConfig() Config {
-	c := Config{WebServer: "apache", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{WebServer: "apache", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", GitAllowedHosts: "github.com,gitlab.com,bitbucket.org", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_WEBSERVER"); v != "" {
 		c.WebServer = strings.ToLower(strings.TrimSpace(v))
 	}
@@ -65,6 +66,9 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("STEPANEL_APP_ROOT"); v != "" {
 		c.AppRoot = v
+	}
+	if v := os.Getenv("STEPANEL_GIT_ALLOWED_HOSTS"); v != "" {
+		c.GitAllowedHosts = strings.ToLower(strings.TrimSpace(v))
 	}
 	if v := os.Getenv("STEPANEL_APPCTL"); v != "" {
 		c.AppCtl = v
@@ -202,6 +206,9 @@ func ValidateConfig(c Config) error {
 	}
 	if c.CloudProvider != "" && c.CloudProvider != "linode" && c.CloudProvider != "aws" && c.CloudProvider != "openstack" {
 		problems = append(problems, errors.New("STEPANEL_CLOUD_PROVIDER must be linode, aws, or openstack"))
+	}
+	if err := validateGitAllowedHosts(c.GitAllowedHosts); err != nil {
+		problems = append(problems, err)
 	}
 	if raw := os.Getenv("STEPANEL_REQUIRE_OFFSITE_BACKUP"); raw != "" && raw != "0" && raw != "1" {
 		problems = append(problems, errors.New("STEPANEL_REQUIRE_OFFSITE_BACKUP must be 0 or 1"))

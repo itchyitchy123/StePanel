@@ -231,6 +231,7 @@ checkbox and should be backed up first.
 | `STEPANEL_BACKUP_ROOT` | Private published backup directory; use a dedicated backup mount |
 | `STEPANEL_WEB_ROOT` | Site destination root |
 | `STEPANEL_VHOST_ROOT` | Root-owned Apache snippets for managed PHP sites |
+| `STEPANEL_GIT_ALLOWED_HOSTS` | Comma-separated exact hostnames allowed for HTTPS Git deployments; defaults to GitHub, GitLab, and Bitbucket |
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |
 | `STEPANEL_JOB_STATE` | Durable restore and certificate job state file |
 | `STEPANEL_SESSION_STATE` | Durable revocable administrator session state file |
