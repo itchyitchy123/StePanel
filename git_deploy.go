@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -39,10 +44,35 @@ type gitRollbackRequest struct {
 	Confirm string `json:"confirm"`
 }
 
+type gitWebhookContextKey struct{}
+
+func (a *App) gitWebhook(w http.ResponseWriter, r *http.Request) {
+	if a.Config.GitWebhookSecret == "" {
+		http.Error(w, "Git webhooks are not configured", http.StatusNotFound)
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil {
+		http.Error(w, "invalid webhook body", 400)
+		return
+	}
+	signature := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("X-StePanel-Signature"), "sha256="))
+	provided, err := hex.DecodeString(signature)
+	digest := hmac.New(sha256.New, []byte(a.Config.GitWebhookSecret))
+	_, _ = digest.Write(body)
+	if err != nil || !hmac.Equal(provided, digest.Sum(nil)) {
+		http.Error(w, "invalid webhook signature", 401)
+		return
+	}
+	request := r.Clone(context.WithValue(r.Context(), gitWebhookContextKey{}, true))
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	a.gitDeploy(w, request)
+}
+
 // gitDeploy intentionally does not evaluate repository-provided build scripts.
 // Build execution belongs in a separately sandboxed runner.
 func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+	if r.Method != http.MethodPost || (!a.Auth.CSRF(r) && r.Context().Value(gitWebhookContextKey{}) != true) {
 		http.Error(w, "invalid request", http.StatusForbidden)
 		return
 	}

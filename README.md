@@ -207,6 +207,9 @@ checkbox and should be backed up first.
 | `GET` | `/api/sites` | List managed PHP site vhosts |
 | `GET` | `/api/sites/overview` | List site-centric developer workspaces and their managed resources |
 | `GET` | `/api/sites/overview/<site>` | Inspect one site workspace without exposing credentials or environment values |
+| `GET` | `/api/sites/environment/<site>` | List site environment metadata; secret values are masked |
+| `PUT` | `/api/sites/environment/<site>` | Replace site environment variables (requires encrypted environment storage) |
+| `DELETE` | `/api/sites/environment/<site>` | Remove all site environment variables |
 | `POST` | `/api/sites/deploy` | Validate and route a domain to its isolated PHP-FPM pool |
 | `DELETE` | `/api/sites/<config>` | Remove a managed PHP site vhost |
 | `GET` | `/api/backups` | List private verified backup artifacts (`site` filter; `limit` 1–500, default 100) |
@@ -214,6 +217,7 @@ checkbox and should be backed up first.
 | `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
 | `POST` | `/api/sites/git-deploy` | Checkout a validated HTTPS Git ref into an atomic site release |
+| `POST` | `/api/sites/git-webhook` | Deploy a signed Git payload when `STEPANEL_GIT_WEBHOOK_SECRET` is configured |
 | `POST` | `/api/sites/git-rollback` | Atomically restore the latest preserved Git site release |
 | `GET` | `/api/databases/<name>` | Inspect one managed database without exposing credentials |
 | `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |

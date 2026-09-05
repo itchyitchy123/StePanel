@@ -29,6 +29,7 @@ type App struct {
 	Schedules                *backupSchedules
 	Accounts                 *AccountStore
 	RecoveryError            error
+	Environments             *EnvironmentStore
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
 	gitActivationMu          sync.Mutex
@@ -120,6 +121,10 @@ func main() {
 		log.Fatalf("open persistent shared-hosting account state: %v", err)
 	}
 	auth.Accounts = accounts
+	environments, err := OpenEnvironmentStore(cfg.EnvironmentState, cfg.EnvironmentKey)
+	if err != nil {
+		log.Fatalf("open site environment state: %v", err)
+	}
 	if cfg.DBCtl != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "reconcile"))
@@ -181,7 +186,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open backup schedules: %v", err)
 	}
-	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, RecoveryError: errors.Join(recoveryFailures...)}
+	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, RecoveryError: errors.Join(recoveryFailures...)}
 	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
 		log.Printf("initialize audit chain: %v", err)
 	}
@@ -253,6 +258,7 @@ func main() {
 	mux.Handle("/api/sites", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.siteList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/overview", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteOverviewList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/overview/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteOverviewResource)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/sites/environment/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteEnvironment)), http.MethodGet, http.MethodPut, http.MethodDelete))
 	mux.Handle("/api/sites/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.siteManage)), http.MethodDelete))
 	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
@@ -260,6 +266,7 @@ func main() {
 	mux.Handle("/api/apps", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/git-deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.gitDeploy)), http.MethodPost))
+	mux.Handle("/api/sites/git-webhook", allowMethods(http.HandlerFunc(app.gitWebhook), http.MethodPost))
 	mux.Handle("/api/sites/git-rollback", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.gitRollback)), http.MethodPost))
 	mux.Handle("/api/caddy/htaccess", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.htaccessMigration)), http.MethodPost))
 	mux.Handle("/api/apps/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appAction)), http.MethodPost))
@@ -268,6 +275,7 @@ func main() {
 	mux.Handle("/api/wpress/preflight", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.wpressPreflight)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/wpress/import", allowMethods(app.Auth.RequireAdministrator(limitConcurrent(http.HandlerFunc(app.wpressImport), uploads)), http.MethodPost))
 	mux.Handle("/api/accounts", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodGet, http.MethodHead, http.MethodPost))
+	mux.Handle("/api/accounts/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodPatch, http.MethodDelete))
 	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/jobs", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobList)), http.MethodGet, http.MethodHead))
 	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))

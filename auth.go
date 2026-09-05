@@ -234,8 +234,15 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 	passwordMatches := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(r.FormValue("password"))) == nil
 	credentialsValid := knownAccount && passwordMatches
 	if credentialsValid {
-		if secret, required := a.totpFor(username); required {
-			credentialsValid = a.consumeTOTPFor(username, secret, r.FormValue("totp"), time.Now())
+		if a.Accounts != nil {
+			if account, exists := a.Accounts.Get(username); exists && account.Suspended {
+				credentialsValid = false
+			}
+		}
+		if credentialsValid {
+			if secret, required := a.totpFor(username); required {
+				credentialsValid = a.consumeTOTPFor(username, secret, r.FormValue("totp"), time.Now())
+			}
 		}
 	}
 	if !credentialsValid {

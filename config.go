@@ -21,7 +21,8 @@ type Config struct {
 	WPressExtract, WPCLI, AuditLog, JobState, SessionState, AccountState, RecoveryRoot, Sudo string
 	DBHost, DBUser, DBPassword, DBPasswordFile                                               string
 	DBEngine, DBVersion, DBAdminURL                                                          string
-	GitAllowedHosts                                                                          string
+	GitAllowedHosts, GitWebhookSecret                                                        string
+	EnvironmentState, EnvironmentKey                                                         string
 	OffsiteTarget                                                                            string
 	CloudProvider                                                                            string
 	RequireOffsiteBackup                                                                     bool
@@ -70,6 +71,12 @@ func LoadConfig() Config {
 	if v := os.Getenv("STEPANEL_GIT_ALLOWED_HOSTS"); v != "" {
 		c.GitAllowedHosts = strings.ToLower(strings.TrimSpace(v))
 	}
+	c.GitWebhookSecret = os.Getenv("STEPANEL_GIT_WEBHOOK_SECRET")
+	c.EnvironmentState = filepath.Join(filepath.Dir(c.JobState), "site-environments.json")
+	if v := os.Getenv("STEPANEL_ENVIRONMENT_STATE"); v != "" {
+		c.EnvironmentState = v
+	}
+	c.EnvironmentKey = os.Getenv("STEPANEL_ENVIRONMENT_KEY")
 	if v := os.Getenv("STEPANEL_APPCTL"); v != "" {
 		c.AppCtl = v
 	}

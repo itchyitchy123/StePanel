@@ -242,6 +242,28 @@ paths:
       responses:
         '201': {description: Customer account created without password or TOTP secret disclosure}
         '422': {description: Invalid plan, assigned sites, password, or TOTP seed}
+  /api/accounts/{username}:
+    patch:
+      summary: Suspend or unsuspend a shared-hosting customer account (administrator only)
+      parameters:
+        - {name: username, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [suspended]
+              properties:
+                suspended: {type: boolean}
+      responses:
+        '200': {description: Updated account}
+    delete:
+      summary: Terminate a shared-hosting customer account (administrator only)
+      parameters:
+        - {name: username, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Account terminated}
   /api/security/scan:
     post:
       summary: Scan a managed site for suspicious PHP

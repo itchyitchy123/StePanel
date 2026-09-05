@@ -36,6 +36,7 @@ type HostingAccount struct {
 	TOTPSecret   string    `json:"totp_secret"`
 	Plan         string    `json:"plan"`
 	Sites        []string  `json:"sites"`
+	Suspended    bool      `json:"suspended"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -133,6 +134,44 @@ func (s *AccountStore) GetSites(username string) []string {
 	return append([]string(nil), account.Sites...)
 }
 
+// SetSuspended changes the account lifecycle state atomically and persists it
+// before returning. Suspended accounts remain recoverable and retain their
+// assignments; termination is intentionally a separate destructive operation.
+func (s *AccountStore) SetSuspended(username string, suspended bool) (HostingAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return HostingAccount{}, errors.New("account not found")
+	}
+	previous := account.Suspended
+	account.Suspended = suspended
+	s.accounts[username] = account
+	if err := s.persistLocked(); err != nil {
+		account.Suspended = previous
+		s.accounts[username] = account
+		return HostingAccount{}, err
+	}
+	account.PasswordHash = ""
+	account.TOTPSecret = ""
+	return account, nil
+}
+
+func (s *AccountStore) Delete(username string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return errors.New("account not found")
+	}
+	delete(s.accounts, username)
+	if err := s.persistLocked(); err != nil {
+		s.accounts[username] = account
+		return err
+	}
+	return nil
+}
+
 func (s *AccountStore) List() []HostingAccount {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -199,6 +238,46 @@ func (s *AccountStore) persistLocked() error {
 func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 	if a.Accounts == nil {
 		http.Error(w, "shared-hosting accounts are unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+		if !a.Auth.CSRF(r) {
+			http.Error(w, "invalid request", http.StatusForbidden)
+			return
+		}
+		username := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
+		username = safeUser(username)
+		if username == "" || strings.Contains(r.URL.Path, "//") {
+			http.Error(w, "invalid account", http.StatusBadRequest)
+			return
+		}
+		if r.Method == http.MethodDelete {
+			if err := a.Accounts.Delete(username); err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.terminated", username, "account removed")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var input struct {
+			Suspended *bool `json:"suspended"`
+		}
+		if err := decodeJSON(w, r, 1024, &input); err != nil || input.Suspended == nil {
+			http.Error(w, "suspended must be a boolean", http.StatusBadRequest)
+			return
+		}
+		account, err := a.Accounts.SetSuspended(username, *input.Suspended)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		event := "hosting.account.unsuspended"
+		if account.Suspended {
+			event = "hosting.account.suspended"
+		}
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), event, username, "account lifecycle changed")
+		writeJSON(w, http.StatusOK, account)
 		return
 	}
 	switch r.Method {

@@ -73,3 +73,61 @@ func TestCustomerLoginRequiresAccountTOTP(t *testing.T) {
 		t.Fatal("customer session was not scoped to the customer identity")
 	}
 }
+
+func TestAccountLifecyclePersistsSuspensionAndTermination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	store, err := OpenAccountStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", []string{"site-one"}); err != nil {
+		t.Fatal(err)
+	}
+	account, err := store.SetSuspended("customer", true)
+	if err != nil || !account.Suspended {
+		t.Fatalf("suspend = %#v, %v", account, err)
+	}
+	reopened, err := OpenAccountStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account, ok := reopened.Get("customer"); !ok || !account.Suspended {
+		t.Fatal("suspension was not persisted")
+	}
+	if err := reopened.Delete("customer"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reopened.Get("customer"); ok {
+		t.Fatal("terminated account remained present")
+	}
+}
+
+func TestSuspendedCustomerCannotLogin(t *testing.T) {
+	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
+	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")
+	t.Setenv("STEPANEL_SESSION_SECRET", "12345678901234567890123456789012")
+	store, err := OpenAccountStore(t.TempDir() + "/accounts.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetSuspended("customer", true); err != nil {
+		t.Fatal(err)
+	}
+	auth, err := NewAuth(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth.Accounts = store
+	secret, _ := decodeTOTPSecret(testTOTPSecret)
+	code := totpCode(secret, uint64(time.Now().Unix()/30))
+	request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=customer&password=a+sufficiently+long+customer+password&totp="+code))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	auth.Login(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("suspended login status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
