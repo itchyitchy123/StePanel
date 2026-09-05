@@ -34,6 +34,18 @@ if [[ -f "$ENV_FILE" ]]; then
   done < "$ENV_FILE"
 fi
 
+if [[ ! -v STEPANEL_DB_PASSWORD ]]; then
+  database_password_source=${STEPANEL_DB_PASSWORD_FILE:-/etc/stepanel-db.password}
+  if [[ -e $database_password_source || -L $database_password_source ]]; then
+    [[ -f $database_password_source && ! -L $database_password_source ]] || { echo 'Database password credential must be a regular file.' >&2; exit 1; }
+    [[ $(stat -c %u "$database_password_source") == 0 ]] || { echo 'Database password credential must be root-owned.' >&2; exit 1; }
+    database_password_mode=$(stat -c %a "$database_password_source")
+    [[ $database_password_mode =~ ^[0-7]{3,4}$ && $(( 8#$database_password_mode & 077 )) == 0 ]] || { echo 'Database password credential must not be group/world accessible.' >&2; exit 1; }
+    [[ $(stat -c %s "$database_password_source") -le 4096 ]] || { echo 'Database password credential exceeds 4 KiB.' >&2; exit 1; }
+    STEPANEL_DB_PASSWORD=$(<"$database_password_source")
+  fi
+fi
+
 ADMIN_USERNAME="${STEPANEL_ADMIN_USERNAME:-admin}"; ADMIN_PASSWORD="${STEPANEL_ADMIN_PASSWORD:-}"; SESSION_SECRET="${STEPANEL_SESSION_SECRET:-}"
 EXISTING_ADMIN_PASSWORD_HASH="${STEPANEL_ADMIN_PASSWORD_HASH:-}"
 AUDIT_KEY="${STEPANEL_AUDIT_KEY:-}"
@@ -65,7 +77,7 @@ REQUIRE_OFFSITE_BACKUP="${STEPANEL_REQUIRE_OFFSITE_BACKUP:-0}"
 MAX_UPLOAD_BYTES="${STEPANEL_MAX_UPLOAD_BYTES:-21474836480}"
 MAX_ARCHIVE_ENTRIES="${STEPANEL_MAX_ARCHIVE_ENTRIES:-1000000}"
 MAX_CONCURRENT_JOBS="${STEPANEL_MAX_CONCURRENT_JOBS:-2}"
-unset STEPANEL_ADMIN_PASSWORD STEPANEL_SESSION_SECRET STEPANEL_DB_PASSWORD
+unset STEPANEL_ADMIN_PASSWORD STEPANEL_SESSION_SECRET STEPANEL_DB_PASSWORD STEPANEL_DB_PASSWORD_FILE
 if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then read -r -s -p "StePanel admin password: " ADMIN_PASSWORD; echo; fi
 if [[ -z "$ADMIN_PASSWORD" && -z "$EXISTING_ADMIN_PASSWORD_HASH" ]]; then echo "Set STEPANEL_ADMIN_PASSWORD or run the installer interactively." >&2; exit 1; fi
 if [[ -z "$SESSION_SECRET" ]]; then SESSION_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"; fi
@@ -241,10 +253,10 @@ systemctl enable --now "${FPM_UNITS[@]}"
 DB_LOCAL_HELPER=0
 if [[ -z "$DB_USER" ]]; then
   [[ "$DB_HOST" == "localhost" ]] || { echo "Set STEPANEL_DB_USER and STEPANEL_DB_PASSWORD for a non-local database host." >&2; exit 1; }
+  DB_LOCAL_HELPER=1
   if [[ "$DB_ENGINE" == "postgresql" ]]; then
     runuser -u postgres -- psql --tuples-only --no-align --command 'SELECT 1' | grep -Fxq 1 || { echo "Local PostgreSQL socket administration is unavailable." >&2; exit 1; }
   else
-    DB_LOCAL_HELPER=1
     DB_CLIENT=mysql
     command -v mariadb >/dev/null 2>&1 && DB_CLIENT=mariadb
     "$DB_CLIENT" --protocol=socket --batch --skip-column-names --execute 'SELECT 1' | grep -Fxq 1 || { echo "Local database socket administration is unavailable." >&2; exit 1; }
@@ -435,6 +447,8 @@ managed_targets=(
   /usr/local/sbin/stepanel-sitectl
   /usr/local/sbin/stepanel-vhostctl
   /usr/local/sbin/stepanel-dbctl
+  /etc/stepanel-dbctl.conf
+  /etc/stepanel-db.password
   "$APP_DIR/web/index.html"
   "$APP_DIR/web/static/app.css"
   "$APP_DIR/web/static/import.css"
@@ -442,6 +456,7 @@ managed_targets=(
   "$APP_DIR/web/static/deploy.js"
   "$APP_DIR/web/static/certificates.js"
   "$APP_DIR/web/static/wpress.js"
+  "$APP_DIR/web/static/database.js"
   "$APP_DIR/web/static/favicon.svg"
   "$ENV_FILE"
   /etc/systemd/system/stepanel.service
@@ -497,6 +512,10 @@ fi
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-sitectl" /usr/local/sbin/stepanel-sitectl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-vhostctl" /usr/local/sbin/stepanel-vhostctl
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-dbctl" /usr/local/sbin/stepanel-dbctl
+printf 'engine=%s\n' "$DB_ENGINE" > "$INSTALL_TXN/stepanel-dbctl.conf"
+install -m 0600 -o root -g root "$INSTALL_TXN/stepanel-dbctl.conf" /etc/stepanel-dbctl.conf
+printf '%s' "$DB_PASSWORD" > "$INSTALL_TXN/stepanel-db.password"
+install -m 0600 -o root -g root "$INSTALL_TXN/stepanel-db.password" /etc/stepanel-db.password
 if [[ "$INSTALL_TLS" == "1" ]]; then install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-certbot" /usr/local/sbin/stepanel-certbot; fi
 if [[ -n "$FPM_LENS_BINARY" ]]; then install -m 0755 "$FPM_LENS_BINARY" /usr/local/bin/fpm-lens; fi
 install -m 0644 -D "$ROOT_DIR/web/index.html" "$APP_DIR/web/index.html"
@@ -506,6 +525,7 @@ install -m 0644 -D "$ROOT_DIR/web/static/cpmove.js" "$APP_DIR/web/static/cpmove.
 install -m 0644 -D "$ROOT_DIR/web/static/deploy.js" "$APP_DIR/web/static/deploy.js"
 install -m 0644 -D "$ROOT_DIR/web/static/certificates.js" "$APP_DIR/web/static/certificates.js"
 install -m 0644 -D "$ROOT_DIR/web/static/wpress.js" "$APP_DIR/web/static/wpress.js"
+install -m 0644 -D "$ROOT_DIR/web/static/database.js" "$APP_DIR/web/static/database.js"
 install -m 0644 -D "$ROOT_DIR/web/static/favicon.svg" "$APP_DIR/web/static/favicon.svg"
 if [[ "$WEB_SERVER" == "apache" && "$PKG" == "apt" ]]; then
   install -m 0644 "$ROOT_DIR/deploy/apache/stepanel.conf" /etc/apache2/sites-available/stepanel.conf
@@ -575,7 +595,6 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_DB_ADMIN_ALLOW "$DB_ADMIN_ALLOW"
   write_env STEPANEL_DB_HOST "$DB_HOST"
   write_env STEPANEL_DB_USER "$DB_USER"
-  write_env STEPANEL_DB_PASSWORD "$DB_PASSWORD"
   write_env STEPANEL_IMPORT_ROOT "$DATA_DIR/imports"
   write_env STEPANEL_WEB_ROOT /var/www
   write_env STEPANEL_MAIL_ROOT "$DATA_DIR/mail"

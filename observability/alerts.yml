@@ -44,3 +44,42 @@ groups:
         annotations:
           summary: StePanel restore job has been active too long
           description: A restore job has remained active for two hours; inspect worker and storage health.
+
+  - name: stepanel-database-operations
+    interval: 30s
+    rules:
+      - alert: StePanelDatabaseDiagnosticsDown
+        expr: stepanel_database_diagnostics_up{job="stepanel"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database diagnostics are unavailable
+          description: The restricted helper could not collect database health for ten minutes; verify the engine, local socket, and helper configuration.
+
+      - alert: StePanelDatabaseSessionsBlocked
+        expr: stepanel_database_blocked_sessions{job="stepanel"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database sessions are blocked
+          description: One or more database sessions have remained blocked for five minutes; inspect the session inventory and lock chain with an engine-native client.
+
+      - alert: StePanelDatabaseLongTransactions
+        expr: stepanel_database_long_transactions{job="stepanel"} > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Long database transactions detected
+          description: Transactions older than five minutes have persisted for ten minutes and may delay vacuum, purge, DDL, or backups.
+
+      - alert: StePanelScheduledBackupFailures
+        expr: stepanel_backup_consecutive_failures{job="stepanel"} > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Scheduled backups are failing
+          description: A site has one or more consecutive scheduled backup failures; inspect the job, free space, database helper, and offsite target.

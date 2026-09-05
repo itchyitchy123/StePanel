@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: StePanel API
-  version: 0.5.0
+  version: 0.6.0
   description: |
     Authenticated server operations, service inventory, and migration API.
     Mutating requests require the `stepanel_session` cookie and the matching
@@ -18,6 +18,53 @@ paths:
       responses:
         '200':
           description: Selected database engine, service health, client availability, and matching admin UI readiness
+  /api/database/diagnostics:
+    get:
+      summary: Bounded database health counters
+      responses:
+        '200': {description: Connections, long transactions, blocking, deadlocks, and allocated database bytes}
+        '503': {description: Restricted local database diagnostics are unavailable}
+  /api/database/settings:
+    get:
+      summary: Read-only effective database settings allowlist
+      responses:
+        '200': {description: Engine-specific capacity, logging, memory, and recovery settings}
+  /api/database/sessions:
+    get:
+      summary: Active database session metadata without SQL text
+      responses:
+        '200': {description: Up to 200 sessions with age, state, and wait class}
+  /api/database/sessions/{id}:
+    delete:
+      summary: Terminate one database session after exact confirmation
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, minimum: 1}}
+      responses:
+        '204': {description: Session terminated and action audited}
+        '422': {description: Confirmation must exactly match TERMINATE plus the session ID}
+  /api/databases:
+    get:
+      summary: List site-owned databases managed by StePanel
+      responses:
+        '200': {description: Database, owner, user, encoding, and allocated bytes}
+    post:
+      summary: Create a database and least-privilege site user
+      responses:
+        '201': {description: Database and user created; password is never returned or stored by StePanel}
+        '409': {description: Object already exists or provisioning failed safely}
+  /api/databases/{name}:
+    delete:
+      summary: Create a safety dump, then delete a managed database and user
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string, pattern: '^[a-z0-9_]{1,63}$'}}
+      responses:
+        '200': {description: Database deleted with safety-backup path and checksum}
+        '503': {description: Deletion refused because the safety backup failed}
+  /api/databases/{name}/credentials:
+    patch:
+      summary: Rotate a managed database user's password
+      responses:
+        '204': {description: Credential rotated; caller must update the application secret}
   /livez:
     get:
       security: []
@@ -242,7 +289,7 @@ paths:
     get:
       summary: List scheduled site backups
       responses:
-        '200': {description: Persisted backup schedules}
+        '200': {description: Schedules with retention, last success, error, duration, and consecutive failures}
     put:
       summary: Create or replace a site backup schedule
       responses:

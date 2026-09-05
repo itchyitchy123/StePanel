@@ -61,9 +61,9 @@ safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
 
 ## See it quickly
 
-![StePanel 0.5.0 dashboard preview](docs/assets/dashboard-preview.png)
+![StePanel 0.6.0 dashboard preview](docs/assets/dashboard-preview.png)
 
-See the [0.5.0 product preview](docs/SCREENSHOTS.md) for the current dashboard
+See the [0.6.0 product preview](docs/SCREENSHOTS.md) for the current dashboard
 layout. The repository image is a deterministic illustration with
 representative values; capture a tagged-build screenshot for host-specific
 service and capability states.
@@ -238,7 +238,8 @@ checkbox and should be backed up first.
 | `STEPANEL_TLS_TERMINATED` | Set to `1` only when a trusted HTTPS reverse proxy or cluster ingress terminates TLS before forwarding to the panel |
 | `STEPANEL_DB_HOST` | Selected database host; MySQL/MariaDB use it for supported SQL imports |
 | `STEPANEL_DB_USER` | Remote database user used for connectivity and supported SQL imports; local MySQL/MariaDB installs use the restricted helper |
-| `STEPANEL_DB_PASSWORD` | Required password for a configured remote database user |
+| `STEPANEL_DB_PASSWORD` | Required password for a configured remote database user in containers or external deployments; prefer the file option on hosts |
+| `STEPANEL_DB_PASSWORD_FILE` | Database credential file; packaged systemd installs use a private runtime credential automatically |
 | `STEPANEL_DB_ADMIN_URL` | Local URL path for the matching database administrator; defaults to `/phpmyadmin` or `/phppgadmin` |
 | `STEPANEL_DB_ADMIN_ALLOW` | Space/comma-separated IPs or CIDRs allowed to reach the Apache database-admin route; defaults to loopback only |
 | `STEPANEL_MAIL_ROOT` | Private root for staged cPanel mailbox data |

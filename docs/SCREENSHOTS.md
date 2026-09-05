@@ -1,6 +1,6 @@
 # Product preview
 
-The assets in this document are synchronized with the `0.5.0` dashboard
+The assets in this document are synchronized with the `0.6.0` dashboard
 layout. They are deterministic product illustrations, not captures from a
 live host; values are representative and the real dashboard renders service,
 database, capability, and job state from the configured server.
@@ -21,7 +21,7 @@ available for presentations and product materials.
 <td width="50%"><strong>Safe migrations</strong><br>The migration center makes cpmove and WordPress restore workflows visible, reviewable, and asynchronous.</td>
 </tr>
 <tr>
-<td><strong>Database operations</strong><br>The current dashboard identifies the selected engine and version, service health, client, and matching phpMyAdmin or phpPgAdmin link.</td>
+<td><strong>Database operations</strong><br>The current dashboard identifies the engine and adds native database inventory, least-privilege provisioning, credential rotation, diagnostics, and safety-dump-protected deletion.</td>
 <td><strong>Persistent jobs</strong><br>Restore, backup, certificate, and application work is represented by durable job state with status links.</td>
 </tr>
 <tr>
@@ -30,7 +30,7 @@ available for presentations and product materials.
 </tr>
 </table>
 
-This illustration mirrors the current `0.5.0` dashboard structure using
+This illustration mirrors the current `0.6.0` dashboard structure using
 representative values, including the selected webserver, database operations
 panel, matching administrator link, and direct operator-diagnostics link.
 At runtime, all service counts, health states, load, security checks, and jobs

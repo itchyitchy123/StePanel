@@ -15,17 +15,20 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
 
 type App struct {
-	Config    Config
-	View      *template.Template
-	Auth      Auth
-	Jobs      *Jobs
-	Metrics   *Metrics
-	Schedules *backupSchedules
+	Config                   Config
+	View                     *template.Template
+	Auth                     Auth
+	Jobs                     *Jobs
+	Metrics                  *Metrics
+	Schedules                *backupSchedules
+	databaseDiagnosticsMu    sync.Mutex
+	databaseDiagnosticsCache DatabaseDiagnostics
 }
 
 func main() {
@@ -176,6 +179,12 @@ func main() {
 	mux.Handle("/api/health", allowMethods(http.HandlerFunc(app.health), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/services", allowMethods(app.Auth.Require(http.HandlerFunc(app.services)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/database", allowMethods(app.Auth.Require(http.HandlerFunc(app.database)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/database/diagnostics", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseDiagnostics)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/database/sessions", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseSessions)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/database/sessions/", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseSessionTerminate)), http.MethodDelete))
+	mux.Handle("/api/database/settings", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseSettings)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/databases", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseCollection)), http.MethodGet, http.MethodHead, http.MethodPost))
+	mux.Handle("/api/databases/", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseResource)), http.MethodPatch, http.MethodDelete))
 	mux.Handle("/api/ftp", allowMethods(app.Auth.Require(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/audit", allowMethods(app.Auth.Require(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/doctor", allowMethods(app.Auth.Require(http.HandlerFunc(app.doctor)), http.MethodGet, http.MethodHead))
@@ -275,6 +284,10 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	a.Metrics.Write(w)
+	writeDatabaseMetrics(w, a.cachedDatabaseDiagnostics(15*time.Second))
+	if a.Schedules != nil {
+		writeBackupScheduleMetrics(w, a.Schedules.list())
+	}
 }
 func (a *App) services(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"services": ServiceSummaries(a.Config), "time": time.Now().UTC()})
@@ -292,10 +305,13 @@ func (a *App) Capabilities() map[string]bool {
 		}
 	}
 	return map[string]bool{
-		"certificates":   commandAvailable(a.Config.Certbot),
-		"mysql_restores": mysqlCompatible(a.Config),
-		"node_apps":      hasNode && commandAvailable(a.Config.AppCtl) && commandAvailable(a.Config.ProxyCtl),
-		"wpress":         allReady(WPressPreflight(a.Config)),
+		"certificates":       commandAvailable(a.Config.Certbot),
+		"mysql_restores":     mysqlCompatible(a.Config),
+		"database_lifecycle": a.DatabaseAdmin().LifecycleReady,
+		"database_pitr":      false,
+		"database_failover":  false,
+		"node_apps":          hasNode && commandAvailable(a.Config.AppCtl) && commandAvailable(a.Config.ProxyCtl),
+		"wpress":             allReady(WPressPreflight(a.Config)),
 	}
 }
 func (a *App) capabilities(w http.ResponseWriter, _ *http.Request) {

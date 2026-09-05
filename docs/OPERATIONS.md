@@ -64,6 +64,11 @@ job per site is enforced independently of the global limit.
 `systemctl stop stepanel` stops accepting HTTP work and waits for active restore
 and certificate jobs for up to two hours before systemd forces termination.
 Check `stepanel_restore_jobs_active` before package upgrades or planned reboots.
+Database monitoring also exports `stepanel_database_diagnostics_up`, connection,
+long-transaction, blocking, deadlock, and allocated-byte gauges. Scheduled
+backup RPO signals are available as `stepanel_backup_oldest_age_seconds`,
+`stepanel_backup_schedules_without_success`, and
+`stepanel_backup_consecutive_failures`.
 Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
 `/var/lib/ste-panel` before upgrading.
 
@@ -94,7 +99,23 @@ entry and its whole-archive checksum verify. Copy the complete timestamped
 directory to off-host or immutable storage and perform scheduled restore drills.
 Live file writes and nontransactional database tables are not quiesced, so use
 application maintenance mode or storage/database snapshots when a point-in-time
-consistent backup is required. Backups are not deleted by staging retention.
+consistent backup is required. Staging retention never deletes published
+backups. A scheduled backup's `keep_last` policy prunes its oldest verified
+local copies only after a replacement succeeds; safety dumps made before
+database deletion remain under `.database-deletions` for explicit DBA review.
+
+Use the authenticated database endpoints during an incident:
+
+```text
+GET    /api/database/diagnostics
+GET    /api/database/sessions
+GET    /api/database/settings
+DELETE /api/database/sessions/SESSION_ID
+```
+
+Session output deliberately excludes SQL text and termination requires an exact
+confirmation phrase. Use an engine-native DBA client when query text or plans
+are necessary, and apply the normal sensitive-data handling policy.
 
 Job records are persisted in `/var/lib/ste-panel/jobs.json`. Revocable administrator
 sessions are persisted in `/var/lib/ste-panel/sessions.json`; include this file in

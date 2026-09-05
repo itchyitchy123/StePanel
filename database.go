@@ -20,6 +20,9 @@ type DatabaseAdmin struct {
 	AdminReady     bool   `json:"admin_ready"`
 	ClientReady    bool   `json:"client_ready"`
 	Local          bool   `json:"local"`
+	LifecycleReady bool   `json:"lifecycle_ready"`
+	LogicalBackup  bool   `json:"logical_backup"`
+	PITRConfigured bool   `json:"pitr_configured"`
 }
 
 func (a *App) database(w http.ResponseWriter, _ *http.Request) {
@@ -74,7 +77,8 @@ func (a *App) DatabaseAdmin() DatabaseAdmin {
 		adminDetail = "Available through Apache with its own database authentication."
 	}
 	_, clientErr := exec.LookPath(client)
-	return DatabaseAdmin{Engine: engine, Version: cfg.DBVersion, Host: databaseHost(cfg), Service: service, Status: status, Client: client, AdminProduct: product, AdminURL: url, AdminDetail: adminDetail, AdminInstalled: adminInstalled, AdminReady: adminReady, ClientReady: clientErr == nil, Local: cfg.DBHost == "" || cfg.DBHost == "localhost" || cfg.DBHost == "127.0.0.1"}
+	local := cfg.DBHost == "" || cfg.DBHost == "localhost" || cfg.DBHost == "127.0.0.1"
+	return DatabaseAdmin{Engine: engine, Version: cfg.DBVersion, Host: databaseHost(cfg), Service: service, Status: status, Client: client, AdminProduct: product, AdminURL: url, AdminDetail: adminDetail, AdminInstalled: adminInstalled, AdminReady: adminReady, ClientReady: clientErr == nil, Local: local, LifecycleReady: local && cfg.DBCtl != "", LogicalBackup: local && cfg.DBCtl != "", PITRConfigured: false}
 }
 
 func apacheDBAdminConfigured() bool {

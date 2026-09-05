@@ -8,6 +8,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 No unreleased changes.
 
+## [0.6.0] - 2026-09-04
+
+### Added
+
+- Native local MySQL, MariaDB, and PostgreSQL inventory with site ownership,
+  allocated size, user, and encoding metadata.
+- Least-privilege database/user provisioning, password rotation, and guarded
+  deletion through the restricted root helper and authenticated dashboard.
+- Mandatory checksummed logical safety dumps before managed database deletion.
+- Read-only database health diagnostics, effective-setting inspection, and
+  query-text-free session inventory with explicitly confirmed, audited session
+  termination.
+- Prometheus database pressure metrics and scheduled-backup RPO/failure metrics.
+- PostgreSQL logical dumps for managed site backups.
+- Per-schedule local retention, last-success, duration, error, and consecutive
+  failure state.
+
+### Changed
+
+- Installer-managed remote database passwords are delivered as private systemd
+  credentials instead of being retained in the daemon environment.
+- PostgreSQL local installs now receive the same restricted lifecycle and
+  backup helper boundary as MySQL and MariaDB.
+- PITR, auto-tuning, replication orchestration, and automatic failover are
+  explicitly reported as unavailable rather than represented by unsafe or
+  misleading controls.
+
 ## [0.5.0] - 2026-09-04
 
 ### Added

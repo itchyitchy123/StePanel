@@ -13,6 +13,13 @@ longer-term hosting-panel roadmap.
 - Asynchronous website and optional SQL restore jobs.
 - MySQL/MariaDB/PostgreSQL selection during installation, including PostgreSQL AppStream stream selection on RHEL-family systems.
 - Optional phpMyAdmin or phpPgAdmin installation with dashboard status and management links.
+- Native local database inventory, least-privilege database/user provisioning,
+  credential rotation, safety-dump-protected deletion, session diagnostics,
+  explicit session termination, and read-only effective settings.
+- PostgreSQL and MySQL/MariaDB logical dumps for managed databases.
+- Database Prometheus metrics for connection pressure, long transactions,
+  blocking, deadlocks, and allocated bytes; scheduled backups expose last
+  success, age, and consecutive failures.
 - ModSecurity and optional OWASP CRS installation in DetectionOnly mode.
 - Configured-stack service inventory for Apache, OpenLiteSpeed, Caddy,
   versioned PHP-FPM, MySQL/MariaDB/PostgreSQL, and detected optional services
@@ -39,6 +46,9 @@ longer-term hosting-panel roadmap.
   and external providers.
 - Backup verification is available, but snapshot-backed rollback and a full
   customer self-service restore workflow are not complete.
+- PITR/WAL or binlog management, replication orchestration, configuration
+  mutation, and automatic failover remain operator-managed and deliberately
+  have no unsafe simulated controls.
 
 ## Not yet production-complete for shared hosting
 

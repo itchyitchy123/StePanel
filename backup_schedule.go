@@ -16,10 +16,15 @@ import (
 type BackupSchedule struct {
 	Site             string     `json:"site"`
 	IntervalMinutes  int        `json:"interval_minutes"`
+	KeepLast         int        `json:"keep_last"`
 	IncludeDatabases bool       `json:"include_databases"`
 	Enabled          bool       `json:"enabled"`
 	NextRun          time.Time  `json:"next_run"`
 	LastRun          *time.Time `json:"last_run,omitempty"`
+	LastSuccess      *time.Time `json:"last_success,omitempty"`
+	LastError        string     `json:"last_error,omitempty"`
+	LastDurationMS   int64      `json:"last_duration_ms,omitempty"`
+	ConsecutiveFails int        `json:"consecutive_failures"`
 }
 
 type backupSchedules struct {
@@ -44,7 +49,11 @@ func openBackupSchedules(path string) (*backupSchedules, error) {
 		return nil, fmt.Errorf("decode backup schedules: %w", err)
 	}
 	for site, item := range s.items {
-		if safeUser(site) == "" || item.Site != site || item.IntervalMinutes < 5 || item.IntervalMinutes > 10080 || item.NextRun.IsZero() {
+		if item.KeepLast == 0 {
+			item.KeepLast = 7
+			s.items[site] = item
+		}
+		if safeUser(site) == "" || item.Site != site || item.IntervalMinutes < 5 || item.IntervalMinutes > 10080 || item.KeepLast < 1 || item.KeepLast > 365 || item.NextRun.IsZero() {
 			return nil, fmt.Errorf("invalid backup schedule for site %q", site)
 		}
 	}
@@ -87,8 +96,11 @@ func (a *App) backupSchedules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in.Site = safeUser(in.Site)
-		if in.Site == "" || in.IntervalMinutes < 5 || in.IntervalMinutes > 10080 {
-			http.Error(w, "site is invalid or interval must be 5-10080 minutes", 422)
+		if in.KeepLast == 0 {
+			in.KeepLast = 7
+		}
+		if in.Site == "" || in.IntervalMinutes < 5 || in.IntervalMinutes > 10080 || in.KeepLast < 1 || in.KeepLast > 365 {
+			http.Error(w, "site is invalid, interval must be 5-10080 minutes, and keep_last must be 1-365", 422)
 			return
 		}
 		if in.IncludeDatabases && a.Config.DBCtl == "" {
@@ -109,7 +121,7 @@ func (a *App) backupSchedules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "could not persist backup schedule", 500)
 			return
 		}
-		_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "backup.schedule.updated", in.Site, fmt.Sprintf("every %d minutes", in.IntervalMinutes))
+		_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "backup.schedule.updated", in.Site, fmt.Sprintf("every %d minutes; keep last %d", in.IntervalMinutes, in.KeepLast))
 		writeJSON(w, http.StatusOK, in)
 	case http.MethodDelete:
 		if !a.Auth.CSRF(r) {
@@ -154,6 +166,7 @@ func (a *App) runDueBackups() {
 		s.LastRun = &now
 		s.NextRun = now.Add(time.Duration(s.IntervalMinutes) * time.Minute)
 		err = a.Jobs.SubmitBackup(id, site, func() (BackupResult, error) {
+			started := time.Now()
 			result, err := CreateSiteBackup(a.Config, site, s.IncludeDatabases)
 			if err == nil {
 				err = uploadOffsite(a.Config, result)
@@ -162,6 +175,12 @@ func (a *App) runDueBackups() {
 				_ = AuditAs(a.Config.AuditLog, "scheduler", "site.backup.failed", site, err.Error())
 			} else if auditErr := AuditAs(a.Config.AuditLog, "scheduler", "site.backup.completed", site, result.ArchiveSHA256); auditErr != nil {
 				log.Printf("scheduled backup completed but audit persistence is unavailable: %v", auditErr)
+			}
+			a.Schedules.recordResult(site, started, err)
+			if err == nil {
+				if pruneErr := pruneSiteBackups(a.Config.BackupRoot, site, s.KeepLast); pruneErr != nil {
+					_ = AuditAs(a.Config.AuditLog, "scheduler", "backup.retention.failed", site, pruneErr.Error())
+				}
 			}
 			return result, err
 		})
@@ -172,5 +191,28 @@ func (a *App) runDueBackups() {
 		if err := a.Schedules.persistLocked(); err != nil {
 			_ = AuditAs(a.Config.AuditLog, "scheduler", "backup.schedule.persistence_failed", site, err.Error())
 		}
+	}
+}
+
+func (s *backupSchedules) recordResult(site string, started time.Time, resultErr error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, exists := s.items[site]
+	if !exists {
+		return
+	}
+	item.LastDurationMS = time.Since(started).Milliseconds()
+	if resultErr != nil {
+		item.LastError = resultErr.Error()
+		item.ConsecutiveFails++
+	} else {
+		now := time.Now().UTC()
+		item.LastSuccess = &now
+		item.LastError = ""
+		item.ConsecutiveFails = 0
+	}
+	s.items[site] = item
+	if err := s.persistLocked(); err != nil {
+		log.Printf("persist backup result for %s: %v", site, err)
 	}
 }

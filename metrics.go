@@ -97,3 +97,40 @@ func (m *Metrics) Write(w io.Writer) {
 	_, _ = fmt.Fprintf(w, "stepanel_http_request_duration_seconds_sum %.6f\n", float64(m.httpDurationNanos.Load())/float64(time.Second))
 	_, _ = fmt.Fprintf(w, "stepanel_http_request_duration_seconds_count %d\n", m.httpRequests.Load())
 }
+
+func writeDatabaseMetrics(w io.Writer, diagnostics DatabaseDiagnostics) {
+	up := 0
+	if diagnostics.Available {
+		up = 1
+	}
+	_, _ = fmt.Fprintf(w, "# HELP stepanel_database_diagnostics_up Database diagnostics collection succeeded\n# TYPE stepanel_database_diagnostics_up gauge\nstepanel_database_diagnostics_up{engine=%q} %d\n", diagnostics.Engine, up)
+	for _, name := range []string{"connections", "active_connections", "long_transactions", "blocked_sessions", "deadlocks", "database_bytes"} {
+		_, _ = fmt.Fprintf(w, "# TYPE stepanel_database_%s gauge\nstepanel_database_%s{engine=%q} %d\n", name, name, diagnostics.Engine, diagnostics.Values[name])
+	}
+}
+
+func writeBackupScheduleMetrics(w io.Writer, schedules []BackupSchedule) {
+	now := time.Now().UTC()
+	var oldestAge float64
+	var failures, withoutSuccess int
+	for _, schedule := range schedules {
+		failures += schedule.ConsecutiveFails
+		if schedule.LastSuccess == nil {
+			withoutSuccess++
+			continue
+		}
+		age := now.Sub(*schedule.LastSuccess).Seconds()
+		if age > oldestAge {
+			oldestAge = age
+		}
+	}
+	_, _ = fmt.Fprintln(w, "# HELP stepanel_backup_oldest_age_seconds Age of the oldest last-success time across scheduled backups")
+	_, _ = fmt.Fprintln(w, "# TYPE stepanel_backup_oldest_age_seconds gauge")
+	_, _ = fmt.Fprintf(w, "stepanel_backup_oldest_age_seconds %.0f\n", oldestAge)
+	_, _ = fmt.Fprintln(w, "# HELP stepanel_backup_consecutive_failures Sum of consecutive scheduled backup failures")
+	_, _ = fmt.Fprintln(w, "# TYPE stepanel_backup_consecutive_failures gauge")
+	_, _ = fmt.Fprintf(w, "stepanel_backup_consecutive_failures %d\n", failures)
+	_, _ = fmt.Fprintln(w, "# HELP stepanel_backup_schedules_without_success Scheduled backups that have never completed successfully")
+	_, _ = fmt.Fprintln(w, "# TYPE stepanel_backup_schedules_without_success gauge")
+	_, _ = fmt.Fprintf(w, "stepanel_backup_schedules_without_success %d\n", withoutSuccess)
+}

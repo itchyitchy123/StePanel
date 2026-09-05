@@ -1,10 +1,51 @@
 # Database operations
 
-StePanel installs and monitors one selected database engine. MySQL and MariaDB
-support cPanel SQL and WordPress restores through the restricted database
-helper. PostgreSQL is supported for installation, service monitoring,
-connectivity checks, and phpPgAdmin access; StePanel does not translate MySQL
-dumps into PostgreSQL syntax.
+StePanel installs and monitors one selected database engine. Local MySQL,
+MariaDB, and PostgreSQL installations support native managed-database
+inventory, least-privilege provisioning, password rotation, logical backup,
+diagnostics, and safety-dump-protected deletion through the restricted helper.
+MySQL and MariaDB additionally support cPanel SQL and WordPress restores.
+StePanel does not translate MySQL dumps into PostgreSQL syntax.
+
+## Native lifecycle
+
+The authenticated dashboard and `/api/databases` API create a database and one
+site-owned login. PostgreSQL roles are created without superuser, database,
+role, or replication administration and have a 20-connection ceiling. MySQL
+and MariaDB users receive privileges only on their database and only from the
+local host. Names are validated identifiers and existing objects are never
+overwritten.
+
+Passwords are accepted only on the provisioning or rotation request, streamed
+to the root helper over standard input, and never returned, logged, or added to
+the ownership registry. Update the application secret immediately after a
+rotation. A delete requires the exact phrase `DROP DATABASE_NAME`; before any
+object is removed, StePanel creates and checksums a fresh logical dump under
+`STEPANEL_BACKUP_ROOT/.database-deletions`. If that dump fails, deletion is
+refused.
+
+`/api/database/sessions` returns session identity, database, state, age, and
+wait class but deliberately excludes SQL text. Termination requires the exact
+phrase `TERMINATE SESSION_ID` and creates an attributed audit event. Effective
+capacity, memory, logging, character-set, WAL/binlog, and autovacuum settings
+are exposed read-only at `/api/database/settings`; StePanel does not auto-tune
+or silently mutate production settings.
+
+## Monitoring and recovery boundary
+
+`/api/database/diagnostics` and `/metrics` expose connection totals, active
+connections, transactions older than five minutes, blocked sessions,
+deadlocks, and allocated database bytes. Alert on collection failure, blocking,
+long transactions, unexpected deadlock growth, and capacity trends. Backup
+schedules retain their last success, duration, last error, and consecutive
+failure count. Their `keep_last` policy (default 7, range 1-365) prunes only
+verified local site backups after a successful replacement; immutable offsite
+copies are not deleted.
+
+Logical dumps are not PITR. WAL/binlog archiving, physical base backups,
+replication topology, controlled switchover, and fenced failover remain
+external DBA responsibilities and are reported as unavailable capabilities.
+Do not claim an RPO until those systems and a restore drill are in place.
 
 ## Installation matrix
 
@@ -67,7 +108,13 @@ unavailable, check `/etc/apache2/stepanel-panel/db-admin.conf` or
 under `/usr/share`, and review the configured IP allowlist.
 
 For a remote database, set `STEPANEL_DB_HOST`, `STEPANEL_DB_USER`, and
-`STEPANEL_DB_PASSWORD` together. Installation performs a non-interactive
+`STEPANEL_DB_PASSWORD` together. Packaged systemd installations move that
+password into `/etc/stepanel-db.password` and deliver it through a private
+systemd runtime credential rather than the process environment; containers can
+use `STEPANEL_DB_PASSWORD_FILE` or their secret injection mechanism.
+Installation performs a non-interactive
 connectivity check with the selected engine's client. Configure the remote
 server separately in phpMyAdmin/phpPgAdmin if browser administration should
 target it; StePanel does not write remote credentials into those applications.
+Native lifecycle and diagnostics are intentionally unavailable for remote
+servers because StePanel cannot enforce the local privileged-helper boundary.

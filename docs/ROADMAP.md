@@ -13,13 +13,13 @@
 - First-run setup wizard
 - Site deletion and domain lifecycle completion
 - Per-site PHP version selection
-- General-purpose database and database-user lifecycle
+- General-purpose database and database-user lifecycle (shipped in 0.6 for local single-host engines)
 - Customer-visible operation history and notification delivery
 
 ## 0.3 — Recovery and scale
 
 - Snapshot-backed restore rollback for files and databases
-- Scheduled backup policies
+- Scheduled backup policies with bounded local retention and RPO evidence (shipped in 0.6)
 - Durable job state, retry/cancellation semantics, and worker health
 - Import progress, cancellation, and retry
 - Docker and distribution integration tests
@@ -39,5 +39,7 @@
 - Durable relational control-plane state and multi-host agent orchestration
 - Complete domain, DNS, TLS, database, mail, FTP/SFTP, cron, SSH, and billing
   lifecycle
+- Database PITR/WAL or binlog orchestration, replication topology, controlled
+  switchover, and externally fenced automatic failover
 - Customer portal, file manager, deployment integrations, WordPress tooling,
   notifications, and self-service backup/restore

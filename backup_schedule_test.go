@@ -29,6 +29,9 @@ func TestBackupScheduleLifecycle(t *testing.T) {
 	}
 	list := httptest.NewRecorder()
 	a.backupSchedules(list, httptest.NewRequest(http.MethodGet, "/api/backup-schedules", nil))
+	if !strings.Contains(list.Body.String(), `"keep_last":7`) {
+		t.Fatalf("default retention missing from response: %s", list.Body.String())
+	}
 	if !strings.Contains(list.Body.String(), `"site":"demo"`) {
 		t.Fatalf("list: %s", list.Body.String())
 	}

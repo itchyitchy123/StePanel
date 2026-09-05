@@ -19,7 +19,7 @@ type Config struct {
 	ProxyRoot, VHostRoot, AppRoot, MalwareRoot, AppCtl, ProxyCtl                       string
 	SiteCtl, VHostCtl, Certbot, DBCtl                                                  string
 	WPressExtract, WPCLI, AuditLog, JobState, SessionState, RecoveryRoot, Sudo         string
-	DBHost, DBUser, DBPassword                                                         string
+	DBHost, DBUser, DBPassword, DBPasswordFile                                         string
 	DBEngine, DBVersion, DBAdminURL                                                    string
 	OffsiteTarget                                                                      string
 	CloudProvider                                                                      string
@@ -127,6 +127,13 @@ func LoadConfig() Config {
 	c.DBHost = os.Getenv("STEPANEL_DB_HOST")
 	c.DBUser = os.Getenv("STEPANEL_DB_USER")
 	c.DBPassword = os.Getenv("STEPANEL_DB_PASSWORD")
+	c.DBPasswordFile = os.Getenv("STEPANEL_DB_PASSWORD_FILE")
+	if c.DBPasswordFile != "" {
+		password, err := os.ReadFile(c.DBPasswordFile)
+		if err == nil && len(password) <= 4096 {
+			c.DBPassword = strings.TrimSuffix(string(password), "\n")
+		}
+	}
 	c.OffsiteTarget = strings.TrimSpace(os.Getenv("STEPANEL_OFFSITE_TARGET"))
 	c.CloudProvider = strings.ToLower(strings.TrimSpace(os.Getenv("STEPANEL_CLOUD_PROVIDER")))
 	if v := strings.TrimSpace(os.Getenv("STEPANEL_REQUIRE_OFFSITE_BACKUP")); v == "1" {
@@ -177,6 +184,18 @@ func ValidateConfig(c Config) error {
 	}
 	if !validDBAdminURL(c.DBAdminURL) {
 		problems = append(problems, errors.New("STEPANEL_DB_ADMIN_URL must be an absolute local URL path"))
+	}
+	if c.DBPasswordFile != "" {
+		info, err := os.Stat(c.DBPasswordFile)
+		if err != nil || !info.Mode().IsRegular() || info.Size() > 4096 {
+			problems = append(problems, errors.New("STEPANEL_DB_PASSWORD_FILE must be a readable regular credential file no larger than 4 KiB"))
+		}
+	}
+	if strings.ContainsAny(c.DBPassword, "\r\n") {
+		problems = append(problems, errors.New("database credentials may not contain newlines"))
+	}
+	if c.DBUser != "" && c.DBPassword == "" {
+		problems = append(problems, errors.New("a database password or credential file is required when STEPANEL_DB_USER is configured"))
 	}
 	if err := validateOffsiteTarget(c.OffsiteTarget); err != nil {
 		problems = append(problems, err)

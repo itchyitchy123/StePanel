@@ -16,7 +16,9 @@ agent.
    to set service-level targets.
 
 The metrics endpoint is deliberately low-cardinality: account names, backup
-paths, and error text are never emitted as labels.
+paths, and error text are never emitted as labels. Backup health is aggregated
+across schedules so customer/site identifiers are not exposed to metrics
+consumers.
 
 Protect `/metrics` with network policy, firewall rules, or an authenticated
 reverse proxy. If it is exposed publicly, scrape credentials and operational

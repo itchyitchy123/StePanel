@@ -10,8 +10,8 @@
 4. Create and push an annotated tag:
 
    ```sh
-   git tag -a v0.5.0 -m 'StePanel v0.5.0'
-   git push origin v0.5.0
+   git tag -a v0.6.0 -m 'StePanel v0.6.0'
+   git push origin v0.6.0
    ```
 
 5. The release workflow builds Linux AMD64 and ARM64 binaries, creates checksums
