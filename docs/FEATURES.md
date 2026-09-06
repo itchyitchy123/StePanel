@@ -60,6 +60,9 @@ Latest stable release: `v0.6.0`
   assigned-site limits, and authorization that scopes customer site workspace,
   backup, and job access to their assignments. Provider operations remain
   administrator-only.
+- Account plan and site-assignment updates persist resource desired state and
+  reconcile affected cgroup/PHP profiles; stricter operator ceilings are
+  preserved and failed host application remains visibly pending.
 - Administrator-only customer MFA regeneration through
   `/api/accounts/{username}/mfa`, returning the replacement seed once and
   revoking that customer's sessions.

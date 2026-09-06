@@ -55,6 +55,12 @@ workloads: sites, services, data, backups, and external resources remain intact.
 customer login record and its sessions; it is not a hosting-account teardown.
 The operation is audited as login removal and retains assigned workloads for a
 separate, reviewed lifecycle workflow.
+When a plan or assignment changes, StePanel persists the affected resource
+profiles as pending desired state, clamps ceilings that exceed the new plan,
+preserves stricter operator settings, removes the old account aggregate from
+unassigned sites, and attempts cgroup/PHP reconciliation. A helper failure
+returns `202` with `pending_sites`; retry `POST /api/reconcile/resources` after
+the host is healthy.
 The endpoint is intentionally documented as **login removal**; no current API
 claims to terminate the associated hosting workloads.
 Account creation also requires each assigned site document root to already

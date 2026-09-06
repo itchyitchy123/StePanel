@@ -99,6 +99,109 @@ func (a *App) ensurePlanResources(account HostingAccount) ([]string, error) {
 	return pending, nil
 }
 
+// reconcileAccountResourcePlan updates resource desired state after an account
+// plan or assignment change. Existing stricter site settings are preserved;
+// values above the new plan ceiling are clamped. Host changes happen only after
+// the complete desired set is persisted, and failed applications remain
+// pending for the normal reconciliation path.
+func (a *App) reconcileAccountResourcePlan(previous, account HostingAccount) ([]string, error) {
+	if a.Resources == nil {
+		return nil, nil
+	}
+	plan, ok := hostingPlans[account.Plan]
+	if !ok {
+		return nil, errors.New("account plan is not available")
+	}
+	assigned := make(map[string]bool, len(account.Sites))
+	for _, site := range account.Sites {
+		assigned[site] = true
+	}
+	changed := make([]ResourceProfile, 0, len(previous.Sites)+len(account.Sites))
+	a.Resources.mu.Lock()
+	for _, site := range previous.Sites {
+		if assigned[site] {
+			continue
+		}
+		if profile, exists := a.Resources.values[site]; exists && profile.Account == previous.Username {
+			profile.Account = ""
+			profile.State = "pending"
+			a.Resources.values[site] = profile
+			changed = append(changed, profile)
+		}
+	}
+	for _, site := range account.Sites {
+		profile, exists := a.Resources.values[site]
+		if !exists {
+			profile = resourceProfileForPlan(account.Username, site, plan)
+		} else {
+			profile.Account = account.Username
+			profile.CPUPercent = minInt(profile.CPUPercent, plan.CPUPercent)
+			profile.MemoryHighMB = minInt(profile.MemoryHighMB, plan.MemoryMB*90/100)
+			profile.MemoryMB = minInt(profile.MemoryMB, plan.MemoryMB)
+			profile.TasksMax = minInt(profile.TasksMax, plan.TasksMax)
+			profile.PHPWorkers = minInt(profile.PHPWorkers, plan.PHPWorkers)
+			if profile.MemoryHighMB > profile.MemoryMB {
+				profile.MemoryHighMB = profile.MemoryMB
+			}
+			profile.State = "pending"
+		}
+		a.Resources.values[site] = profile
+		changed = append(changed, profile)
+	}
+	if err := a.Resources.persistLocked(); err != nil {
+		a.Resources.mu.Unlock()
+		return nil, fmt.Errorf("persist account resource plan: %w", err)
+	}
+	a.Resources.mu.Unlock()
+
+	if len(changed) == 0 {
+		return nil, a.applyAccountResourceEnvelope(account.Username, plan)
+	}
+	unlock := a.siteOperations.acquireMany(account.Sites...)
+	defer unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	pending := make([]string, 0, len(changed))
+	if err := a.applyAccountResourceEnvelope(account.Username, plan); err != nil {
+		for _, profile := range changed {
+			pending = append(pending, profile.Site)
+		}
+		return pending, nil
+	}
+	for _, profile := range changed {
+		if err := a.applyResourceProfile(ctx, profile, false); err != nil {
+			pending = append(pending, profile.Site)
+			continue
+		}
+		profile.State = "applied"
+		profile.AppliedAt = time.Now().UTC()
+		a.Resources.mu.Lock()
+		a.Resources.values[profile.Site] = profile
+		if err := a.Resources.persistLocked(); err != nil {
+			a.Resources.values[profile.Site] = func() ResourceProfile {
+				profile.State = "pending"
+				return profile
+			}()
+			pending = append(pending, profile.Site)
+		}
+		a.Resources.mu.Unlock()
+	}
+	return pending, nil
+}
+
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func (a *App) applyAccountResourceEnvelope(account string, plan HostingPlan) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	return runHelperCommand(ctx, a.Config, a.Config.AppCtl, "account-resource-apply", account, strconv.Itoa(plan.CPUPercent), "100", strconv.Itoa(plan.MemoryMB*90/100), strconv.Itoa(plan.MemoryMB), "100", strconv.Itoa(plan.TasksMax))
+}
+
 func OpenResourceStore(path string) (*ResourceStore, error) {
 	s := &ResourceStore{path: path, values: map[string]ResourceProfile{}}
 	d, e := os.ReadFile(path)
