@@ -19,12 +19,19 @@ jobs:
           - name: almalinux-9-caddy-mariadb
             image: almalinux:9
             db: mariadb
+            web: caddy
+          - name: rocky-9-caddy-mariadb
+            image: rockylinux:9
+            db: mariadb
+            web: caddy
           - name: ubuntu-24.04-caddy-mysql
             image: ubuntu:24.04
             db: mysql
-          - name: debian-12-caddy-postgresql
+            web: caddy
+          - name: debian-12-apache-postgresql
             image: debian:12
             db: postgresql
+            web: apache
     name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -38,6 +45,7 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           DB: ${{ matrix.db }}
+          WEB: ${{ matrix.web }}
         run: |
           set -eu
           docker run -d --privileged --name stepanel-install \
@@ -47,4 +55,4 @@ jobs:
           cleanup() { docker rm -f stepanel-install >/dev/null 2>&1 || true; }
           trap cleanup EXIT
           for _ in $(seq 1 30); do docker exec stepanel-install systemctl is-system-running >/dev/null 2>&1 && break; sleep 2; done
-          docker exec -e STEPANEL_DB_ENGINE="$DB" stepanel-install /work/deploy/lab/install-smoke.sh
+          docker exec -e STEPANEL_DB_ENGINE="$DB" -e STEPANEL_WEBSERVER="$WEB" stepanel-install /work/deploy/lab/install-smoke.sh

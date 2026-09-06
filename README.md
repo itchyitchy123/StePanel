@@ -131,6 +131,10 @@ sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
 
 The installer records the selected database engine/version, creates a restricted `stepanel` service account, writes the requested panel hostname into the selected webserver, and binds the control plane to `127.0.0.1:8090`. Caddy provisions HTTPS automatically; Apache installations must complete TLS termination before signing in.
 
+Nightly/manual installation smoke CI exercises real disposable systemd hosts
+for AlmaLinux, Rocky Linux, Ubuntu, and Debian, including package installation,
+service restart, synthetic site creation, and selected-webserver validation.
+
 Verify release provenance and the GitHub attestation before installing on a
 production host. The checksum authenticates download integrity; the release
 page's SBOM and build-provenance attestation provide the corresponding supply

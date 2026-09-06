@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Added nightly/manual disposable systemd installation smoke coverage across
+  AlmaLinux 9, Rocky Linux 9, Ubuntu 24.04, and Debian 12, including real
+  package installation, service restart, synthetic site creation, and
+  selected-webserver validation.
+
 - Release archives now include the production installer, privileged helpers,
   service definitions, and web assets so operators can install verified
   artifacts without building from source.
