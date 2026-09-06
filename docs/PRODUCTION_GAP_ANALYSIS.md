@@ -44,8 +44,9 @@ platform.
 - Administrators can inspect a consolidated read-only Security Center and
   restore verified site files into an isolated, protected, no-index staging
   route, or queue administrator-only files-only/database-only restores with
-  safety verification. Database-aware staging and outbound-email blocking
-  remain unavailable.
+  safety verification. Verified backup-dump restore into a newly provisioned
+  staging database is available; live database cloning, promotion, and
+  outbound-email blocking remain unavailable.
 
 ## Required before exposing the panel to customers
 
@@ -78,8 +79,8 @@ removing only a vhost is not account deletion.
 
 ### Customer experience
 
-Add a customer portal, file manager, Git-provider App/OAuth integrations,
-database-aware staging, backup
+Add a customer portal, file manager, Git-provider App/OAuth integrations, live
+database cloning/promotion, customer backup
 browsing/restore, notifications, API/webhooks, and clear operation progress.
 All customer-visible operations should be
 idempotent and explain what changed.

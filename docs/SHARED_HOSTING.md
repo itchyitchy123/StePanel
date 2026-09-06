@@ -122,11 +122,12 @@ FPM; managed Caddy and Apache routes use the selected version’s socket.
 
 `POST /api/staging` creates a distinct staging site and domain from a production
 site. The request supports `files` and `environment`; only non-secret environment
-values are copied, and the operation uses the site recovery journal. Database
-cloning deliberately fails closed until the managed database helper provides a
-transactional clone operation. New staging routes support default no-index
-headers and optional bcrypt-backed Basic Auth; outbound-email blocking and
-database cloning remain unavailable.
+values are copied, and the operation uses the site recovery journal. Live
+database cloning through this endpoint deliberately fails closed. The backup
+restore-to-staging endpoint can instead import one selected verified database
+dump into a newly provisioned destination database. New staging routes support
+default no-index headers and optional bcrypt-backed Basic Auth; outbound-email
+blocking, live database cloning, and promotion remain unavailable.
 
 ## Sandboxed build runner
 
@@ -192,7 +193,7 @@ Do not market this beta as unrestricted shared hosting. It does not yet provide
 mailbox/FTP lifecycle, browser file
 management, customer database credentials, customer self-service scheduled
 tasks, DNS/registrar lifecycle, enforced disk/inode/bandwidth/I/O quotas,
-billing, customer-initiated restores, database-aware staging, support
+billing, customer-initiated restores, live database cloning/promotion, support
 workflows, reseller roles, or a multi-host control plane. These gaps require
 host-level enforcement and durable tenancy-aware state, not merely dashboard
 forms. Site-scoped scheduled tasks, deploy keys, resource profiles,
