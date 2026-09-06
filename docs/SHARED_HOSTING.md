@@ -150,9 +150,11 @@ not accept arbitrary command text or install lifecycle scripts for pnpm.
 policy and add validated SSH public keys. `DELETE
 /api/sites/access/{site}/{label}` revokes a key. Private keys are never accepted
 or stored, and responses expose fingerprints rather than private material.
-Activation into site `authorized_keys`, SFTP-only restrictions, and shell
-account enforcement must be connected to the reviewed site helper before
-enabling this for untrusted tenants.
+Access policy and keys are applied by the root-controlled site helper with
+pending-state reconciliation. The helper uses root-owned `authorized_keys`,
+SFTP-only forced commands, and an explicit `nologin`/`bash` shell policy.
+Operators must still configure and verify the host SSH daemon before enabling
+customer access; this does not provide a chroot or replace sshd hardening.
 
 ## Background workers
 
@@ -185,7 +187,7 @@ arguments and repository build commands remain intentionally unsupported.
 ## Not yet available to customers
 
 Do not market this beta as unrestricted shared hosting. It does not yet provide
-mailbox/FTP lifecycle, full SFTP/SSH account enforcement, browser file
+mailbox/FTP lifecycle, browser file
 management, customer database credentials, customer self-service scheduled
 tasks, DNS/registrar lifecycle, enforced disk/inode/bandwidth/I/O quotas,
 billing, customer-initiated restores, database-aware staging, support

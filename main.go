@@ -237,6 +237,9 @@ func main() {
 	}
 	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, Tasks: tasks, Deployments: deployments, Resources: resources, RecoveryError: errors.Join(recoveryFailures...)}
 	reconcileCtx, cancelReconcile := context.WithTimeout(context.Background(), helperCommandTimeout)
+	if reconciled, failed := app.reconcileSiteAccess(reconcileCtx); len(failed) > 0 {
+		log.Printf("SSH access reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
+	}
 	if reconciled, failed := app.reconcileTasks(reconcileCtx); len(failed) > 0 {
 		log.Printf("scheduled-task reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
 	}

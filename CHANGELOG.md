@@ -68,6 +68,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   worker ceilings. Account creation persists those profiles before host
   application, preserves existing site-specific profiles, and leaves failed
   applications pending reconciliation.
+- SSH/SFTP access policy and public-key changes now apply through the reviewed
+  root-controlled site helper, use root-owned authorized-key files, enforce
+  explicit shell/SFTP modes, and reconcile failed host applications.
 - Added an administrator-only asynchronous files-only backup restore. It
   verifies the archive and optional signature before extraction, uses the site
   recovery journal for atomic replacement, preserves databases, and reports

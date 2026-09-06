@@ -7,7 +7,7 @@ if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
 action=$1
 site=$2
 [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
-[[ $action == prepare || $action == seal || $action == runtime || $action == resources || $action == quota || $action == quota-clear ]] || { echo 'invalid action' >&2; exit 64; }
+[[ $action == prepare || $action == seal || $action == runtime || $action == resources || $action == quota || $action == quota-clear || $action == access ]] || { echo 'invalid action' >&2; exit 64; }
 
 if getent group www-data >/dev/null; then
   web_group=www-data
@@ -34,6 +34,91 @@ if ! id "$site_user" >/dev/null 2>&1; then
 fi
 install -d -m 2750 -o "$site_user" -g "$web_group" "$site_root" "$public_root"
 install -d -m 0750 -o "$site_user" -g "$web_group" "$php_state" "$php_state/sessions" "$php_state/tmp"
+
+if [[ $action == access ]]; then
+  (( $# == 4 )) || { echo 'usage: stepanel-sitectl access SITE SFTP SHELL' >&2; exit 64; }
+  sftp=$3; shell=$4
+  [[ $sftp =~ ^[01]$ && $shell =~ ^[01]$ ]] || { echo 'invalid SSH access policy' >&2; exit 1; }
+  ssh_key_root=/etc/stepanel/ssh/authorized_keys
+  ssh_config_root=/etc/ssh/sshd_config.d
+  authorized_keys="$ssh_key_root/$site_user"
+  ssh_config="$ssh_config_root/stepanel-$site_user.conf"
+  install -d -m 0700 -o root -g root "$ssh_key_root"
+  install -d -m 0755 -o root -g root "$ssh_config_root"
+  staged=$(mktemp "$ssh_key_root/.authorized_keys.XXXXXX")
+  cleanup_access() { rm -f "$staged"; }
+  trap cleanup_access EXIT
+  cat > "$staged"
+  if [[ $sftp == 1 || $shell == 1 ]]; then
+    while IFS= read -r line || [[ -n $line ]]; do
+      [[ -n $line && ${#line} -le 8192 && $line != *$'\r'* ]] || { echo 'invalid SSH key line' >&2; exit 1; }
+      [[ $line =~ ^(ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com|ssh-rsa|rsa-sha2-256|rsa-sha2-512)[[:space:]]+[A-Za-z0-9+/]+={0,3}([[:space:]].*)?$ ]] || { echo 'invalid SSH public key input' >&2; exit 1; }
+    done < "$staged"
+    if ! ssh-keygen -lf "$staged" >/dev/null 2>&1; then
+      echo 'SSH public key input failed host validation' >&2
+      exit 1
+    fi
+  else
+    : > "$staged"
+  fi
+  if [[ $sftp == 1 && $shell == 0 && -s $staged ]]; then
+    forced=$(mktemp "$site_root/.ssh/.forced_keys.XXXXXX")
+    while IFS= read -r line; do printf 'restrict,command="internal-sftp" %s\n' "$line"; done < "$staged" > "$forced"
+    chown root:root "$forced"; chmod 0644 "$forced"; mv -f "$forced" "$staged"
+  fi
+  chown root:root "$staged"
+  chmod 0644 "$staged"
+  key_backup=$(mktemp)
+  config_backup=$(mktemp)
+  key_existed=0; config_existed=0
+  old_shell=$(getent passwd "$site_user" | cut -d: -f7)
+  if [[ -f $authorized_keys ]]; then cp -p "$authorized_keys" "$key_backup"; key_existed=1; fi
+  if [[ -f $ssh_config ]]; then cp -p "$ssh_config" "$config_backup"; config_existed=1; fi
+  restore_access() {
+    if (( key_existed )); then mv -f "$key_backup" "$authorized_keys"; else rm -f "$authorized_keys"; fi
+    if (( config_existed )); then mv -f "$config_backup" "$ssh_config"; else rm -f "$ssh_config"; fi
+    usermod --shell "$old_shell" "$site_user" 2>/dev/null || true
+    systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+    rm -f "$key_backup" "$config_backup"
+  }
+  if [[ $shell == 1 ]]; then
+    usermod --shell /bin/bash "$site_user" || { restore_access; echo 'could not enable the site shell' >&2; exit 1; }
+  else
+    usermod --shell /usr/sbin/nologin "$site_user" || { restore_access; echo 'could not disable the site shell' >&2; exit 1; }
+  fi
+  if [[ $sftp == 1 || $shell == 1 ]]; then
+    command -v sshd >/dev/null 2>&1 || { restore_access; echo 'sshd is required for SSH access management' >&2; exit 1; }
+    mv -f "$staged" "$authorized_keys"
+    cat > "$ssh_config" <<EOF
+# Managed by StePanel. Do not edit.
+Match User $site_user
+    AuthorizedKeysFile $authorized_keys
+EOF
+    chmod 0644 "$authorized_keys" "$ssh_config"
+    chown root:root "$authorized_keys" "$ssh_config"
+    if ! sshd -t; then
+      restore_access
+      echo 'sshd rejected the StePanel access policy' >&2
+      exit 1
+    fi
+    if ! (systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null); then
+      restore_access
+      echo 'could not reload sshd after applying access policy' >&2
+      exit 1
+    fi
+  else
+    rm -f "$authorized_keys" "$ssh_config" "$staged"
+    if (( key_existed || config_existed )); then
+      if ! (command -v sshd >/dev/null 2>&1 && sshd -t && (systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null)); then
+        restore_access
+        echo 'could not reload sshd after revoking access policy' >&2
+        exit 1
+      fi
+    fi
+  fi
+  rm -f "$key_backup" "$config_backup"
+  exit 0
+fi
 
 profile="$php_state/runtime.env"
 php_version=""

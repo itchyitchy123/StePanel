@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,8 @@ type SiteAccess struct {
 	SFTPEnabled  bool     `json:"sftp_enabled"`
 	ShellEnabled bool     `json:"shell_enabled"`
 	Keys         []SSHKey `json:"keys"`
+	State        string   `json:"state,omitempty"`
+	LastError    string   `json:"last_error,omitempty"`
 }
 type SiteAccessStore struct {
 	mu     sync.RWMutex
@@ -41,6 +44,15 @@ func OpenSiteAccessStore(path string) (*SiteAccessStore, error) {
 	}
 	if err = json.Unmarshal(data, &s.values); err != nil {
 		return nil, fmt.Errorf("decode SSH access state: %w", err)
+	}
+	for site, access := range s.values {
+		if access.Site == "" {
+			access.Site = site
+		}
+		if access.State == "" {
+			access.State = "applied"
+		}
+		s.values[site] = access
 	}
 	return s, nil
 }
@@ -63,15 +75,82 @@ func validateSSHLabel(label string) bool {
 	return true
 }
 func parseSSHKey(raw string) (SSHKey, error) {
-	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(raw)))
+	key, _, options, _, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(raw)))
 	if err != nil {
 		return SSHKey{}, errors.New("invalid SSH public key")
+	}
+	if len(options) != 0 {
+		return SSHKey{}, errors.New("SSH key options are managed by StePanel and are not permitted")
 	}
 	typ := key.Type()
 	if typ == "ssh-dss" {
 		return SSHKey{}, errors.New("DSA SSH keys are not permitted")
 	}
 	return SSHKey{PublicKey: strings.TrimSpace(raw), Fingerprint: ssh.FingerprintSHA256(key)}, nil
+}
+
+func (a *App) applySiteAccess(ctx context.Context, access SiteAccess) error {
+	if a.Config.SiteCtl == "" {
+		return errors.New("site access helper is not configured")
+	}
+	keys := make([]string, 0, len(access.Keys))
+	if access.SFTPEnabled || access.ShellEnabled {
+		for _, key := range access.Keys {
+			keys = append(keys, key.PublicKey)
+		}
+	}
+	payload := strings.Join(keys, "\n")
+	if payload != "" {
+		payload += "\n"
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, helperCommandTimeout)
+	defer cancel()
+	_, err := runBoundedCommandInput(commandCtx, helperCommandContext(commandCtx, a.Config, a.Config.SiteCtl, "access", access.Site, stringBool(access.SFTPEnabled), stringBool(access.ShellEnabled)), strings.NewReader(payload))
+	return err
+}
+
+func (a *App) saveSiteAccess(access SiteAccess) error {
+	a.Access.mu.Lock()
+	defer a.Access.mu.Unlock()
+	a.Access.values[access.Site] = access
+	return a.Access.persistLocked()
+}
+
+func (a *App) applyAndSaveSiteAccess(ctx context.Context, access SiteAccess) (SiteAccess, error) {
+	if err := a.applySiteAccess(ctx, access); err != nil {
+		access.State = "pending"
+		access.LastError = err.Error()
+		if saveErr := a.saveSiteAccess(access); saveErr != nil {
+			return access, fmt.Errorf("apply site access: %w; save pending state: %v", err, saveErr)
+		}
+		return access, err
+	}
+	access.State = "applied"
+	access.LastError = ""
+	return access, a.saveSiteAccess(access)
+}
+
+func (a *App) reconcileSiteAccess(ctx context.Context) (reconciled []string, failed map[string]string) {
+	failed = map[string]string{}
+	if a.Access == nil {
+		return nil, failed
+	}
+	a.Access.mu.RLock()
+	pending := make([]SiteAccess, 0)
+	for _, access := range a.Access.values {
+		if access.State == "pending" {
+			pending = append(pending, access)
+		}
+	}
+	a.Access.mu.RUnlock()
+	for _, access := range pending {
+		if _, err := a.applyAndSaveSiteAccess(ctx, access); err != nil {
+			failed[access.Site] = err.Error()
+			continue
+		}
+		reconciled = append(reconciled, access.Site)
+	}
+	return reconciled, failed
 }
 
 func (a *App) siteAccess(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +170,7 @@ func (a *App) siteAccess(w http.ResponseWriter, r *http.Request) {
 	a.Access.mu.RLock()
 	access := a.Access.values[site]
 	if access.Site == "" {
-		access = SiteAccess{Site: site, SFTPEnabled: true, Keys: []SSHKey{}}
+		access = SiteAccess{Site: site, SFTPEnabled: true, Keys: []SSHKey{}, State: "unconfigured"}
 	}
 	a.Access.mu.RUnlock()
 	switch r.Method {
@@ -117,12 +196,18 @@ func (a *App) siteAccess(w http.ResponseWriter, r *http.Request) {
 			access.ShellEnabled = *input.ShellEnabled
 		}
 		access.Site = site
+		access.State, access.LastError = "pending", ""
 		a.Access.mu.Lock()
 		a.Access.values[site] = access
 		err := a.Access.persistLocked()
 		a.Access.mu.Unlock()
 		if err != nil {
 			http.Error(w, "SSH access state could not be saved", 503)
+			return
+		}
+		access, err = a.applyAndSaveSiteAccess(r.Context(), access)
+		if err != nil {
+			http.Error(w, "SSH access is pending reconciliation", 502)
 			return
 		}
 		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.ssh-access.updated", site, "access policy changed")
@@ -153,6 +238,7 @@ func (a *App) siteAccess(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		access.Site = site
+		access.State, access.LastError = "pending", ""
 		access.Keys = append(access.Keys, key)
 		a.Access.mu.Lock()
 		a.Access.values[site] = access
@@ -160,6 +246,11 @@ func (a *App) siteAccess(w http.ResponseWriter, r *http.Request) {
 		a.Access.mu.Unlock()
 		if err != nil {
 			http.Error(w, "SSH key could not be saved", 503)
+			return
+		}
+		access, err = a.applyAndSaveSiteAccess(r.Context(), access)
+		if err != nil {
+			http.Error(w, "SSH key is pending reconciliation", 502)
 			return
 		}
 		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.ssh-key.added", site, key.Fingerprint)
@@ -200,6 +291,7 @@ func (a *App) siteAccessKey(w http.ResponseWriter, r *http.Request) {
 	}
 	access.Keys = keys
 	access.Site = site
+	access.State, access.LastError = "pending", ""
 	if !found {
 		a.Access.mu.Unlock()
 		http.NotFound(w, r)
@@ -210,6 +302,11 @@ func (a *App) siteAccessKey(w http.ResponseWriter, r *http.Request) {
 	a.Access.mu.Unlock()
 	if err != nil {
 		http.Error(w, "SSH key could not be removed", 503)
+		return
+	}
+	access, err = a.applyAndSaveSiteAccess(r.Context(), access)
+	if err != nil {
+		http.Error(w, "SSH key revocation is pending reconciliation", 502)
 		return
 	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.ssh-key.removed", site, label)
