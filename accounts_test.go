@@ -31,6 +31,9 @@ func TestAccountStorePersistsOnlyValidatedAssignments(t *testing.T) {
 	if _, err := store.Create("over-limit", "a sufficiently long customer password", testTOTPSecret, "starter", []string{"one", "two"}); err == nil {
 		t.Fatal("starter plan accepted too many sites")
 	}
+	if _, err := store.Create("other", "another sufficiently long customer password", testTOTPSecret, "starter", []string{"site-one"}); err == nil || !strings.Contains(err.Error(), "already assigned") {
+		t.Fatalf("duplicate site assignment error = %v", err)
+	}
 	reopened, err := OpenAccountStore(path)
 	if err != nil || !reopened.OwnsSite("customer", "site-one") {
 		t.Fatal("persisted account state did not reopen cleanly")

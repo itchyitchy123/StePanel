@@ -26,6 +26,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Fixed route-lock identity for `.htaccess` conversion so it coordinates with
   the actual PHP vhost filename used by route deployment.
 
+- Prevented multiple customer accounts from claiming the same site and made
+  account provisioning reject assignments without an existing site root.
+
 - Extended per-site mutation serialization to staging creation and local/off-site
   restore-to-staging, preventing concurrent requests from racing over site,
   environment, database, route, or release state.

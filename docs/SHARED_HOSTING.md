@@ -54,6 +54,9 @@ The operation is audited as login removal and retains assigned workloads for a
 separate, reviewed lifecycle workflow.
 The endpoint is intentionally documented as **login removal**; no current API
 claims to terminate the associated hosting workloads.
+Account creation also requires each assigned site document root to already
+exist, and a site can be assigned to only one customer account. This prevents
+two customer identities from receiving authorization to the same site.
 Account data is stored in `STEPANEL_ACCOUNT_STATE`, mode `0600`, and must be
 included in host backups. With `STEPANEL_ACCOUNT_KEY`, customer TOTP secrets
 are AES-GCM encrypted at rest and never serialized as plaintext. Existing

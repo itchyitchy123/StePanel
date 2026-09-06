@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -246,6 +247,17 @@ func (s *AccountStore) Create(username, password, totpSecret, plan string, sites
 	defer s.mu.Unlock()
 	if _, exists := s.accounts[username]; exists {
 		return HostingAccount{}, errors.New("account already exists")
+	}
+	owned := make(map[string]string)
+	for existingUsername, existing := range s.accounts {
+		for _, site := range existing.Sites {
+			owned[site] = existingUsername
+		}
+	}
+	for _, site := range account.Sites {
+		if existingUsername, exists := owned[site]; exists {
+			return HostingAccount{}, fmt.Errorf("site %q is already assigned to account %q", site, existingUsername)
+		}
 	}
 	s.accounts[username] = account
 	if err := s.persistLocked(); err != nil {
@@ -649,6 +661,17 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 		if err := decodeJSON(w, r, 8192, &input); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
+		}
+		for _, site := range input.Sites {
+			root := filepath.Join(a.Config.WebRoot, "sites", safeUser(site), "public")
+			if safeUser(site) == "" || ensureInside(a.Config.WebRoot, root) != nil {
+				http.Error(w, "invalid assigned site", http.StatusUnprocessableEntity)
+				return
+			}
+			if info, statErr := os.Stat(root); statErr != nil || !info.IsDir() {
+				http.Error(w, "assigned site document root does not exist", http.StatusUnprocessableEntity)
+				return
+			}
 		}
 		account, err := a.Accounts.Create(input.Username, input.Password, input.TOTPSecret, input.Plan, input.Sites)
 		if err != nil {
