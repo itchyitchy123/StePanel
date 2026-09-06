@@ -1,5 +1,9 @@
 # StePanel secret lifecycle
 
+Use `stepanel dr-check` to generate a secret-safe inventory of control-plane
+recovery obligations. It reports presence and permissions without printing
+secret values.
+
 StePanel stores several credentials outside the application binary. Treat the
 files and keys below as control-plane secrets: keep them root/service-account
 readable, include them in encrypted host backups, and never publish them with

@@ -3,6 +3,28 @@
 Documentation version: `main / unreleased`; use the matching release tag when
 operating a version older than the current branch.
 
+## Control-plane disaster recovery
+
+Run `stepanel dr-check` during change review and after adding an integration:
+
+```sh
+sudo -u stepanel /opt/stepanel/stepanel dr-check > /root/stepanel-dr-manifest.json
+```
+
+The output is safe to retain as an inventory: it contains paths and statuses,
+not passwords, TOTP seeds, encryption keys, deploy-key contents, or rclone
+credentials. Preserve `/etc/ste-panel.env`, audit log/state/key, job/session,
+account/environment/Redis state, site data, verified backups, and relevant
+encryption/signing keys through the host's encrypted DR system. Git deploy keys
+may be preserved after access review or deliberately regenerated and
+reinstalled at providers. Privileged helpers and systemd units should be
+recreated from the verified release package and installer.
+
+`dr-check` is an inventory and readiness check, not a backup or restore
+operation. Automated `backup-control-plane`, `restore-control-plane --dry-run`,
+and external audit anchoring are planned; until then, perform a documented
+disposable-host recovery drill using the listed materials.
+
 ## Health check
 
 ```sh

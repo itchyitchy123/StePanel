@@ -142,6 +142,12 @@ chain evidence. Building from source is a developer/contributor workflow:
 see [Local development](#local-development) and keep it separate from the
 normal operator installation path.
 
+Run `stepanel dr-check` on a host to emit a secret-safe control-plane disaster
+recovery manifest. It inventories state files, keys, Git trust material,
+external rclone dependencies, site data, and regeneration-only helpers without
+copying secret values. It does not yet create or restore a control-plane
+archive; those operations remain planned.
+
 ## cpmove migration
 
 1. Snapshot the destination server.

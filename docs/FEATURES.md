@@ -43,6 +43,8 @@ Latest stable release: `v0.6.0`
   provider adapters, and DNSSEC are not yet production-complete.
 - Verified, bounded audit-event queries at `/api/audit/events` for deployment and operational history.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
+- Secret-safe `stepanel dr-check` control-plane DR inventory; automated
+  control-plane archive/restore and remote audit anchoring remain planned.
 - Transactional Caddy and Apache PHP vhosts and reverse proxies with
   validation, rollback, and duplicate-domain checks.
 - Fail-closed Apache `.htaccess` preview/import for Caddy, covering common

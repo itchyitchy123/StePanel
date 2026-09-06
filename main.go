@@ -78,6 +78,10 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stdout, "audit chain verified: %s\n", os.Args[2])
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "dr-check" {
+		if err := runDRCheck(LoadConfig()); err != nil { log.Fatal(err) }
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "hash-password" {
 		password, err := io.ReadAll(io.LimitReader(os.Stdin, 1025))
 		if err != nil || len(password) == 0 || len(password) > 1024 || strings.ContainsAny(string(password), "\r\n") {

@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Added `stepanel dr-check`, a secret-safe control-plane disaster-recovery
+  inventory covering state files, keys, trust material, site data, external
+  dependencies, and regeneration-only assets.
+
 - Added nightly/manual disposable systemd installation smoke coverage across
   AlmaLinux 9, Rocky Linux 9, Ubuntu 24.04, and Debian 12, including real
   package installation, service restart, synthetic site creation, and
