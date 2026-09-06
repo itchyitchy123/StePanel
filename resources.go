@@ -364,6 +364,13 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 	a.Resources.mu.Lock()
 	a.Resources.values[site] = p
 	e := a.Resources.persistLocked()
+	if e != nil {
+		if hadPrevious {
+			a.Resources.values[site] = previous
+		} else {
+			delete(a.Resources.values, site)
+		}
+	}
 	a.Resources.mu.Unlock()
 	if e != nil {
 		http.Error(w, "could not persist desired resource profile", 503)
@@ -384,6 +391,19 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 	a.Resources.mu.Lock()
 	a.Resources.values[site] = p
 	e = a.Resources.persistLocked()
+	if e != nil {
+		// The pending desired profile was already durable before host
+		// mutation. Preserve that state in memory so reconciliation can retry
+		// the observation update after a transient persistence failure.
+		p.State = "pending"
+		p.FilesystemQuotaState = func() string {
+			if p.hasFilesystemQuota() {
+				return "apply-pending"
+			}
+			return "none"
+		}()
+		a.Resources.values[site] = p
+	}
 	a.Resources.mu.Unlock()
 	if e != nil {
 		http.Error(w, "resource profile applied but state update failed", 503)
@@ -454,6 +474,15 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 		a.Resources.mu.Lock()
 		a.Resources.values[p.Site] = p
 		err = a.Resources.persistLocked()
+		if err != nil {
+			p.State = "pending"
+			if p.hasFilesystemQuota() {
+				p.FilesystemQuotaState = "apply-pending"
+			} else {
+				p.FilesystemQuotaState = "none"
+			}
+			a.Resources.values[p.Site] = p
+		}
 		a.Resources.mu.Unlock()
 		if err != nil {
 			failed[p.Site] = "state persistence failed"
