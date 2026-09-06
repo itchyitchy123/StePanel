@@ -1,6 +1,7 @@
 package main
 
 import (
+	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,13 +10,16 @@ import (
 )
 
 type StagingRequest struct {
-	Source      string `json:"source"`
-	Site        string `json:"site"`
-	Domain      string `json:"domain"`
-	Files       bool   `json:"files"`
-	Environment bool   `json:"environment"`
-	Database    bool   `json:"database"`
-	NoIndex     *bool  `json:"no_index,omitempty"`
+	Source       string `json:"source"`
+	Site         string `json:"site"`
+	Domain       string `json:"domain"`
+	Files        bool   `json:"files"`
+	Environment  bool   `json:"environment"`
+	Database     bool   `json:"database"`
+	NoIndex      *bool  `json:"no_index,omitempty"`
+	BasicAuth    *bool  `json:"basic_auth,omitempty"`
+	AuthUser     string `json:"auth_user,omitempty"`
+	AuthPassword string `json:"auth_password,omitempty"`
 }
 type StagingResult struct {
 	Source            string    `json:"source"`
@@ -67,6 +71,23 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	noIndex := input.NoIndex == nil || *input.NoIndex
+	basicAuth := input.BasicAuth != nil && *input.BasicAuth
+	authHash := ""
+	if basicAuth {
+		input.AuthUser = strings.TrimSpace(input.AuthUser)
+		if len(input.AuthUser) < 1 || len(input.AuthUser) > 64 || strings.ContainsAny(input.AuthUser, "\x00\r\n:") || len(input.AuthPassword) < 12 || len(input.AuthPassword) > 256 || strings.ContainsAny(input.AuthPassword, "\x00\r\n") {
+			http.Error(w, "valid Basic Auth username and password are required", 422)
+			return
+		}
+		var err error
+		hash, err := bcrypt.GenerateFromPassword([]byte(input.AuthPassword), bcrypt.DefaultCost)
+		if err != nil {
+			http.Error(w, "could not hash staging credentials", 500)
+			return
+		}
+		authHash = string(hash)
+		input.AuthPassword = ""
+	}
 	if noIndex {
 		marker := filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex")
 		if err := writeAtomic(marker, []byte("managed staging noindex\n"), 0600); err != nil {
@@ -114,7 +135,15 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not seal staging site", 502)
 		return
 	}
-	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain); err != nil {
+	vhostAction := "apply"
+	if basicAuth {
+		vhostAction = "apply-auth"
+	}
+	args := []string{vhostAction, input.Site, input.Domain}
+	if basicAuth {
+		args = append(args, input.AuthUser, authHash)
+	}
+	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, args...); err != nil {
 		http.Error(w, "could not activate staging route", 502)
 		return
 	}

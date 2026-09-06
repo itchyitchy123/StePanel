@@ -43,8 +43,12 @@ domain_in_use() {
 }
 
 case "$action" in
-  apply)
-    (( $# == 3 )) || { echo 'usage: stepanel-vhostctl apply SITE DOMAIN' >&2; exit 64; }
+  apply|apply-auth)
+    (( ( $action == apply-auth && $# == 5 ) || ( $action == apply && $# == 3 ) )) || { echo 'invalid vhost arguments' >&2; exit 64; }
+    auth_user=${4:-}; auth_hash=${5:-}
+    if [[ $action == apply-auth ]]; then [[ $auth_user =~ ^[A-Za-z0-9._-]{1,64}$ && $auth_hash =~ '^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$' ]] || { echo 'invalid Basic Auth credentials' >&2; exit 1; }; fi
+    auth_file="$config_root/.stepanel-auth-$site"
+    if [[ $action == apply-auth ]]; then printf '%s:%s\n' "$auth_user" "$auth_hash" > "$auth_file"; chmod 0600 "$auth_file"; chown root:root "$auth_file"; fi
     site=$2; domain=${3,,}
     [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
     [[ $domain =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo 'invalid domain' >&2; exit 1; }
@@ -102,6 +106,7 @@ case "$action" in
     Header always set X-Content-Type-Options "nosniff"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
 $(if [[ -f "/var/www/sites/$site/.stepanel-staging-noindex" && ! -L "/var/www/sites/$site/.stepanel-staging-noindex" ]]; then printf '    Header always set X-Robots-Tag "noindex, nofollow"\n'; fi)
+$(if [[ $action == apply-auth ]]; then printf '    <Location />\n        AuthType Basic\n        AuthName "StePanel staging"\n        AuthBasicProvider file\n        AuthUserFile %s\n        Require valid-user\n    </Location>\n' "$auth_file"; fi)
     ErrorLog $log_root/stepanel-$site-error.log
     CustomLog $log_root/stepanel-$site-access.log combined
 </VirtualHost>

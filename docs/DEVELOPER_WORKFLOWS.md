@@ -104,8 +104,11 @@ deliberately not a writable server crontab.
 safe regular-file copies. It may copy non-secret environment variables, but
 never production secrets. Staging applies `X-Robots-Tag: noindex, nofollow` by
 default through the managed webserver route; send `"no_index":false` only for
-an explicitly reviewed exception. Database cloning, Basic Auth, and
-outbound-email blocking remain planned integrations.
+an explicitly reviewed exception. Set `basic_auth:true`, `auth_user`, and an
+initial `auth_password` to protect the route with Basic Auth; only a bcrypt
+hash is persisted by the Apache/Caddy helper and the password is discarded
+after the request. Database cloning and outbound-email blocking remain
+planned integrations.
 
 `POST /api/backups/restore-to-staging` restores a fully verified backup's
 regular site files into a new isolated site and validated route. It deliberately
