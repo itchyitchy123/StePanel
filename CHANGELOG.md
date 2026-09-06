@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+The unreleased work is being prepared as the `v0.7.0` stabilization milestone:
+isolation, recovery, and operational consistency.
+
 ### Changed
 
 - Shortened the README landing page around the project identity, dashboard
