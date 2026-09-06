@@ -54,7 +54,7 @@ The container image packages only the StePanel control plane. Caddy/Apache/OpenL
 
 ## Go package boundaries
 
-The current root package is deliberately kept buildable as one `main` package:
+The current root package is deliberately kept buildable as one package:
 the HTTP handlers, shared configuration, test fixtures, and embedded dashboard
 are still tightly coupled. A mechanical directory move would obscure those
 dependencies without improving the runtime boundary.
@@ -74,6 +74,13 @@ these packages. Each extraction should preserve the existing tests and add a
 package-level contract test before the next boundary is moved. This makes
 package decomposition an incremental reliability improvement rather than a
 large rewrite.
+
+This is an active engineering boundary, not a claim that the extraction is
+complete. New code should avoid adding unrelated state or platform commands to
+`main.go`; feature work should first introduce a narrow interface or domain
+file, then move that seam into `internal/` once its dependencies are stable.
+The first package extraction is intentionally deferred until the interface can
+be tested independently of the HTTP server and embedded dashboard.
 
 ```text
 Browser

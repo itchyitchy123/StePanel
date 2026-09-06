@@ -1,78 +1,37 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"net/http"
-	"os"
-	"sort"
 	"strings"
-	"sync"
 	"time"
+
+	deploymentstate "github.com/itchyitchy123/StePanel/internal/deployment"
 )
 
 // Deployment is the durable audit-facing release object shared by Git
 // activation and sandboxed builds. It intentionally records independently
 // completed stages; later orchestration can compose those stages without
 // erasing their actor, commit, artifact, or rollback provenance.
-type Deployment struct {
-	ID         string    `json:"id"`
-	Site       string    `json:"site"`
-	Repository string    `json:"repository,omitempty"`
-	Ref        string    `json:"ref,omitempty"`
-	Commit     string    `json:"commit,omitempty"`
-	Stage      string    `json:"stage"`
-	State      string    `json:"state"`
-	Artifact   string    `json:"artifact,omitempty"`
-	Previous   string    `json:"previous_release,omitempty"`
-	Detail     string    `json:"detail,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-}
+type Deployment = deploymentstate.Record
 
 type DeploymentStore struct {
-	mu     sync.RWMutex
-	path   string
-	values []Deployment
+	inner *deploymentstate.Store
 }
 
 func OpenDeploymentStore(path string) (*DeploymentStore, error) {
-	s := &DeploymentStore{path: path, values: []Deployment{}}
-	d, e := os.ReadFile(path)
-	if errors.Is(e, os.ErrNotExist) {
-		return s, nil
+	inner, err := deploymentstate.Open(path)
+	if err != nil {
+		return nil, err
 	}
-	if e != nil {
-		return nil, e
-	}
-	if e = json.Unmarshal(d, &s.values); e != nil {
-		return nil, e
-	}
-	return s, nil
+	return &DeploymentStore{inner: inner}, nil
 }
+
 func (s *DeploymentStore) add(item Deployment) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.values = append([]Deployment{item}, s.values...)
-	if len(s.values) > 1000 {
-		s.values = s.values[:1000]
-	}
-	d, e := json.MarshalIndent(s.values, "", "  ")
-	if e != nil {
-		return e
-	}
-	return writeAtomic(s.path, append(d, '\n'), 0600)
+	return s.inner.Add(item)
 }
+
 func (s *DeploymentStore) list(site string) []Deployment {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := []Deployment{}
-	for _, v := range s.values {
-		if site == "" || v.Site == site {
-			out = append(out, v)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-	return out
+	return s.inner.List(site)
 }
 func (a *App) recordDeployment(site, stage, state, detail string, result gitDeployResult, artifact string) {
 	if a.Deployments == nil {

@@ -1,7 +1,7 @@
 # Feature catalog
 
-StePanel is a small control plane for operators moving workloads from cPanel
-to a LAMP server. This page describes shipped behavior separately from the
+StePanel is a small control plane for operators moving web and application
+workloads from cPanel to Linux hosting. This page describes shipped behavior separately from the
 longer-term hosting-panel roadmap.
 
 This file is the canonical feature-status source for the `main` branch.
