@@ -102,6 +102,10 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "backup verification failed", 422)
 		return
 	}
+	if !a.canAccessSite(r, manifest.Site) {
+		http.Error(w, "backup source site is not assigned to this account", http.StatusForbidden)
+		return
+	}
 	hasDatabase := input.Database != "" || input.TargetDatabase != "" || input.TargetUser != "" || input.TargetPassword != ""
 	if hasDatabase {
 		input.Database = strings.ToLower(strings.TrimSpace(input.Database))
