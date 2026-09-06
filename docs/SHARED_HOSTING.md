@@ -193,8 +193,8 @@ Do not market this beta as unrestricted shared hosting. It does not yet provide
 mailbox/FTP lifecycle, browser file
 management, customer database credentials, customer self-service scheduled
 tasks, DNS/registrar lifecycle, enforced disk/inode/bandwidth/I/O quotas,
-billing, customer-initiated restores, live database cloning/promotion, support
-workflows, reseller roles, or a multi-host control plane. These gaps require
+billing, customer-initiated restores, transactional database promotion,
+support workflows, reseller roles, or a multi-host control plane. These gaps require
 host-level enforcement and durable tenancy-aware state, not merely dashboard
 forms. Site-scoped scheduled tasks, deploy keys, resource profiles,
 Security Center, and restore-to-staging are documented in

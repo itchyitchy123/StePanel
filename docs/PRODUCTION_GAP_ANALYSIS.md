@@ -45,8 +45,8 @@ platform.
   restore verified site files into an isolated, protected, no-index staging
   route, or queue administrator-only files-only/database-only restores with
   safety verification. Verified backup-dump restore into a newly provisioned
-  staging database is available; live database cloning, promotion, and
-  outbound-email blocking remain unavailable.
+  staging database is available; transactional/live snapshot cloning,
+  promotion, and outbound-email blocking remain unavailable.
 
 ## Required before exposing the panel to customers
 
