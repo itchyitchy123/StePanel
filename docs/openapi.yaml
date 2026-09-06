@@ -371,6 +371,10 @@ paths:
     post:
       summary: Reconcile pending/inactive desired resource profiles with systemd and PHP-FPM
       responses: {'200': {description: Reconciled and failed site lists}}
+  /api/reconcile/tasks:
+    post:
+      summary: Reconcile pending or deleted scheduled-task desired state with systemd
+      responses: {'200': {description: Reconciled and failed task lists}}
   /api/sites/usage/{site}:
     get:
       summary: Measure bounded regular-file usage for a site without following symlinks

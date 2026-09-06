@@ -209,6 +209,7 @@ checkbox and should be backed up first.
 | `GET` | `/api/deployments` | List durable build and release activation records; optional `site` filter |
 | `POST` | `/api/deployments/run` | Preview: checkout, optionally back up, sandbox-build, validate, and atomically activate a complete artifact |
 | `POST` | `/api/reconcile/resources` | Re-apply pending or inactive per-site resource profiles |
+| `POST` | `/api/reconcile/tasks` | Re-apply pending or remove deleted scheduled-task definitions |
 | `GET` | `/api/sites/usage/<site>` | Bounded regular-file, file-count, and directory-count usage for a site |
 | `GET` | `/api/security/center` | Administrator-only host posture, service, disk/inode, and backup summary |
 | `GET` | `/api/composer/<site>` | Detect Composer project files and show the latest operation |

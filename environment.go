@@ -33,6 +33,24 @@ func (a *App) applyEnvironment(ctx context.Context, site string, vars map[string
 	return err
 }
 
+func (a *App) reconcileEnvironments(ctx context.Context) (reconciled []string, failed map[string]string) {
+	failed = map[string]string{}
+	a.Environments.mu.RLock()
+	desired := make(map[string]map[string]environmentValue, len(a.Environments.values))
+	for site, vars := range a.Environments.values {
+		desired[site] = vars
+	}
+	a.Environments.mu.RUnlock()
+	for site, vars := range desired {
+		if err := a.applyEnvironment(ctx, site, vars); err != nil {
+			failed[site] = err.Error()
+			continue
+		}
+		reconciled = append(reconciled, site)
+	}
+	return reconciled, failed
+}
+
 type environmentValue struct {
 	Value  string `json:"value"`
 	Secret bool   `json:"secret"`
@@ -161,16 +179,24 @@ func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err := a.applyEnvironment(r.Context(), site, input); err != nil {
-			http.Error(w, "environment could not be applied to site services", 502)
-			return
-		}
 		a.Environments.mu.Lock()
+		previous, existed := a.Environments.values[site]
 		a.Environments.values[site] = input
 		err := a.Environments.persistLocked()
+		if err != nil {
+			if existed {
+				a.Environments.values[site] = previous
+			} else {
+				delete(a.Environments.values, site)
+			}
+		}
 		a.Environments.mu.Unlock()
 		if err != nil {
 			http.Error(w, "environment state could not be saved", 503)
+			return
+		}
+		if err := a.applyEnvironment(r.Context(), site, input); err != nil {
+			http.Error(w, "environment is pending host reconciliation", 502)
 			return
 		}
 		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.environment.updated", site, fmt.Sprintf("%d variables", len(input)))

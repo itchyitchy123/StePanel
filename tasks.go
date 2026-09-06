@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,9 @@ type ScheduledTask struct {
 	OnCalendar string `json:"on_calendar"`
 	TimeoutSec int    `json:"timeout_sec"`
 	Enabled    bool   `json:"enabled"`
+	State      string `json:"state,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
+	Deleted    bool   `json:"deleted,omitempty"`
 }
 
 type TaskStore struct {
@@ -40,6 +44,12 @@ func OpenTaskStore(path string) (*TaskStore, error) {
 	}
 	if err = json.Unmarshal(d, &s.values); err != nil {
 		return nil, err
+	}
+	for key, task := range s.values {
+		if task.State == "" {
+			task.State = "applied"
+			s.values[key] = task
+		}
 	}
 	return s, nil
 }
@@ -65,7 +75,7 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 		a.Tasks.mu.RLock()
 		result := []ScheduledTask{}
 		for _, task := range a.Tasks.values {
-			if task.Site == site {
+			if task.Site == site && !task.Deleted {
 				result = append(result, task)
 			}
 		}
@@ -83,16 +93,28 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", 403)
 			return
 		}
-		if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "task-delete", site, name); err != nil {
-			http.Error(w, "could not remove scheduled task", 502)
-			return
-		}
 		a.Tasks.mu.Lock()
-		delete(a.Tasks.values, site+"/"+name)
+		key := site + "/" + name
+		task := a.Tasks.values[key]
+		task.Site, task.Name, task.State, task.Deleted, task.LastError = site, name, "pending", true, ""
+		a.Tasks.values[key] = task
 		err := a.Tasks.persistLocked()
 		a.Tasks.mu.Unlock()
 		if err != nil {
 			http.Error(w, "could not persist task state", 503)
+			return
+		}
+		if err := a.applyTask(r.Context(), task); err != nil {
+			a.recordTaskError(key, err)
+			http.Error(w, "scheduled task removal is pending reconciliation", 502)
+			return
+		}
+		a.Tasks.mu.Lock()
+		delete(a.Tasks.values, key)
+		err = a.Tasks.persistLocked()
+		a.Tasks.mu.Unlock()
+		if err != nil {
+			http.Error(w, "scheduled task removed but state cleanup is pending", 503)
 			return
 		}
 		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "task.deleted", site, name)
@@ -109,26 +131,104 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Site, input.Name = site, name
+	input.State = "pending"
+	input.LastError = ""
+	input.Deleted = false
 	input.Command, input.OnCalendar = strings.TrimSpace(input.Command), strings.TrimSpace(input.OnCalendar)
 	if !validTaskRuntime(input.Runtime) || input.Command == "" || len(input.Command) > 1024 || strings.ContainsAny(input.Command, "\x00\r\n") || input.OnCalendar == "" || len(input.OnCalendar) > 128 || strings.ContainsAny(input.OnCalendar, "\x00\r\n") || input.TimeoutSec < 1 || input.TimeoutSec > 86400 {
 		http.Error(w, "invalid scheduled task definition", 422)
 		return
 	}
-	encodedCommand := base64.RawStdEncoding.EncodeToString([]byte(input.Command))
-	if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "task-apply", site, name, input.Runtime, input.OnCalendar, stringBool(input.Enabled), itoa(input.TimeoutSec), encodedCommand); err != nil {
-		http.Error(w, "scheduled task helper rejected the definition", 502)
-		return
-	}
 	a.Tasks.mu.Lock()
-	a.Tasks.values[site+"/"+name] = input
+	key := site + "/" + name
+	a.Tasks.values[key] = input
 	err := a.Tasks.persistLocked()
 	a.Tasks.mu.Unlock()
 	if err != nil {
 		http.Error(w, "could not persist task state", 503)
 		return
 	}
+	if err := a.applyTask(r.Context(), input); err != nil {
+		a.recordTaskError(key, err)
+		http.Error(w, "scheduled task is pending reconciliation", 502)
+		return
+	}
+	a.Tasks.mu.Lock()
+	input.State, input.LastError = "applied", ""
+	a.Tasks.values[key] = input
+	err = a.Tasks.persistLocked()
+	a.Tasks.mu.Unlock()
+	if err != nil {
+		a.recordTaskError(key, err)
+		http.Error(w, "scheduled task applied but state update is pending", 503)
+		return
+	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "task.updated", site, name)
 	writeJSON(w, 202, input)
+}
+
+func (a *App) applyTask(ctx context.Context, task ScheduledTask) error {
+	if task.Deleted {
+		return runHelperCommand(ctx, a.Config, a.Config.AppCtl, "task-delete", task.Site, task.Name)
+	}
+	encodedCommand := base64.RawStdEncoding.EncodeToString([]byte(task.Command))
+	return runHelperCommand(ctx, a.Config, a.Config.AppCtl, "task-apply", task.Site, task.Name, task.Runtime, task.OnCalendar, stringBool(task.Enabled), itoa(task.TimeoutSec), encodedCommand)
+}
+
+func (a *App) recordTaskError(key string, applyErr error) {
+	a.Tasks.mu.Lock()
+	defer a.Tasks.mu.Unlock()
+	if task, ok := a.Tasks.values[key]; ok {
+		task.State = "pending"
+		task.LastError = applyErr.Error()
+		a.Tasks.values[key] = task
+		_ = a.Tasks.persistLocked()
+	}
+}
+
+func (a *App) reconcileTasks(ctx context.Context) (reconciled []string, failed map[string]string) {
+	failed = map[string]string{}
+	a.Tasks.mu.RLock()
+	pending := make([]ScheduledTask, 0)
+	for _, task := range a.Tasks.values {
+		if task.State == "pending" || task.Deleted {
+			pending = append(pending, task)
+		}
+	}
+	a.Tasks.mu.RUnlock()
+	for _, task := range pending {
+		key := task.Site + "/" + task.Name
+		if err := a.applyTask(ctx, task); err != nil {
+			failed[key] = err.Error()
+			a.recordTaskError(key, err)
+			continue
+		}
+		a.Tasks.mu.Lock()
+		if task.Deleted {
+			delete(a.Tasks.values, key)
+		} else {
+			task.State, task.LastError = "applied", ""
+			a.Tasks.values[key] = task
+		}
+		err := a.Tasks.persistLocked()
+		a.Tasks.mu.Unlock()
+		if err != nil {
+			failed[key] = "state persistence failed"
+			continue
+		}
+		reconciled = append(reconciled, key)
+	}
+	return reconciled, failed
+}
+
+func (a *App) reconcileTasksHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) || !a.Auth.IsAdministrator(r) {
+		http.Error(w, "administrator CSRF request required", http.StatusForbidden)
+		return
+	}
+	reconciled, failed := a.reconcileTasks(r.Context())
+	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "tasks.reconciled", "tasks", strings.Join(reconciled, ","))
+	writeJSON(w, http.StatusOK, map[string]any{"reconciled": reconciled, "failed": failed})
 }
 
 func stringBool(v bool) string {

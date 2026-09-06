@@ -66,7 +66,8 @@ not implemented.
 - Per-site deploy-key generation/retirement where private key material remains
   root-owned and is never returned by the panel API.
 - Scheduled site tasks backed by hardened systemd services and timers instead
-  of a writable host crontab.
+  of a writable host crontab, with persisted pending state and administrator
+  reconciliation after interrupted host mutations.
 - Preview per-site resource profiles that enforce CPU, memory, and task limits
   for managed systemd application/worker processes plus PHP-FPM worker
   ceilings. Disk/inode, I/O, bandwidth, database, and Redis enforcement remain

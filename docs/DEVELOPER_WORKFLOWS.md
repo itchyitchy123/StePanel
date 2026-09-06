@@ -7,7 +7,9 @@ identity or inside the dedicated Podman runner.
 
 ## Environment and runtime
 
-Configure encrypted variables with `PUT /api/sites/environment/{site}`. Secret
+Configure encrypted variables with `PUT /api/sites/environment/{site}`. Desired
+values are persisted before host application; if helper application is
+interrupted, startup reconciliation retries the persisted values. Secret
 values are never returned after write. Updates render a root-owned systemd
 environment file and restart managed Node, Python, and worker services. Use
 `GET`/`PUT /api/sites/php/{site}` to inspect installed FPM versions and apply a
@@ -104,6 +106,9 @@ timeout, and inspect service output through the `cron` log source. Task scripts
 are root-owned under `/var/lib/stepanel/tasks/{site}` so the site identity can
 execute but cannot silently rewrite the audited command. This is deliberately
 not a writable server crontab.
+If a helper or persistence step is interrupted, the task remains `pending` and
+is retried during startup or through administrator-only
+`POST /api/reconcile/tasks`.
 
 ## Staging (Preview/Beta)
 

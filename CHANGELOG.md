@@ -14,6 +14,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   alphabet emitted by the API. Renamed the store operation to `RemoveLogin` to
   prevent callers from mistaking it for hosting teardown.
 
+- Persisted scheduled-task intent before helper mutation, added pending-state
+  startup/API reconciliation, and made task deletion resumable after crashes.
+
+- Persisted desired environment values before host application and added
+  startup reconciliation so interrupted environment updates can be reapplied.
+
 - Updated operator/developer product previews and synchronized feature-status
   documentation, including resource posture, Security Center, deployment
   stages, restore-to-staging, staging protection, and release retention.
