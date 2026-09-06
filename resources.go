@@ -442,6 +442,20 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "resource state unavailable", 503)
 		return
 	}
+	reconciled, failed := a.reconcileResourceProfiles(r.Context())
+	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "resources.reconciled", "resources", strings.Join(reconciled, ","))
+	writeJSON(w, 200, map[string]any{"reconciled": reconciled, "failed": failed})
+}
+
+// reconcileResourceProfiles reapplies every profile whose desired state is
+// pending or whose site slice is no longer active. It is used both by the
+// administrator endpoint and during startup so a reboot cannot silently
+// remove cgroup/PHP enforcement.
+func (a *App) reconcileResourceProfiles(ctx context.Context) (reconciled []string, failed map[string]string) {
+	failed = map[string]string{}
+	if a.Resources == nil {
+		return nil, failed
+	}
 	a.Resources.mu.RLock()
 	profiles := make([]ResourceProfile, 0, len(a.Resources.values))
 	for _, p := range a.Resources.values {
@@ -451,14 +465,13 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 
 	pending := make([]ResourceProfile, 0, len(profiles))
 	for _, p := range profiles {
-		if p.State != "applied" || a.resourceObserved(r.Context(), p.Site)["state"] != "active" {
+		if p.State != "applied" || a.resourceObserved(ctx, p.Site)["state"] != "active" {
 			pending = append(pending, p)
 		}
 	}
-	reconciled, failed := []string{}, map[string]string{}
 	for _, p := range pending {
 		releaseUnlock := a.siteOperations.acquire(p.Site)
-		err := a.applyResourceProfile(r.Context(), p, p.FilesystemQuotaState == "clear-pending")
+		err := a.applyResourceProfile(ctx, p, p.FilesystemQuotaState == "clear-pending")
 		if err != nil {
 			failed[p.Site] = "apply failed"
 			releaseUnlock()
@@ -492,6 +505,5 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 		reconciled = append(reconciled, p.Site)
 		releaseUnlock()
 	}
-	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "resources.reconciled", "resources", strings.Join(reconciled, ","))
-	writeJSON(w, 200, map[string]any{"reconciled": reconciled, "failed": failed})
+	return reconciled, failed
 }

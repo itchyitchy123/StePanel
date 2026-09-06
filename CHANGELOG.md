@@ -21,6 +21,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a second destructive restore. Resource and scheduled-task state now also
   roll back in memory when desired-state persistence fails before commit.
 
+- Reconciled resource cgroup and PHP-FPM profiles during startup, closing the
+  gap where a reboot could leave durable resource policy unapplied until a
+  manual administrator action.
+
 - Extended per-site mutation serialization to environment, resource-profile,
   scheduled-task, and worker updates/reconciliation, preventing concurrent
   helper calls from racing over systemd, PHP, and site-level state.

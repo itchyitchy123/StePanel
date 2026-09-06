@@ -257,6 +257,9 @@ func main() {
 	if reconciled, failed := app.reconcileTasks(reconcileCtx); len(failed) > 0 {
 		log.Printf("scheduled-task reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
 	}
+	if reconciled, failed := app.reconcileResourceProfiles(reconcileCtx); len(failed) > 0 {
+		log.Printf("resource-profile reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
+	}
 	if reconciled, failed := app.reconcileEnvironments(reconcileCtx); len(failed) > 0 {
 		log.Printf("environment reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
 	}

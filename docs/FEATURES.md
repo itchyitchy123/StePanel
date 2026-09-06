@@ -95,8 +95,10 @@ Latest stable release: `v0.6.0`
   for managed systemd application/worker processes plus PHP-FPM worker
   ceilings. Plan-assigned sites additionally inherit an aggregate account
   cgroup envelope. Optional disk/inode values are enforced with Linux user
-  quotas when the filesystem is preconfigured for quotas; bandwidth, database,
-  and Redis enforcement remain provider-specific planned work.
+  quotas when the filesystem is preconfigured for quotas. Profiles are
+  re-applied during startup and through the administrator reconciliation
+  endpoint; bandwidth, database, and Redis enforcement remain
+  provider-specific planned work.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
 - Independently verified site and registered-database backups.
