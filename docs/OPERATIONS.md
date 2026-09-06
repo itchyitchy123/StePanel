@@ -186,6 +186,16 @@ window. Use the authenticated site workspace and `/api/audit/events` to
 correlate file releases with process, proxy, and database changes. See
 [`GIT_DEPLOYMENTS.md`](GIT_DEPLOYMENTS.md).
 
+Git rollback releases are automatically retained per site. The count limit is
+controlled by `STEPANEL_GIT_RELEASE_RETENTION` (default 3), while
+`STEPANEL_GIT_RELEASE_MAX_AGE_HOURS` (default 168 hours) and
+`STEPANEL_GIT_RELEASE_MAX_BYTES` (default 5 GiB) bound stale storage. The
+current release and newest previous release are never removed. Cleanup is
+serialized with deployment and rollback, and runs at startup and periodically
+so abandoned releases are collected without waiting for another deployment.
+Prometheus exposes `stepanel_git_release_bytes` and
+`stepanel_git_releases_total`.
+
 Use the authenticated database endpoints during an incident:
 
 ```text

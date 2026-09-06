@@ -3,6 +3,15 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo 'must run as root' >&2; exit 1; }
 action=${1:-}; site=${2:-}
 [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
+allowed_hosts=${STEPANEL_GIT_ALLOWED_HOSTS:-github.com,gitlab.com,bitbucket.org}
+git_host_allowed() {
+  local candidate=$1 host
+  IFS=',' read -ra hosts <<< "$allowed_hosts"
+  for host in "${hosts[@]}"; do
+    [[ "${host,,}" == "${candidate,,}" ]] && return 0
+  done
+  return 1
+}
 key_root=/etc/stepanel/git-keys
 key="$key_root/$site"
 case "$action" in
@@ -23,9 +32,12 @@ case "$action" in
     rm -f -- "$key" "$key.pub"
     ;;
   clone)
-    (( $# == 5 )) || { echo 'usage: stepanel-gitctl clone SITE REPOSITORY REF DESTINATION' >&2; exit 64; }
-    repository=$3; ref=$4; destination=$5
-    [[ -f $key && ! -L $key && $repository =~ ^git@[A-Za-z0-9.-]+:[A-Za-z0-9._/-]+\.git$ && $ref =~ ^[A-Za-z0-9][A-Za-z0-9._/@+-]{0,127}$ && $destination == "/var/www/sites/$site/.stepanel-release-"* ]] || { echo 'invalid private clone request' >&2; exit 1; }
+    (( $# == 6 )) || { echo 'usage: stepanel-gitctl clone SITE REPOSITORY REF DESTINATION ALLOWED_HOSTS' >&2; exit 64; }
+    repository=$3; ref=$4; destination=$5; allowed_hosts=$6
+    [[ $allowed_hosts =~ ^[A-Za-z0-9.,-]+$ ]] || { echo 'invalid Git host allowlist' >&2; exit 1; }
+    [[ -f $key && ! -L $key && $repository =~ ^git@([A-Za-z0-9.-]+):[A-Za-z0-9._/-]+\.git$ && $ref =~ ^[A-Za-z0-9][A-Za-z0-9._/@+-]{0,127}$ && $destination == "/var/www/sites/$site/.stepanel-release-"* ]] || { echo 'invalid private clone request' >&2; exit 1; }
+    git_host=${BASH_REMATCH[1]}
+    git_host_allowed "$git_host" || { echo 'repository host is not in STEPANEL_GIT_ALLOWED_HOSTS' >&2; exit 1; }
     [[ ! -e $destination && -d "/var/www/sites/$site" ]] || { echo 'invalid clone destination' >&2; exit 1; }
     known_hosts=/etc/stepanel/git-known-hosts
     [[ -f $known_hosts && ! -L $known_hosts ]] || { echo 'trusted Git SSH host keys are not configured' >&2; exit 1; }

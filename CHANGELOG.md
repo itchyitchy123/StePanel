@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Automated Git rollback-release retention with count, age, and per-site byte
+  limits; the current release and immediate rollback target are preserved,
+  cleanup is deployment-serialized, and release storage metrics are exposed.
+- The privileged Git helper now independently enforces the configured exact
+  repository-host allowlist.
+
 - Added crash-consistency metadata and optional external HMAC-SHA256 signatures
   for backup manifests, plus an authenticated `POST /api/backups/verify`
   operation that verifies backups without restoring them. Restore-to-staging

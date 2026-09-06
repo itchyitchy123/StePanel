@@ -238,6 +238,9 @@ func main() {
 		log.Printf("environment reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
 	}
 	cancelReconcile()
+	if err := pruneAllGitReleases(cfg); err != nil {
+		log.Printf("Git release retention during startup: %v", err)
+	}
 	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
 		log.Printf("initialize audit chain: %v", err)
 	}
@@ -265,6 +268,11 @@ func main() {
 				if err := CleanupSiteTransactions(app.Config.RecoveryRoot, time.Duration(app.Config.StageRetentionHours)*time.Hour); err != nil {
 					log.Printf("site recovery cleanup: %v", err)
 				}
+				app.gitActivationMu.Lock()
+				if err := pruneAllGitReleases(app.Config); err != nil {
+					log.Printf("Git release retention: %v", err)
+				}
+				app.gitActivationMu.Unlock()
 			}
 		}
 	}()
@@ -458,6 +466,7 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	if a.Schedules != nil {
 		writeBackupScheduleMetrics(w, a.Schedules.list())
 	}
+	writeGitReleaseMetrics(w, a.Config.WebRoot)
 }
 func (a *App) services(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"services": ServiceSummaries(a.Config), "time": time.Now().UTC()})

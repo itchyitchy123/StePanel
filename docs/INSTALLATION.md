@@ -155,6 +155,8 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_GIT_WEBHOOK_SECRET` | Shared secret | Enables signed webhook deployment using `X-StePanel-Signature: sha256=<hex>` |
 | `STEPANEL_GITCTL` | Absolute helper path | Root-owned per-site deploy-key and private SSH clone helper; defaults to `/usr/local/sbin/stepanel-gitctl` |
 | `STEPANEL_GIT_RELEASE_RETENTION` | `1`–`100` | Number of preserved Git rollback releases per site; defaults to `3` |
+| `STEPANEL_GIT_RELEASE_MAX_AGE_HOURS` | Positive hours | Remove older non-current rollback releases; defaults to `168` (7 days) |
+| `STEPANEL_GIT_RELEASE_MAX_BYTES` | Positive bytes | Maximum retained previous-release storage per site; defaults to `5368709120` (5 GiB) |
 | `STEPANEL_RUNNERCTL` | Absolute helper path | Rootless Podman build-runner helper; defaults to `/usr/local/sbin/stepanel-runnerctl` |
 | `STEPANEL_INSTALL_SECURITY` | `0` or `1` | Install ClamAV and the PHP malware guard |
 | `STEPANEL_OFFSITE_TARGET` | rclone destination | Optional offsite copy target, for example `s3:bucket/stepanel` |

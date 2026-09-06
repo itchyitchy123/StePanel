@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -133,4 +136,33 @@ func writeBackupScheduleMetrics(w io.Writer, schedules []BackupSchedule) {
 	_, _ = fmt.Fprintln(w, "# HELP stepanel_backup_schedules_without_success Scheduled backups that have never completed successfully")
 	_, _ = fmt.Fprintln(w, "# TYPE stepanel_backup_schedules_without_success gauge")
 	_, _ = fmt.Fprintf(w, "stepanel_backup_schedules_without_success %d\n", withoutSuccess)
+}
+
+func writeGitReleaseMetrics(w io.Writer, webRoot string) {
+	var totalBytes int64
+	var total int
+	root := filepath.Join(webRoot, "sites")
+	entries, _ := os.ReadDir(root)
+	for _, site := range entries {
+		if !site.IsDir() {
+			continue
+		}
+		children, _ := os.ReadDir(filepath.Join(root, site.Name()))
+		for _, release := range children {
+			if !release.IsDir() || release.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(release.Name(), ".stepanel-previous-") {
+				continue
+			}
+			size, err := gitReleaseSize(filepath.Join(root, site.Name(), release.Name()))
+			if err == nil {
+				total++
+				totalBytes += size
+			}
+		}
+	}
+	_, _ = fmt.Fprintln(w, "# HELP stepanel_git_release_bytes Bytes retained by previous Git releases")
+	_, _ = fmt.Fprintln(w, "# TYPE stepanel_git_release_bytes gauge")
+	_, _ = fmt.Fprintf(w, "stepanel_git_release_bytes %d\n", totalBytes)
+	_, _ = fmt.Fprintln(w, "# HELP stepanel_git_releases_total Number of previous Git releases retained")
+	_, _ = fmt.Fprintln(w, "# TYPE stepanel_git_releases_total gauge")
+	_, _ = fmt.Fprintf(w, "stepanel_git_releases_total %d\n", total)
 }

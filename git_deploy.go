@@ -153,7 +153,7 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	var cloneOutput []byte
 	if repository.Private {
-		cloneOutput, err = runBoundedCommand(ctx, helperCommandContext(ctx, a.Config, a.Config.GitCtl, "clone", input.Site, repository.URL, input.Ref, release))
+		cloneOutput, err = runBoundedCommand(ctx, helperCommandContext(ctx, a.Config, a.Config.GitCtl, "clone", input.Site, repository.URL, input.Ref, release, a.Config.GitAllowedHosts))
 	} else {
 		clone := exec.CommandContext(ctx, gitPath, "-c", "credential.helper=", "clone", "--depth", "1", "--branch", input.Ref, "--single-branch", "--no-tags", repository.URL, release)
 		clone.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/false", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
@@ -210,7 +210,7 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := gitDeployResult{Site: input.Site, Repository: input.Repository, Ref: input.Ref, Commit: commit, Previous: previous}
-	if err := pruneGitReleases(siteRoot, a.Config.GitReleaseRetention); err != nil {
+	if err := pruneGitReleasesWithPolicy(siteRoot, a.Config.GitReleaseRetention, time.Duration(a.Config.GitReleaseMaxAgeHours)*time.Hour, a.Config.GitReleaseMaxBytes); err != nil {
 		log.Printf("Git release retention for %s: %v", input.Site, err)
 	}
 	a.recordDeployment(input.Site, "activation", "completed", "atomic Git release activated", result, "")
@@ -287,13 +287,17 @@ func (a *App) gitRollback(w http.ResponseWriter, r *http.Request) {
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.git-rolled-back", input.Site, filepath.Base(previous)); err != nil {
 		log.Printf("Git rollback completed but audit persistence is unavailable: %v", err)
 	}
-	if err := pruneGitReleases(siteRoot, a.Config.GitReleaseRetention); err != nil {
+	if err := pruneGitReleasesWithPolicy(siteRoot, a.Config.GitReleaseRetention, time.Duration(a.Config.GitReleaseMaxAgeHours)*time.Hour, a.Config.GitReleaseMaxBytes); err != nil {
 		log.Printf("Git release retention for %s: %v", input.Site, err)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"site": input.Site, "activated": filepath.Base(previous), "replaced_release": filepath.Base(replaced)})
 }
 
 func pruneGitReleases(siteRoot string, retain int) error {
+	return pruneGitReleasesWithPolicy(siteRoot, retain, 0, 0)
+}
+
+func pruneGitReleasesWithPolicy(siteRoot string, retain int, maxAge time.Duration, maxBytes int64) error {
 	if retain < 1 {
 		return errors.New("release retention must preserve at least one rollback release")
 	}
@@ -304,6 +308,7 @@ func pruneGitReleases(siteRoot string, retain int) error {
 	type candidate struct {
 		path     string
 		modified time.Time
+		bytes    int64
 	}
 	items := []candidate{}
 	for _, entry := range entries {
@@ -314,15 +319,88 @@ func pruneGitReleases(siteRoot string, retain int) error {
 		if err != nil {
 			return err
 		}
-		items = append(items, candidate{filepath.Join(siteRoot, entry.Name()), info.ModTime()})
+		size, err := gitReleaseSize(filepath.Join(siteRoot, entry.Name()))
+		if err != nil {
+			return err
+		}
+		items = append(items, candidate{filepath.Join(siteRoot, entry.Name()), info.ModTime(), size})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].modified.After(items[j].modified) })
-	for _, item := range items[retain:] {
+	if len(items) == 0 {
+		return nil
+	}
+	remove := make(map[string]bool)
+	for i, item := range items {
+		// The newest previous tree is the immediate rollback target and is
+		// never removed, even when it exceeds age or storage policy.
+		if i == 0 {
+			continue
+		}
+		if i >= retain || maxAge > 0 && time.Since(item.modified) > maxAge {
+			remove[item.path] = true
+		}
+	}
+	if maxBytes > 0 {
+		var total int64
+		for _, item := range items {
+			total += item.bytes
+		}
+		for i := len(items) - 1; i > 0 && total > maxBytes; i-- {
+			if !remove[items[i].path] {
+				remove[items[i].path] = true
+			}
+			total -= items[i].bytes
+		}
+	}
+	for _, item := range items {
+		if !remove[item.path] {
+			continue
+		}
 		if err := validateGitRelease(item.path, 1000000); err != nil {
 			return fmt.Errorf("refuse to prune invalid release: %w", err)
 		}
 		if err := os.RemoveAll(item.path); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func gitReleaseSize(root string) (int64, error) {
+	var total int64
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+		if info.Mode().IsRegular() {
+			if info.Size() < 0 || total > (1<<63-1)-info.Size() {
+				return errors.New("Git release size overflow")
+			}
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
+}
+
+func pruneAllGitReleases(cfg Config) error {
+	root := filepath.Join(cfg.WebRoot, "sites")
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || safeUser(entry.Name()) == "" {
+			continue
+		}
+		if err := pruneGitReleasesWithPolicy(filepath.Join(root, entry.Name()), cfg.GitReleaseRetention, time.Duration(cfg.GitReleaseMaxAgeHours)*time.Hour, cfg.GitReleaseMaxBytes); err != nil {
+			return fmt.Errorf("%s: %w", entry.Name(), err)
 		}
 	}
 	return nil

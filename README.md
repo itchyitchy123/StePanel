@@ -295,6 +295,8 @@ checkbox and should be backed up first.
 | `STEPANEL_GIT_ALLOWED_HOSTS` | Comma-separated exact hostnames allowed for public HTTPS or private SSH Git deployments; defaults to GitHub, GitLab, and Bitbucket |
 | `STEPANEL_GIT_WEBHOOK_SECRET` | Shared secret for HMAC-signed Git deployment webhooks |
 | `STEPANEL_GITCTL` | Absolute root-owned deploy-key/private-clone helper path |
+| `STEPANEL_GIT_RELEASE_MAX_AGE_HOURS` | Maximum age for non-immediate Git rollback releases; default 168 hours |
+| `STEPANEL_GIT_RELEASE_MAX_BYTES` | Maximum retained previous-release bytes per site; default 5 GiB |
 | `STEPANEL_RUNNERCTL` | Absolute rootless Podman build-runner helper path |
 | `STEPANEL_ENVIRONMENT_KEY` | Stable secret enabling AES-GCM encrypted site environment storage |
 | `STEPANEL_ENVIRONMENT_STATE` | Private environment state path; defaults beside job state |

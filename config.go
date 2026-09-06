@@ -33,12 +33,14 @@ type Config struct {
 	Production                                                                               bool
 	MaxUpload                                                                                int64
 	MaxEntries, MaxConcurrentJobs, StageRetentionHours, GitReleaseRetention                  int
+	GitReleaseMaxAgeHours                                                                    int
+	GitReleaseMaxBytes                                                                       int64
 	FTPPassiveMin, FTPPassiveMax                                                             int
 	MinFreeBytes                                                                             uint64
 }
 
 func LoadConfig() Config {
-	c := Config{WebServer: "caddy", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", RunnerCtl: "/usr/local/sbin/stepanel-runnerctl", GitCtl: "/usr/local/sbin/stepanel-gitctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", AccountState: "data/accounts.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", GitAllowedHosts: "github.com,gitlab.com,bitbucket.org", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, GitReleaseRetention: 3, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
+	c := Config{WebServer: "caddy", Listen: ":8080", ImportRoot: "data/imports", BackupRoot: "data/backups", WebRoot: "data/www", MailRoot: "data/mail", NVMDir: "data/nvm", ProxyRoot: "data/proxy", VHostRoot: "data/vhosts", AppRoot: "data/apps", MalwareRoot: "data/quarantine", AppCtl: "/usr/local/sbin/stepanel-appctl", ProxyCtl: "/usr/local/sbin/stepanel-proxyctl", VHostCtl: "/usr/local/sbin/stepanel-vhostctl", RunnerCtl: "/usr/local/sbin/stepanel-runnerctl", GitCtl: "/usr/local/sbin/stepanel-gitctl", Certbot: "/usr/local/sbin/stepanel-certbot", WPressExtract: "/usr/local/bin/wpress-extract", WPCLI: "/usr/local/bin/wp", AuditLog: "data/stepanel-audit.jsonl", JobState: "data/jobs.json", SessionState: "data/sessions.json", AccountState: "data/accounts.json", RecoveryRoot: "data/www/sites/.stepanel-recovery", GitAllowedHosts: "github.com,gitlab.com,bitbucket.org", MaxUpload: 20 << 30, MaxEntries: 1000000, MaxConcurrentJobs: 2, StageRetentionHours: 168, GitReleaseRetention: 3, GitReleaseMaxAgeHours: 168, GitReleaseMaxBytes: 5 << 30, MinFreeBytes: 1 << 30, FTPPassiveMin: 40100, FTPPassiveMax: 40200}
 	if v := os.Getenv("STEPANEL_WEBSERVER"); v != "" {
 		c.WebServer = strings.ToLower(strings.TrimSpace(v))
 	}
@@ -103,6 +105,12 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("STEPANEL_GIT_RELEASE_RETENTION"); v != "" {
 		c.GitReleaseRetention, _ = strconv.Atoi(v)
+	}
+	if v := os.Getenv("STEPANEL_GIT_RELEASE_MAX_AGE_HOURS"); v != "" {
+		c.GitReleaseMaxAgeHours, _ = strconv.Atoi(v)
+	}
+	if v := os.Getenv("STEPANEL_GIT_RELEASE_MAX_BYTES"); v != "" {
+		c.GitReleaseMaxBytes, _ = strconv.ParseInt(v, 10, 64)
 	}
 	if v := os.Getenv("STEPANEL_VHOSTCTL"); v != "" {
 		c.VHostCtl = v
@@ -267,10 +275,12 @@ func ValidateConfig(c Config) error {
 	validateIntegerEnvironment(&problems, "STEPANEL_MAX_CONCURRENT_JOBS", 1, 32)
 	validateIntegerEnvironment(&problems, "STEPANEL_STAGE_RETENTION_HOURS", 1, 87_600)
 	validateIntegerEnvironment(&problems, "STEPANEL_GIT_RELEASE_RETENTION", 1, 100)
+	validateIntegerEnvironment(&problems, "STEPANEL_GIT_RELEASE_MAX_AGE_HOURS", 1, 87_600)
+	validateIntegerEnvironment(&problems, "STEPANEL_GIT_RELEASE_MAX_BYTES", 1, 1<<50)
 	validateIntegerEnvironment(&problems, "STEPANEL_MIN_FREE_BYTES", 1, int64(^uint64(0)>>1))
 	validateIntegerEnvironment(&problems, "STEPANEL_FTP_PASSIVE_MIN", 1024, 65534)
 	validateIntegerEnvironment(&problems, "STEPANEL_FTP_PASSIVE_MAX", 1025, 65535)
-	if c.MaxUpload < 1 || c.MaxUpload > 20<<30 || c.MaxEntries < 1 || c.MaxEntries > 1_000_000 || c.MaxConcurrentJobs < 1 || c.MaxConcurrentJobs > 32 || c.StageRetentionHours < 1 || c.StageRetentionHours > 87_600 || c.GitReleaseRetention < 1 || c.GitReleaseRetention > 100 || c.MinFreeBytes < 1 {
+	if c.MaxUpload < 1 || c.MaxUpload > 20<<30 || c.MaxEntries < 1 || c.MaxEntries > 1_000_000 || c.MaxConcurrentJobs < 1 || c.MaxConcurrentJobs > 32 || c.StageRetentionHours < 1 || c.StageRetentionHours > 87_600 || c.GitReleaseRetention < 1 || c.GitReleaseRetention > 100 || c.GitReleaseMaxAgeHours < 1 || c.GitReleaseMaxBytes < 1 || c.MinFreeBytes < 1 {
 		problems = append(problems, errors.New("configured resource limits are outside their supported ranges"))
 	}
 	if c.FTPPassiveMax <= c.FTPPassiveMin {
