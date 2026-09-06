@@ -83,7 +83,7 @@ EOF
     fi
     ;;
   worker-apply)
-    (( $# == 7 )) || { echo 'usage: stepanel-appctl worker-apply SITE NAME TYPE ROOT PROCESSES MEMORY_MB RETRIES' >&2; exit 64; }
+    (( $# == 8 )) || { echo 'usage: stepanel-appctl worker-apply SITE NAME TYPE ROOT PROCESSES MEMORY_MB RETRIES' >&2; exit 64; }
     name=$3; type=$4; root=$5; processes=$6; memory=$7; retries=${8:-0}
     [[ $name =~ ^[A-Za-z0-9_-]{1,32}$ && $type =~ ^(laravel|horizon|node|celery|rq)$ && $root == "/var/www/sites/$site/public" ]] || { echo 'invalid worker parameters' >&2; exit 1; }
     [[ $processes =~ ^[0-9]+$ && $memory =~ ^[0-9]+$ && $retries =~ ^[0-9]+$ ]] || { echo 'invalid worker limits' >&2; exit 1; }
@@ -224,6 +224,9 @@ Slice=stepanel-site-$site.slice
 WorkingDirectory=$root
 ExecStart=$script
 TimeoutStartSec=${timeout}s
+CPUQuota=100%
+MemoryMax=1G
+TasksMax=256
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
@@ -260,7 +263,11 @@ EOF
       printf '%s\n' "$line" >> "$staged"
     done
     chown root:root "$staged"; chmod 0600 "$staged"; mv -f "$staged" "$target"
-    systemctl try-restart "stepanel-app-$site.service" "stepanel-app-$site-python.service" "stepanel-worker-$site-*.service" 2>/dev/null || true ;;
+    systemctl try-restart "stepanel-app-$site.service" "stepanel-app-$site-python.service" 2>/dev/null || true
+    mapfile -t worker_units < <(systemctl list-unit-files --type=service --no-legend "stepanel-worker-$site-*.service" 2>/dev/null | awk '{print $1}')
+    if (( ${#worker_units[@]} > 0 )); then
+      systemctl try-restart "${worker_units[@]}" 2>/dev/null || true
+    fi ;;
   start|stop|restart)
     (( $# == 2 )) || { echo "usage: stepanel-appctl $action SITE" >&2; exit 64; }
     if [[ $site == */* ]]; then site_name=${site##*/}; site=${site%%/*}; [[ $site =~ ^[a-z0-9_-]{1,32}$ && $site_name =~ ^[A-Za-z0-9_-]{1,32}$ ]] || { echo 'invalid worker target' >&2; exit 1; }; unit="stepanel-worker-${site}-${site_name}.service"; fi

@@ -53,6 +53,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   cron workloads receive the same cgroup boundary as managed applications.
 - Added explicit task-unit ordering after the site slice and exposed scheduled
   tasks in the resource-enforcement contract.
+- Added conservative task-local `CPUQuota`, `MemoryMax`, and `TasksMax`
+  ceilings so scheduled jobs remain bounded even before a site profile is
+  configured. Fixed worker creation to accept its documented retry argument
+  and made environment updates restart all matching worker units reliably.
 
 - Added AES-GCM encryption for customer TOTP secrets with dedicated
   `STEPANEL_ACCOUNT_KEY`, one-time MFA regeneration, and session revocation.
