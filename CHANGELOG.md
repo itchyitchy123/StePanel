@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Pinned the release GoReleaser action to an immutable commit and pinned the
+  GoReleaser binary to exactly `v2.17.1` for reproducible artifact publishing.
+- Declared `FEATURES.md` canonical for feature statuses and added explicit
+  `main / unreleased` versus `v0.6.0` documentation version markers.
+
 - Added a provider-neutral DNS capability contract and API while keeping the
   existing Linode mutation adapter explicit. Documented DNS desired-state and
   DNSSEC boundaries, and clarified that mail installation is optional,

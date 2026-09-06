@@ -1,5 +1,9 @@
 # Shared-hosting beta
 
+Documentation version: `main / unreleased`; this document describes the
+current branch and is not a promise that the `v0.6.0` release contains every
+listed capability.
+
 StePanel can now provide constrained customer workspaces on one managed host.
 This is a deliberate first boundary, not a claim of cPanel/Plesk parity.
 

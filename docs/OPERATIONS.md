@@ -1,5 +1,8 @@
 # Operations runbook
 
+Documentation version: `main / unreleased`; use the matching release tag when
+operating a version older than the current branch.
+
 ## Health check
 
 ```sh

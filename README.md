@@ -1,5 +1,9 @@
 # StePanel
 
+> Documentation version: `main / unreleased`. Latest stable release:
+> [`v0.6.0`](https://github.com/itchyitchy123/StePanel/tree/v0.6.0). Features
+> added after that tag are documented only for the current `main` branch.
+
 ![CI](https://github.com/itchyitchy123/StePanel/actions/workflows/ci.yml/badge.svg) ![Release](https://img.shields.io/github/v/release/itchyitchy123/StePanel?display_name=tag) ![License](https://img.shields.io/github/license/itchyitchy123/StePanel)
 
 > A modern, safety-first control plane for LAMP hosting and cPanel migrations.

@@ -1,7 +1,8 @@
 # Releasing StePanel
 
-The repository's current release milestone is `v0.6.0`. The first public
-release uses the version already recorded in `version.go`; do not retag it as
+The latest stable release is `v0.6.0`; the repository's documentation on
+`main` is explicitly unreleased. The first public release uses the version
+already recorded in `version.go`; do not retag it as
 `v0.1.0`, because the release workflow intentionally rejects tags that do not
 match the source version.
 

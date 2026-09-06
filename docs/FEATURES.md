@@ -4,10 +4,15 @@ StePanel is a small control plane for operators moving workloads from cPanel
 to a LAMP server. This page describes shipped behavior separately from the
 longer-term hosting-panel roadmap.
 
-Status vocabulary: **Shipped** means implemented and supported; **Beta** means
-implemented with explicit operator caveats; **Operator-only** means available
-to administrators but not exposed as a tenant entitlement; **Planned** means
-not implemented.
+This file is the canonical feature-status source for the `main` branch.
+Status vocabulary: **Stable** means supported and tested; **Beta** means
+implemented with explicit operator caution; **Operator-only** means available
+to administrators but not exposed as a tenant entitlement; **Experimental**
+means the interface may change; **Planned** means not implemented. Release-tag
+documentation must be read from the matching release tag, not from `main`.
+
+Documentation version: `main / unreleased`
+Latest stable release: `v0.6.0`
 
 ## Available now
 
