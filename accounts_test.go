@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -139,14 +140,42 @@ func TestSuspendedCustomerCannotLogin(t *testing.T) {
 }
 
 func TestSuspensionRevokesExistingCustomerSessions(t *testing.T) {
-	registry := &sessionRegistry{entries: map[string]sessionEntry{"customer-session": {Username: "customer", Expiry: time.Now().Add(time.Hour).Unix()}, "admin-session": {Username: "admin", Expiry: time.Now().Add(time.Hour).Unix()}}}
+	expiry := time.Now().Add(time.Hour).Unix()
+	registry := &sessionRegistry{entries: map[string]sessionEntry{"customer-session": {Username: "customer", Expiry: expiry}, "admin-session": {Username: "admin", Expiry: expiry}}}
 	if err := registry.revokeUser("customer"); err != nil {
 		t.Fatal(err)
 	}
-	if registry.valid("customer-session", "customer", time.Now().Add(time.Hour).Unix()) {
+	if registry.valid("customer-session", "customer", expiry) {
 		t.Fatal("customer session remained valid")
 	}
 	if _, ok := registry.entries["admin-session"]; !ok {
 		t.Fatal("unrelated session was revoked")
+	}
+}
+
+func TestSessionRevocationRestoresMemoryOnPersistenceFailure(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	expiry := time.Now().Add(time.Hour).Unix()
+	registry := &sessionRegistry{
+		path: blocked + "/sessions.json",
+		entries: map[string]sessionEntry{
+			"customer-session": {Username: "customer", Expiry: expiry},
+			"admin-session":    {Username: "admin", Expiry: expiry},
+		},
+	}
+	if err := registry.revokeUser("customer"); err == nil {
+		t.Fatal("expected session persistence failure")
+	}
+	if !registry.valid("customer-session", "customer", expiry) {
+		t.Fatal("failed user revocation was not rolled back in memory")
+	}
+	if err := registry.revoke("customer-session"); err == nil {
+		t.Fatal("expected single-session persistence failure")
+	}
+	if !registry.valid("customer-session", "customer", expiry) {
+		t.Fatal("failed single-session revocation was not rolled back in memory")
 	}
 }

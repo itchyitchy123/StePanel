@@ -188,12 +188,19 @@ func (s *sessionRegistry) valid(id, username string, expiry int64) bool {
 func (s *sessionRegistry) revokeUser(username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous := make(map[string]sessionEntry, len(s.entries))
+	for id, entry := range s.entries {
+		previous[id] = entry
+	}
 	for id, entry := range s.entries {
 		if entry.Username == username {
 			delete(s.entries, id)
 		}
 	}
 	err := s.persistLocked()
+	if err != nil {
+		s.entries = previous
+	}
 	s.err = err
 	return err
 }
@@ -201,8 +208,12 @@ func (s *sessionRegistry) revokeUser(username string) error {
 func (s *sessionRegistry) revoke(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous, existed := s.entries[id]
 	delete(s.entries, id)
 	err := s.persistLocked()
+	if err != nil && existed {
+		s.entries[id] = previous
+	}
 	s.err = err
 	return err
 }
