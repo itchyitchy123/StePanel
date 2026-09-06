@@ -246,6 +246,9 @@ func main() {
 	if reconciled, failed := app.reconcilePHPProfiles(reconcileCtx); len(failed) > 0 {
 		log.Printf("PHP profile reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
 	}
+	if reconciled, failed := app.reconcilePythonApps(reconcileCtx); len(failed) > 0 {
+		log.Printf("Python application reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
+	}
 	if reconciled, failed := app.reconcileTasks(reconcileCtx); len(failed) > 0 {
 		log.Printf("scheduled-task reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
 	}

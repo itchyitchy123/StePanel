@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -21,6 +22,20 @@ type PythonApp struct {
 	Workers    int    `json:"workers"`
 	Root       string `json:"root"`
 	State      string `json:"state"`
+	LastError  string `json:"last_error,omitempty"`
+}
+
+func pythonManifestPath(root, site string) string { return filepath.Join(root, site+"-python.json") }
+
+func savePythonApp(root string, app PythonApp) error {
+	if err := os.MkdirAll(root, 0750); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(app, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(pythonManifestPath(root, app.Site), append(data, '\n'), 0600)
 }
 
 func (a *App) pythonDeploy(w http.ResponseWriter, r *http.Request) {
@@ -49,18 +64,66 @@ func (a *App) pythonDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site document root does not exist", 422)
 		return
 	}
-	if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "python-apply", app.Site, app.Version, app.Root, app.EntryPoint, strconv.Itoa(app.Port), strconv.Itoa(app.Workers)); err != nil {
-		http.Error(w, "Python application helper failed", 502)
+	app.State, app.LastError = "pending", ""
+	if err := savePythonApp(a.Config.AppRoot, app); err != nil {
+		http.Error(w, "could not persist desired Python application", 503)
 		return
 	}
-	app.State = "running"
-	data, _ := json.MarshalIndent(app, "", "  ")
-	if err := os.MkdirAll(a.Config.AppRoot, 0750); err != nil || writeAtomic(filepath.Join(a.Config.AppRoot, app.Site+"-python.json"), append(data, '\n'), 0600) != nil {
-		http.Error(w, "Python application state could not be saved", 503)
+	if err := a.applyPythonApp(r.Context(), app); err != nil {
+		app.LastError = err.Error()
+		_ = savePythonApp(a.Config.AppRoot, app)
+		http.Error(w, "Python application is pending reconciliation", 502)
+		return
+	}
+	app.State, app.LastError = "running", ""
+	if err := savePythonApp(a.Config.AppRoot, app); err != nil {
+		http.Error(w, "Python application applied but state update is pending", 503)
 		return
 	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "python.deployed", app.Site, app.EntryPoint)
 	writeJSON(w, 202, app)
+}
+
+func (a *App) applyPythonApp(ctx context.Context, app PythonApp) error {
+	return runHelperCommand(ctx, a.Config, a.Config.AppCtl, "python-apply", app.Site, app.Version, app.Root, app.EntryPoint, strconv.Itoa(app.Port), strconv.Itoa(app.Workers))
+}
+
+func (a *App) reconcilePythonApps(ctx context.Context) (reconciled []string, failed map[string]string) {
+	failed = map[string]string{}
+	entries, err := os.ReadDir(a.Config.AppRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, failed
+		}
+		return nil, map[string]string{"state": err.Error()}
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "-python.json") {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(a.Config.AppRoot, entry.Name()))
+		if readErr != nil {
+			failed[entry.Name()] = readErr.Error()
+			continue
+		}
+		var app PythonApp
+		if json.Unmarshal(data, &app) != nil || safeUser(app.Site) == "" || app.State != "pending" {
+			continue
+		}
+		if err := a.applyPythonApp(ctx, app); err != nil {
+			app.LastError = err.Error()
+			_ = savePythonApp(a.Config.AppRoot, app)
+			failed[app.Site] = err.Error()
+			continue
+		}
+		app.State, app.LastError = "running", ""
+		if err := savePythonApp(a.Config.AppRoot, app); err != nil {
+			failed[app.Site] = err.Error()
+			continue
+		}
+		reconciled = append(reconciled, app.Site)
+	}
+	return reconciled, failed
 }
 
 func (a *App) pythonAction(w http.ResponseWriter, r *http.Request) {

@@ -75,6 +75,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   systemd mutation and retry pending changes during startup reconciliation.
 - PHP-FPM runtime profiles now persist desired state before helper application,
   retain pending errors, and reconcile interrupted FPM changes at startup.
+- Python application deployments now persist desired state before systemd
+  application and retry pending services during startup reconciliation.
 - Added an administrator-only asynchronous files-only backup restore. It
   verifies the archive and optional signature before extraction, uses the site
   recovery journal for atomic replacement, preserves databases, and reports
