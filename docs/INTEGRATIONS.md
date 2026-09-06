@@ -21,6 +21,20 @@ activate it, rerun with `STEPANEL_ACTIVATE_FTP=1` and absolute
 for login and data. User creation, password rotation, firewall rules, and
 per-site authorization remain operator responsibilities.
 
+## DNS providers and mail boundary
+
+DNS is exposed through a provider-neutral contract, but the currently shipped
+mutation adapter is Linode-only at `/api/cloud/dns`. The administrator
+`/api/dns/capabilities` endpoint lists the planned adapter set and clearly
+reports when no provider is configured. Zone desired-state reconciliation,
+DNSSEC, and DNS-01 provider orchestration are not simulated.
+
+Mail installation is deliberately optional and operator-managed. Core StePanel
+does not provide mailbox lifecycle, aliases, quotas, DKIM/SPF/DMARC, queue
+management, webmail, or customer mail controls. Use an external mail provider
+or a separately reviewed optional mail module; do not interpret staged Exim or
+Dovecot packages as supported customer mail hosting.
+
 ## ModSecurity and OWASP CRS
 
 ModSecurity is available as an opt-in Apache integration. It installs the

@@ -49,7 +49,10 @@ inventory at `/api/ssh`.
 The protected `/api/ssh/action` endpoint queues only allowlisted service
 restarts and host reboots and returns a persisted job URL.
 For Linode installations, `/api/cloud/dns` lists records and queues validated
-DNS record creation, update, and deletion operations.
+DNS record creation, update, and deletion operations. The provider-neutral
+`/api/dns/capabilities` endpoint reports the adapter contract and whether a
+provider is configured; full zone desired-state ownership and DNSSEC remain
+planned rather than being implied by Linode CRUD.
 Linode load-balancer backend additions and removals are available through the
 asynchronous `/api/cloud/loadbalancer` endpoint.
 Linode snapshots can be listed and safely deleted through
@@ -200,6 +203,7 @@ checkbox and should be backed up first.
 | `GET` | `/api/cloud` | Authenticated Linode/AWS/OpenStack inventory for servers, DNS, load balancers, and snapshots |
 | `POST` | `/api/cloud/action` | Queue a cloud server start, stop, reboot, or snapshot action |
 | `GET` | `/api/cloud/dns` | List Linode DNS records |
+| `GET` | `/api/dns/capabilities` | Report configured DNS adapter and supported provider contract |
 | `POST` | `/api/cloud/dns` | Queue a validated Linode DNS create or update |
 | `DELETE` | `/api/cloud/dns` | Queue a Linode DNS record deletion |
 | `POST` | `/api/cloud/loadbalancer` | Queue a Linode load-balancer backend add/remove |

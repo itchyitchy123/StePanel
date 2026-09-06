@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Added a provider-neutral DNS capability contract and API while keeping the
+  existing Linode mutation adapter explicit. Documented DNS desired-state and
+  DNSSEC boundaries, and clarified that mail installation is optional,
+  operator-managed infrastructure rather than core mailbox hosting.
+
 - Added explicit webserver-specific WAF capability reporting. Apache reports
   ModSecurity/CRS availability, while Caddy and OpenLiteSpeed clearly report
   native WAF support as unavailable and require an external security layer.

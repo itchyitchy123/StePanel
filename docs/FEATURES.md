@@ -33,6 +33,9 @@ not implemented.
 - Cloud inventory and audited lifecycle actions for Linode, AWS, and OpenStack, plus Linode DNS, load-balancer, and snapshot operations.
 - Strict-host-key SSH server inventory with allowlisted asynchronous restart and reboot actions.
 - Authenticated security posture endpoint at `/api/security/audit`.
+- Provider-neutral DNS capability contract at `/api/dns/capabilities`; the
+  existing Linode adapter remains available, while zone desired-state,
+  provider adapters, and DNSSEC are not yet production-complete.
 - Verified, bounded audit-event queries at `/api/audit/events` for deployment and operational history.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
 - Transactional Caddy and Apache PHP vhosts and reverse proxies with
@@ -97,6 +100,11 @@ not implemented.
   provenance/SBOM generation.
 
 ## Partial or operator-only features
+
+- Mail installation is an optional operator integration only. StePanel core
+  does not claim mailbox, alias, quota, DKIM/SPF/DMARC, queue, webmail, or
+  customer mail lifecycle support; use external mail or an independently
+  managed optional mail module.
 
 - Site deletion currently removes the managed vhost/proxy state; it is not yet
   a complete customer/account teardown across mail, DNS, databases, quotas,

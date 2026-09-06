@@ -202,6 +202,11 @@ paths:
       summary: Queue a Linode DNS record deletion
       responses:
         '202': {description: DNS change queued}
+  /api/dns/capabilities:
+    get:
+      summary: Report the provider-neutral DNS adapter contract
+      responses:
+        '200': {description: Configured adapter, supported adapters, and DNSSEC status}
   /api/cloud/loadbalancer:
     post:
       summary: Queue a Linode load-balancer backend add or removal

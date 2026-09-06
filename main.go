@@ -302,6 +302,7 @@ func main() {
 	mux.Handle("/api/cloud", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudInventory)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/cloud/action", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudAction)), http.MethodPost))
 	mux.Handle("/api/cloud/dns", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudDNS)), http.MethodGet, http.MethodHead, http.MethodPost, http.MethodDelete))
+	mux.Handle("/api/dns/capabilities", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.dnsCapabilities)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/cloud/loadbalancer", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudLoadBalancer)), http.MethodPost))
 	mux.Handle("/api/cloud/snapshots", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.cloudSnapshots)), http.MethodGet, http.MethodHead, http.MethodDelete))
 	mux.Handle("/api/ssh", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.sshInventory)), http.MethodGet, http.MethodHead))
