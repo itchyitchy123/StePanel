@@ -23,7 +23,9 @@ retried during startup reconciliation.
 Administrators can `GET`/`PUT /api/sites/resources/{site}` to apply an
 enforceable profile for managed Node/Python application and worker processes:
 CPU quota/weight, `MemoryHigh`/`MemoryMax`, I/O weight, task/PID maximum, and
-isolated PHP-FPM `pm.max_children`. The helper renders a root-owned per-site systemd slice and
+isolated PHP-FPM `pm.max_children`. Plan-assigned sites also inherit a root-owned
+aggregate account systemd slice, so multiple sites cannot multiply the plan's
+CPU, memory, I/O, or task envelope without bound. The helper renders a root-owned per-site systemd slice and
 attaches managed application/worker units to it. The desired profile is saved
 as `pending` before host application and becomes `applied` only after both the
 systemd slice and FPM pool validate successfully.

@@ -15,9 +15,9 @@ This is a deliberate first boundary, not a claim of cPanel/Plesk parity.
   unpadded Base32 TOTP seed of at least 160 bits. Customer MFA is always
   required, including outside production mode.
 - `starter`, `professional`, and `agency` cap assignments at 1, 5, and 25
-sites respectively. Built-in plans also apply CPU, memory, process, and
-PHP-worker envelopes to newly assigned sites; disk/inode values require an
-explicit filesystem quota profile.
+sites respectively. Built-in plans also apply aggregate account and per-site
+CPU, memory, process, and PHP-worker envelopes to newly assigned sites;
+disk/inode values require an explicit filesystem quota profile.
 - Administrators can apply preview resource profiles to managed application,
   worker, scheduled-task, and optionally filesystem user-quota boundaries, but
   plans do not yet enforce disk, inode, bandwidth, database, or Redis

@@ -41,12 +41,12 @@ func TestEnsurePlanResourcesPersistsEnforcedEnvelopeAsPendingOnHelperFailure(t *
 		t.Fatal(err)
 	}
 	app := &App{Resources: store}
-	pending, err := app.ensurePlanResources(HostingAccount{Plan: "starter", Sites: []string{"demo"}})
+	pending, err := app.ensurePlanResources(HostingAccount{Username: "customer", Plan: "starter", Sites: []string{"demo"}})
 	if err != nil || len(pending) != 1 || pending[0] != "demo" {
 		t.Fatalf("pending=%v err=%v", pending, err)
 	}
 	profile, ok := store.values["demo"]
-	if !ok || profile.State != "pending" || profile.MemoryMB != 512 || profile.CPUPercent != 100 || profile.TasksMax != 128 || profile.PHPWorkers != 8 {
+	if !ok || profile.Account != "customer" || profile.State != "pending" || profile.MemoryMB != 512 || profile.CPUPercent != 100 || profile.TasksMax != 128 || profile.PHPWorkers != 8 {
 		t.Fatalf("plan profile = %#v", profile)
 	}
 }

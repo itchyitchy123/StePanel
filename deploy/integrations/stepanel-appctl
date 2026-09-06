@@ -180,16 +180,38 @@ EOF
     [[ $development == 1 ]] || args+=(--no-dev)
     [[ $optimize == 1 ]] && args+=(--optimize-autoloader)
     runuser -u "$site_user" -- env HOME="$root" COMPOSER_HOME="$root/.composer" PATH="/usr/local/bin:/usr/bin:/bin" composer "${args[@]}" ;;
+  account-resource-apply)
+    (( $# == 8 )) || { echo 'usage: stepanel-appctl account-resource-apply ACCOUNT CPU_PERCENT CPU_WEIGHT MEMORY_HIGH_MB MEMORY_MAX_MB IO_WEIGHT TASKS_MAX' >&2; exit 64; }
+    account=$2; cpu=$3; cpu_weight=$4; memory_high=$5; memory=$6; io_weight=$7; tasks=$8
+    [[ $account =~ ^[a-z0-9_-]{1,32}$ && $cpu =~ ^[0-9]+$ && $cpu_weight =~ ^[0-9]+$ && $memory_high =~ ^[0-9]+$ && $memory =~ ^[0-9]+$ && $io_weight =~ ^[0-9]+$ && $tasks =~ ^[0-9]+$ ]] || { echo 'invalid account resource limits' >&2; exit 1; }
+    (( cpu >= 25 && cpu <= 6400 && cpu_weight >= 1 && cpu_weight <= 10000 && memory_high >= 64 && memory_high <= memory && memory <= 1048576 && io_weight >= 1 && io_weight <= 10000 && tasks >= 16 && tasks <= 100000 )) || { echo 'account resource limits out of range' >&2; exit 1; }
+    slice="/etc/systemd/system/stepanel-account-$account.slice"
+    cat > "$slice" <<EOF
+[Unit]
+Description=StePanel aggregate resource boundary for $account
+[Slice]
+CPUQuota=${cpu}%
+CPUWeight=$cpu_weight
+MemoryHigh=${memory_high}M
+MemoryMax=${memory}M
+IOWeight=$io_weight
+TasksMax=$tasks
+EOF
+    chmod 0644 "$slice"; chown root:root "$slice"; systemctl daemon-reload; systemctl start "stepanel-account-$account.slice" ;;
   resource-apply)
-    (( $# == 8 )) || { echo 'usage: stepanel-appctl resource-apply SITE CPU_PERCENT CPU_WEIGHT MEMORY_HIGH_MB MEMORY_MAX_MB IO_WEIGHT TASKS_MAX' >&2; exit 64; }
-    cpu=$3; cpu_weight=$4; memory_high=$5; memory=$6; io_weight=$7; tasks=$8
+    (( $# == 8 || $# == 9 )) || { echo 'usage: stepanel-appctl resource-apply SITE CPU_PERCENT CPU_WEIGHT MEMORY_HIGH_MB MEMORY_MAX_MB IO_WEIGHT TASKS_MAX [ACCOUNT]' >&2; exit 64; }
+    cpu=$3; cpu_weight=$4; memory_high=$5; memory=$6; io_weight=$7; tasks=$8; account=${9:-}
     [[ $cpu =~ ^[0-9]+$ && $cpu_weight =~ ^[0-9]+$ && $memory_high =~ ^[0-9]+$ && $memory =~ ^[0-9]+$ && $io_weight =~ ^[0-9]+$ && $tasks =~ ^[0-9]+$ ]] || { echo 'invalid resource limits' >&2; exit 1; }
+    [[ -z $account || $account =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid resource account' >&2; exit 1; }
     (( cpu >= 25 && cpu <= 6400 && cpu_weight >= 1 && cpu_weight <= 10000 && memory_high >= 64 && memory_high <= memory && memory <= 1048576 && io_weight >= 1 && io_weight <= 10000 && tasks >= 16 && tasks <= 100000 )) || { echo 'resource limits out of range' >&2; exit 1; }
     slice="/etc/systemd/system/stepanel-site-$site.slice"
+    parent_slice=""
+    [[ -z $account ]] || parent_slice="Slice=stepanel-account-$account.slice"
     cat > "$slice" <<EOF
 [Unit]
 Description=StePanel resource boundary for $site
 [Slice]
+$parent_slice
 CPUQuota=${cpu}%
 CPUWeight=$cpu_weight
 MemoryHigh=${memory_high}M

@@ -14,9 +14,11 @@ import (
 )
 
 // ResourceProfile is enforced for managed systemd applications/workers through
-// a per-site slice. PHP workers are separately applied to the isolated FPM
-// pool. Filesystem, network and database limits require their own providers.
+// an optional aggregate account slice and a per-site child slice. PHP workers
+// are separately applied to the isolated FPM pool. Filesystem, network and
+// database limits require their own providers.
 type ResourceProfile struct {
+	Account              string    `json:"account,omitempty"`
 	Site                 string    `json:"site"`
 	CPUPercent           int       `json:"cpu_percent"`
 	CPUWeight            int       `json:"cpu_weight,omitempty"`
@@ -37,12 +39,12 @@ type ResourceStore struct {
 	values map[string]ResourceProfile
 }
 
-func resourceProfileForPlan(site string, plan HostingPlan) ResourceProfile {
+func resourceProfileForPlan(account, site string, plan HostingPlan) ResourceProfile {
 	high := plan.MemoryMB * 90 / 100
 	if high < 64 {
 		high = 64
 	}
-	return ResourceProfile{Site: site, CPUPercent: plan.CPUPercent, CPUWeight: 100, MemoryHighMB: high, MemoryMB: plan.MemoryMB, IOWeight: 100, TasksMax: plan.TasksMax, PHPWorkers: plan.PHPWorkers, State: "pending", FilesystemQuotaState: "none"}
+	return ResourceProfile{Account: account, Site: site, CPUPercent: plan.CPUPercent, CPUWeight: 100, MemoryHighMB: high, MemoryMB: plan.MemoryMB, IOWeight: 100, TasksMax: plan.TasksMax, PHPWorkers: plan.PHPWorkers, State: "pending", FilesystemQuotaState: "none"}
 }
 
 // ensurePlanResources persists desired resource profiles for newly assigned
@@ -63,7 +65,7 @@ func (a *App) ensurePlanResources(account HostingAccount) ([]string, error) {
 		if _, exists := a.Resources.values[site]; exists {
 			continue
 		}
-		profile := resourceProfileForPlan(site, plan)
+		profile := resourceProfileForPlan(account.Username, site, plan)
 		a.Resources.values[site] = profile
 		profiles = append(profiles, profile)
 	}
@@ -154,13 +156,18 @@ func normalizeResourceProfile(p ResourceProfile) ResourceProfile {
 	return p
 }
 func validResourceProfile(p ResourceProfile) bool {
-	return safeUser(p.Site) != "" && p.CPUPercent >= 25 && p.CPUPercent <= 6400 && p.CPUWeight >= 1 && p.CPUWeight <= 10000 && p.MemoryMB >= 64 && p.MemoryHighMB >= 64 && p.MemoryHighMB <= p.MemoryMB && p.MemoryMB <= 1048576 && p.IOWeight >= 1 && p.IOWeight <= 10000 && p.TasksMax >= 16 && p.TasksMax <= 100000 && p.PHPWorkers >= 1 && p.PHPWorkers <= 512 && (p.DiskMB == 0 && p.Inodes == 0 || p.DiskMB >= 64 && p.DiskMB <= 1048576 && p.Inodes >= 1000 && p.Inodes <= 1000000000)
+	return safeUser(p.Site) != "" && (p.Account == "" || safeUser(p.Account) != "") && p.CPUPercent >= 25 && p.CPUPercent <= 6400 && p.CPUWeight >= 1 && p.CPUWeight <= 10000 && p.MemoryMB >= 64 && p.MemoryHighMB >= 64 && p.MemoryHighMB <= p.MemoryMB && p.MemoryMB <= 1048576 && p.IOWeight >= 1 && p.IOWeight <= 10000 && p.TasksMax >= 16 && p.TasksMax <= 100000 && p.PHPWorkers >= 1 && p.PHPWorkers <= 512 && (p.DiskMB == 0 && p.Inodes == 0 || p.DiskMB >= 64 && p.DiskMB <= 1048576 && p.Inodes >= 1000 && p.Inodes <= 1000000000)
 }
 
 func (p ResourceProfile) hasFilesystemQuota() bool { return p.DiskMB > 0 || p.Inodes > 0 }
 
 func (a *App) applyResourceProfile(ctx context.Context, p ResourceProfile, clearFilesystemQuota bool) error {
-	if err := runHelperCommand(ctx, a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax)); err != nil {
+	if p.Account != "" {
+		if err := runHelperCommand(ctx, a.Config, a.Config.AppCtl, "account-resource-apply", p.Account, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax)); err != nil {
+			return err
+		}
+	}
+	if err := runHelperCommand(ctx, a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax), p.Account); err != nil {
 		return err
 	}
 	if err := runHelperCommand(ctx, a.Config, a.Config.SiteCtl, "resources", p.Site, strconv.Itoa(p.PHPWorkers)); err != nil {
@@ -208,12 +215,16 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.Site = site
-	p = normalizeResourceProfile(p)
-	p.State = "pending"
-	p.FilesystemQuotaState = "none"
 	a.Resources.mu.RLock()
 	previous, hadPrevious := a.Resources.values[site]
 	a.Resources.mu.RUnlock()
+	p.Account = ""
+	if hadPrevious {
+		p.Account = previous.Account
+	}
+	p = normalizeResourceProfile(p)
+	p.State = "pending"
+	p.FilesystemQuotaState = "none"
 	if p.hasFilesystemQuota() {
 		p.FilesystemQuotaState = "apply-pending"
 	} else if hadPrevious && previous.FilesystemQuotaState != "none" && previous.FilesystemQuotaState != "" {
