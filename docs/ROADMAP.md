@@ -62,7 +62,7 @@
   lifecycle
 - Database PITR/WAL or binlog orchestration, replication topology, controlled
   switchover, and externally fenced automatic failover
-- Customer portal, file manager, Git-provider App/OAuth integrations, live
-  database cloning/promotion, notifications, and self-service backup/restore;
+- Customer portal, file manager, Git-provider App/OAuth integrations, database
+  promotion, notifications, and self-service backup/restore;
   deploy-key Git webhooks, sandboxed builds, scheduled tasks, and operator
   restore-to-staging are already available with documented beta boundaries.

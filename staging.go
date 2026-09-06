@@ -1,27 +1,34 @@
 package main
 
 import (
+	"context"
 	"errors"
-	"golang.org/x/crypto/bcrypt"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type StagingRequest struct {
-	Source       string `json:"source"`
-	Site         string `json:"site"`
-	Domain       string `json:"domain"`
-	Files        bool   `json:"files"`
-	Environment  bool   `json:"environment"`
-	Database     bool   `json:"database"`
-	NoIndex      *bool  `json:"no_index,omitempty"`
-	BasicAuth    *bool  `json:"basic_auth,omitempty"`
-	AuthUser     string `json:"auth_user,omitempty"`
-	AuthPassword string `json:"auth_password,omitempty"`
+	Source         string `json:"source"`
+	Site           string `json:"site"`
+	Domain         string `json:"domain"`
+	Files          bool   `json:"files"`
+	Environment    bool   `json:"environment"`
+	Database       bool   `json:"database"`
+	SourceDatabase string `json:"source_database,omitempty"`
+	TargetDatabase string `json:"target_database,omitempty"`
+	TargetUser     string `json:"target_user,omitempty"`
+	TargetPassword string `json:"target_password,omitempty"`
+	NoIndex        *bool  `json:"no_index,omitempty"`
+	BasicAuth      *bool  `json:"basic_auth,omitempty"`
+	AuthUser       string `json:"auth_user,omitempty"`
+	AuthPassword   string `json:"auth_password,omitempty"`
 }
 type StagingResult struct {
 	Source            string    `json:"source"`
@@ -29,6 +36,8 @@ type StagingResult struct {
 	Domain            string    `json:"domain"`
 	FilesCopied       bool      `json:"files_copied"`
 	EnvironmentCopied bool      `json:"environment_copied"`
+	DatabaseCopied    bool      `json:"database_copied"`
+	TargetDatabase    string    `json:"target_database,omitempty"`
 	SecretsCopied     bool      `json:"secrets_copied"`
 	CreatedAt         time.Time `json:"created_at"`
 }
@@ -54,9 +63,30 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site is not assigned to this account", 403)
 		return
 	}
+	input.SourceDatabase = strings.ToLower(strings.TrimSpace(input.SourceDatabase))
+	input.TargetDatabase = strings.ToLower(strings.TrimSpace(input.TargetDatabase))
+	input.TargetUser = strings.ToLower(strings.TrimSpace(input.TargetUser))
 	if input.Database {
-		http.Error(w, "database cloning requires the transactional managed-database clone helper", 422)
-		return
+		if a.Config.DBCtl == "" || !validManagedDatabaseIdentifier(input.SourceDatabase, databaseNameLimit(a.Config)) || !validManagedDatabaseIdentifier(input.TargetDatabase, databaseNameLimit(a.Config)) || !validManagedDatabaseIdentifier(input.TargetUser, 32) || input.TargetUser[0] < 'a' || input.TargetUser[0] > 'z' || !validDatabasePassword(input.TargetPassword) {
+			http.Error(w, "source_database, target_database, target_user, and target_password are required for database cloning", 422)
+			return
+		}
+		inventory, err := managedDatabaseInventory(a.Config)
+		if err != nil {
+			http.Error(w, "managed database inventory is unavailable", 503)
+			return
+		}
+		owned := false
+		for _, database := range inventory {
+			if database.Name == input.SourceDatabase && database.Site == input.Source {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			http.Error(w, "source database is not registered to the source site", 403)
+			return
+		}
 	}
 	source := filepath.Join(a.Config.WebRoot, "sites", input.Source, "public")
 	dest := filepath.Join(a.Config.WebRoot, "sites", input.Site, "public")
@@ -91,6 +121,7 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	routeName := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + routeExtension
 	routeApplied := false
+	createdDatabase := false
 	stateRollback := func() {
 		if routeApplied {
 			if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "delete", routeName); err != nil {
@@ -108,6 +139,11 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 			a.Environments.mu.Unlock()
 			if err != nil {
 				log.Printf("staging environment rollback failed for %s: %v", input.Site, err)
+			}
+		}
+		if createdDatabase {
+			if _, err := runDatabaseHelper(a.Config, time.Minute, "", "drop-managed", input.TargetDatabase, input.TargetUser); err != nil {
+				log.Printf("staging database cleanup failed for %s: %v", input.TargetDatabase, err)
 			}
 		}
 		if markerExisted {
@@ -192,6 +228,13 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not seal staging site", 502)
 		return
 	}
+	if input.Database {
+		createdDatabase, err = cloneManagedDatabaseToStaging(a.Config, input.SourceDatabase, input.TargetDatabase, input.TargetUser, input.TargetPassword, input.Site)
+		if err != nil {
+			http.Error(w, "could not clone staging database: "+err.Error(), 502)
+			return
+		}
+	}
 	vhostAction := "apply"
 	if basicAuth {
 		vhostAction = "apply-auth"
@@ -211,7 +254,40 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	ok = true
 	stateCommitted = true
-	result := StagingResult{Source: input.Source, Site: input.Site, Domain: input.Domain, FilesCopied: input.Files, EnvironmentCopied: input.Environment, SecretsCopied: false, CreatedAt: time.Now().UTC()}
+	result := StagingResult{Source: input.Source, Site: input.Site, Domain: input.Domain, FilesCopied: input.Files, EnvironmentCopied: input.Environment, DatabaseCopied: input.Database, TargetDatabase: input.TargetDatabase, SecretsCopied: false, CreatedAt: time.Now().UTC()}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "staging.created", input.Site, input.Source+" -> "+input.Domain)
 	writeJSON(w, 202, result)
+}
+
+func cloneManagedDatabaseToStaging(cfg Config, source, target, user, password, site string) (bool, error) {
+	root, err := os.MkdirTemp(cfg.ImportRoot, "staging-db-")
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(root)
+	dump := filepath.Join(root, "database.sql")
+	if err := dumpManagedDatabase(cfg, source, dump); err != nil {
+		return false, fmt.Errorf("dump source database: %w", err)
+	}
+	encoding := "utf8mb4"
+	if cfg.DBEngine == "postgresql" {
+		encoding = "UTF8"
+	}
+	if _, err := runDatabaseHelper(cfg, time.Minute, password, "provision", target, user, site, encoding); err != nil {
+		return false, fmt.Errorf("provision staging database: %w", err)
+	}
+	file, err := os.Open(dump)
+	if err != nil {
+		return true, err
+	}
+	defer file.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore-dump", target, site)
+	cmd.Stdin = file
+	output, err := runBoundedCommand(ctx, cmd)
+	if err != nil {
+		return true, fmt.Errorf("import staging database: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return true, nil
 }

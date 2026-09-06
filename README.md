@@ -260,7 +260,7 @@ checkbox and should be backed up first.
 | `GET` | `/api/composer/<site>` | Detect Composer project files and show the latest operation |
 | `POST` | `/api/composer/<site>/install` | Install Composer dependencies under the site identity |
 | `GET` / `PUT` | `/api/sites/php/<site>` | Inspect installed PHP runtimes or apply a validated per-site FPM profile |
-| `POST` | `/api/staging` | Transactionally create a staging site from files and non-secret environment values |
+| `POST` | `/api/staging` | Transactionally create a staging site from files, non-secret environment values, and optionally a managed logical database clone |
 | `POST` | `/api/proxy/deploy` | Generate and reload a validated reverse proxy for the selected webserver |
 | `GET` | `/api/proxy` | List managed reverse proxies |
 | `POST` | `/api/proxy/test` | Test a local/private application backend |

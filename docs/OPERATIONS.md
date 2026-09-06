@@ -204,10 +204,12 @@ curl -fsS -X POST -H 'Content-Type: application/json' \
 
 The administrator restore-to-staging endpoint extracts only a verified backup's
 files into a new isolated, no-index route. It can optionally provision a new
-managed destination database and import one selected verified dump. Live
-database cloning, database schema rollback, off-site browsing, and promotion
-semantics remain unavailable. Administrator-only files-only in-place and
-database-only restores are also available through their explicit APIs.
+managed destination database and import one selected verified dump. The staging
+creation endpoint can also logically clone one managed source database into a
+new destination after ownership checks. Database schema rollback, off-site
+browsing, and promotion semantics remain unavailable. Administrator-only
+files-only in-place and database-only restores are also available through their
+explicit APIs.
 
 Git rollback releases are automatically retained per site. The count limit is
 controlled by `STEPANEL_GIT_RELEASE_RETENTION` (default 3), while

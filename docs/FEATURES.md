@@ -151,8 +151,8 @@ must be implemented before offering untrusted customer access:
   and billing lifecycle management. Built-in application resource envelopes
   are shipped, but complete disk/inode/bandwidth/database/Redis quota
   enforcement remains unfinished.
-- Customer-facing file manager, Git-provider App/OAuth integrations, live
-  database cloning/promotion, notifications, and self-service
+- Customer-facing file manager, Git-provider App/OAuth integrations, database
+  promotion, notifications, and self-service
   backup/restore. The shipped deploy-key, resource-profile, Security Center,
   scheduled-task, and restore-to-staging APIs remain operator/beta controls
   until tenant enforcement and durable state are complete.

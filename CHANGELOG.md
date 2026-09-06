@@ -11,6 +11,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added verified off-site backup restore-to-staging with fixed-object downloads,
   source-site authorization, optional selected-database import, and the same
   recovery-journaled cleanup guarantees as local staging restores.
+- Added ownership-checked logical managed-database cloning to new staging sites,
+  with explicit target credentials and cleanup if later staging steps fail.
 
 - Staging creation now rolls back no-index markers, environment state, and
   newly activated routes when a later staging transaction step fails, avoiding

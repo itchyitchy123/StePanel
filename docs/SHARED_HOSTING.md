@@ -122,12 +122,12 @@ FPM; managed Caddy and Apache routes use the selected version’s socket.
 
 `POST /api/staging` creates a distinct staging site and domain from a production
 site. The request supports `files` and `environment`; only non-secret environment
-values are copied, and the operation uses the site recovery journal. Live
-database cloning through this endpoint deliberately fails closed. The backup
-restore-to-staging endpoint can instead import one selected verified database
-dump into a newly provisioned destination database. New staging routes support
-default no-index headers and optional bcrypt-backed Basic Auth; outbound-email
-blocking, live database cloning, and promotion remain unavailable.
+values are copied, and the operation uses the site recovery journal. With
+`database:true`, it can also perform a logical dump of one managed source
+database and import it into a newly provisioned destination database after
+explicit source/target credentials and ownership checks. New staging routes
+support default no-index headers and optional bcrypt-backed Basic Auth;
+outbound-email blocking, schema rollback, and promotion remain unavailable.
 
 ## Sandboxed build runner
 

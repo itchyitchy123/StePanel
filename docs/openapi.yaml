@@ -496,7 +496,7 @@ paths:
   /api/staging:
     post:
       summary: Create a recovery-journaled staging site from safe file copies
-      description: Staging routes use no-index by default. Set basic_auth with auth_user and auth_password to enable helper-managed Basic Auth; the plaintext password is never persisted.
+      description: Staging routes use no-index by default. Set basic_auth with auth_user and auth_password to enable helper-managed Basic Auth; the plaintext password is never persisted. Set database=true with source_database, target_database, target_user, and target_password to logically clone one managed source database into a newly provisioned destination after ownership validation. Schema rollback and promotion remain manual.
       responses: {'202': {description: Staging site created}}
   /api/tasks/{site}:
     get:
