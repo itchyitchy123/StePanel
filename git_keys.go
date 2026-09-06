@@ -31,6 +31,8 @@ func (a *App) siteGitKey(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", http.StatusForbidden)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquire(site)
+		defer releaseUnlock()
 		output, err := runBoundedCommand(r.Context(), helperCommandContext(r.Context(), a.Config, a.Config.GitCtl, "generate", site))
 		if err != nil {
 			http.Error(w, "could not generate deploy key", http.StatusBadGateway)
@@ -43,6 +45,8 @@ func (a *App) siteGitKey(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", http.StatusForbidden)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquire(site)
+		defer releaseUnlock()
 		if err := runHelperCommand(r.Context(), a.Config, a.Config.GitCtl, "delete", site); err != nil {
 			http.Error(w, "could not retire deploy key", http.StatusBadGateway)
 			return

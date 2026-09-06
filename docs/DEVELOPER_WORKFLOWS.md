@@ -61,6 +61,9 @@ restore-to-staging. This prevents concurrent helper calls from overwriting
 systemd units, environment files, PHP limits, or other site-level state;
 unrelated sites remain concurrent. Startup and administrator reconciliation
 uses the same lock before applying pending desired state.
+Application lifecycle, runtime tooling, deploy-key, route conversion, and
+WordPress/cPanel restore operations use the same boundary, including when a
+restore runs asynchronously as a persisted job.
 
 Administrators can queue a files-only restore with `POST
 /api/backups/restore-files` using `backup`, `site`, and the explicit

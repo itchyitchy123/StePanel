@@ -212,6 +212,8 @@ func (a *App) htaccessMigration(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Caddy site helper is unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquireMany(input.Site, "vhost:"+proxyConfigName(a.Config.WebServer, input.Site, input.Domain))
+	defer releaseUnlock()
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
 	command := helperCommandContext(ctx, a.Config, a.Config.VHostCtl, "import-htaccess", input.Site, input.Domain)

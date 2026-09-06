@@ -625,6 +625,8 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Metrics.RestoreStarted()
 	if err := a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
+		releaseUnlock := a.siteOperations.acquire(user)
+		defer releaseUnlock()
 		var restoreErr error
 		defer func() { a.Metrics.RestoreFinished(restoreErr) }()
 		defer os.Remove(tempPath)

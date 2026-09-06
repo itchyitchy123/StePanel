@@ -202,6 +202,8 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.Jobs.SubmitWPress(jobID, site, func() (WPressResult, error) {
+		releaseUnlock := a.siteOperations.acquire(site)
+		defer releaseUnlock()
 		a.Metrics.RestoreStarted()
 		defer os.Remove(tempPath)
 		result, restoreErr := RestoreWPress(a.Config, tempPath, site, dbSuffix, dbUserSuffix, password, siteURL, targetPrefix, force)

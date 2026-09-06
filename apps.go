@@ -69,6 +69,8 @@ func (a *App) appDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site document root does not exist", 422)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(app.Site)
+	defer releaseUnlock()
 	a.appLifecycleMu.Lock()
 	defer a.appLifecycleMu.Unlock()
 	if err := os.MkdirAll(a.Config.AppRoot, 0750); err != nil {
@@ -132,6 +134,8 @@ func (a *App) appAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid app action", 422)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(parts[0])
+	defer releaseUnlock()
 	a.appLifecycleMu.Lock()
 	defer a.appLifecycleMu.Unlock()
 	if parts[1] == "rollback" {
