@@ -70,7 +70,12 @@ func (a *App) releasePipeline(w http.ResponseWriter, r *http.Request) {
 	defer releaseUnlock()
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Minute)
 	defer cancel()
-	result := gitDeployResult{Site: input.Site, Repository: input.Repository, Ref: input.Ref}
+	deploymentID, err := newJobID("deployment")
+	if err != nil {
+		http.Error(w, "could not create deployment identity", http.StatusInternalServerError)
+		return
+	}
+	result := gitDeployResult{DeploymentID: deploymentID, Site: input.Site, Repository: input.Repository, Ref: input.Ref}
 	a.recordDeployment(input.Site, "checkout", "running", "pipeline checkout started", result, "")
 	release, commit, err := a.checkoutPipelineRelease(ctx, input.Site, repository, input.Ref, siteRoot)
 	if err != nil {

@@ -37,7 +37,10 @@ func (a *App) recordDeployment(site, stage, state, detail string, result gitDepl
 	if a.Deployments == nil {
 		return
 	}
-	id, _ := newJobID("deployment")
+	id := result.DeploymentID
+	if id == "" {
+		id, _ = newJobID("deployment")
+	}
 	_ = a.Deployments.add(Deployment{ID: id, Site: site, Repository: result.Repository, Ref: result.Ref, Commit: result.Commit, Stage: stage, State: state, Detail: detail, Artifact: artifact, Previous: result.Previous, CreatedAt: time.Now().UTC()})
 }
 func (a *App) deployments(w http.ResponseWriter, r *http.Request) {

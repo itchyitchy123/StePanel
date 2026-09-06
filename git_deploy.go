@@ -64,11 +64,12 @@ func parseGitRepository(raw, allowedHosts string) (gitRepository, error) {
 }
 
 type gitDeployResult struct {
-	Site       string `json:"site"`
-	Repository string `json:"repository"`
-	Ref        string `json:"ref"`
-	Commit     string `json:"commit"`
-	Previous   string `json:"previous_release,omitempty"`
+	DeploymentID string `json:"deployment_id,omitempty"`
+	Site         string `json:"site"`
+	Repository   string `json:"repository"`
+	Ref          string `json:"ref"`
+	Commit       string `json:"commit"`
+	Previous     string `json:"previous_release,omitempty"`
 }
 
 type gitRollbackRequest struct {
