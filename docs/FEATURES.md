@@ -88,9 +88,10 @@ Latest stable release: `v0.6.0`
 - Preview per-site resource profiles that enforce CPU quota/weight,
   MemoryHigh/MemoryMax, I/O weight, and task limits
   for managed systemd application/worker processes plus PHP-FPM worker
-  ceilings. Optional disk/inode values are enforced with Linux user quotas
-  when the filesystem is preconfigured for quotas; bandwidth, database, and
-  Redis enforcement remain provider-specific planned work.
+  ceilings. Plan-assigned sites additionally inherit an aggregate account
+  cgroup envelope. Optional disk/inode values are enforced with Linux user
+  quotas when the filesystem is preconfigured for quotas; bandwidth, database,
+  and Redis enforcement remain provider-specific planned work.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
 - Independently verified site and registered-database backups.
@@ -144,8 +145,10 @@ must be implemented before offering untrusted customer access:
   reseller roles, API tokens, OIDC/WebAuthn, and approval/audit workflows.
 - Durable relational state and a distributed job/agent model for multiple
   servers, retries, cancellation, idempotency, and event delivery.
-- Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, quota,
-  resource-plan, and billing lifecycle management.
+- Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, customer quota,
+  and billing lifecycle management. Built-in application resource envelopes
+  are shipped, but complete disk/inode/bandwidth/database/Redis quota
+  enforcement remains unfinished.
 - Customer-facing file manager, Git-provider App/OAuth integrations,
   database-aware staging, notifications, and self-service
   backup/restore. The shipped deploy-key, resource-profile, Security Center,

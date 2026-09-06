@@ -195,6 +195,6 @@ tasks, DNS/registrar lifecycle, enforced disk/inode/bandwidth/I/O quotas,
 billing, customer-initiated restores, database-aware staging, support
 workflows, reseller roles, or a multi-host control plane. These gaps require
 host-level enforcement and durable tenancy-aware state, not merely dashboard
-forms. Administrator-only scheduled tasks, deploy keys, resource profiles,
+forms. Site-scoped scheduled tasks, deploy keys, resource profiles,
 Security Center, and restore-to-staging are documented in
 [`FEATURES.md`](FEATURES.md) with their beta/operator boundaries.

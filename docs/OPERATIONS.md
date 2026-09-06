@@ -142,10 +142,15 @@ and remove customer login records; suspension revokes active sessions, while
 login removal deliberately retains workloads. Customer credential recovery is
 available through the documented administrator recovery and customer completion
 endpoints. This beta has no hosting-workload suspension/termination, billing,
-or resource-quota workflow.
-Do not represent
-`starter`, `professional`, or `agency` as a CPU, memory, bandwidth, disk, or
-support entitlement: they enforce only 1, 5, or 25 assigned sites.
+or complete customer quota workflow. Built-in plans enforce aggregate
+application CPU, memory, process, and PHP-worker ceilings; disk, inode,
+bandwidth, database, Redis, and backup-storage entitlements still require
+separate provider enforcement.
+Do not represent `starter`, `professional`, or `agency` as complete hosting
+resource or support entitlements. They enforce 1, 5, or 25 assigned sites plus
+aggregate account/per-site application CPU, memory, process, and PHP-worker
+ceilings. Disk, inode, bandwidth, database, Redis, and backup-storage limits
+remain unavailable as plan entitlements.
 
 `STEPANEL_ACCOUNT_STATE` selects the account-state file. In production it
 defaults beside `STEPANEL_SESSION_STATE` as `accounts.json`; use a dedicated
