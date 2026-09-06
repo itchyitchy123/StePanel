@@ -108,11 +108,13 @@ attribution is required.
 
 Customer accounts are provisioned after installation by an authenticated
 administrator, not by installer variables. They require their own TOTP seed
-and explicit site assignments. The service stores their private account state
-as `/var/lib/ste-panel/accounts.json` by default, beside the durable session
-state; preserve it as encrypted control-plane state and never expose it through
-a site or support archive. See [`SHARED_HOSTING.md`](SHARED_HOSTING.md) for the
-enforced beta scope and limitations.
+and explicit site assignments. Set `STEPANEL_ACCOUNT_KEY` before enabling
+customer accounts; it encrypts their TOTP secrets at rest. The service stores
+their private account state as `/var/lib/ste-panel/accounts.json` by default,
+beside the durable session state. Back up the account key and state together,
+and never expose either through a site or support archive. See
+[`SHARED_HOSTING.md`](SHARED_HOSTING.md) for the enforced beta scope and
+limitations.
 
 The installer generates a separate audit HMAC key, stores a root-only copy at
 `/etc/stepanel-audit.key`, and supplies it through the protected service
@@ -167,6 +169,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_MAX_CONCURRENT_JOBS` | `1`–`32` | Global restore, backup, and certificate job slots |
 | `STEPANEL_ACCOUNT_STATE` | Absolute path in production | Optional private customer-account state file; defaults beside session state |
 | `STEPANEL_ENVIRONMENT_KEY` | Secret string | Enables AES-GCM encrypted site environment storage; keep stable and back it up securely |
+| `STEPANEL_ACCOUNT_KEY` | Secret string | Encrypts customer TOTP secrets in account state; required in production and must be backed up with `STEPANEL_ACCOUNT_STATE` |
 | `STEPANEL_ENVIRONMENT_STATE` | Filesystem path | Site environment state file; defaults beside the job state |
 | `STEPANEL_REDIS_STATE` | Filesystem path | Redis/Valkey site allocation state; defaults beside the job state |
 

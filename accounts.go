@@ -1,10 +1,15 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -31,13 +36,14 @@ var hostingPlans = map[string]HostingPlan{
 }
 
 type HostingAccount struct {
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"`
-	TOTPSecret   string    `json:"totp_secret"`
-	Plan         string    `json:"plan"`
-	Sites        []string  `json:"sites"`
-	Suspended    bool      `json:"suspended"`
-	CreatedAt    time.Time `json:"created_at"`
+	Username      string    `json:"username"`
+	PasswordHash  string    `json:"password_hash"`
+	TOTPSecret    string    `json:"totp_secret"`
+	TOTPEncrypted bool      `json:"totp_encrypted,omitempty"`
+	Plan          string    `json:"plan"`
+	Sites         []string  `json:"sites"`
+	Suspended     bool      `json:"suspended"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // AccountStore holds customer identities and site assignments. Administrator
@@ -46,11 +52,16 @@ type HostingAccount struct {
 type AccountStore struct {
 	mu       sync.RWMutex
 	path     string
+	key      []byte
 	accounts map[string]HostingAccount
 }
 
-func OpenAccountStore(path string) (*AccountStore, error) {
+func OpenAccountStore(path string, accountKey ...string) (*AccountStore, error) {
 	store := &AccountStore{path: path, accounts: make(map[string]HostingAccount)}
+	if len(accountKey) > 0 && strings.TrimSpace(accountKey[0]) != "" {
+		h := sha256.Sum256([]byte(accountKey[0]))
+		store.key = h[:]
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return store, nil
@@ -66,6 +77,17 @@ func OpenAccountStore(path string) (*AccountStore, error) {
 		return nil, fmt.Errorf("decode account state: %w", err)
 	}
 	for _, account := range accounts {
+		if account.TOTPEncrypted {
+			if len(store.key) == 0 {
+				return nil, errors.New("encrypted account TOTP requires STEPANEL_ACCOUNT_KEY")
+			}
+			plain, err := decryptAccountTOTP(store.key, account.TOTPSecret)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt account TOTP: %w", err)
+			}
+			account.TOTPSecret = plain
+			account.TOTPEncrypted = false
+		}
 		if err := validateHostingAccount(account, false); err != nil {
 			return nil, fmt.Errorf("invalid account state: %w", err)
 		}
@@ -225,10 +247,77 @@ func (s *AccountStore) Create(username, password, totpSecret, plan string, sites
 	return account, nil
 }
 
+func (s *AccountStore) ResetTOTP(username string) (HostingAccount, string, error) {
+	secretBytes := make([]byte, 20)
+	if _, err := io.ReadFull(rand.Reader, secretBytes); err != nil {
+		return HostingAccount{}, "", err
+	}
+	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(secretBytes)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return HostingAccount{}, "", errors.New("account not found")
+	}
+	previous := account.TOTPSecret
+	account.TOTPSecret, account.TOTPEncrypted = secret, false
+	s.accounts[username] = account
+	if err := s.persistLocked(); err != nil {
+		account.TOTPSecret, account.TOTPEncrypted = previous, false
+		s.accounts[username] = account
+		return HostingAccount{}, "", err
+	}
+	response := account
+	response.PasswordHash, response.TOTPSecret, response.TOTPEncrypted = "", secret, false
+	return response, secret, nil
+}
+
+func encryptAccountTOTP(key []byte, value string) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	sealed := gcm.Seal(nonce, nonce, []byte(value), nil)
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sealed), nil
+}
+
+func decryptAccountTOTP(key []byte, value string) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	raw, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(value)
+	if err != nil || len(raw) < gcm.NonceSize() {
+		return "", errors.New("invalid encrypted TOTP")
+	}
+	plain, err := gcm.Open(nil, raw[:gcm.NonceSize()], raw[gcm.NonceSize():], nil)
+	return string(plain), err
+}
+
 func (s *AccountStore) persistLocked() error {
 	accounts := make([]HostingAccount, 0, len(s.accounts))
 	for _, account := range s.accounts {
-		accounts = append(accounts, account)
+		persisted := account
+		if len(s.key) > 0 && account.TOTPSecret != "" {
+			encrypted, err := encryptAccountTOTP(s.key, account.TOTPSecret)
+			if err != nil {
+				return err
+			}
+			persisted.TOTPSecret, persisted.TOTPEncrypted = encrypted, true
+		}
+		accounts = append(accounts, persisted)
 	}
 	sort.Slice(accounts, func(i, j int) bool { return accounts[i].Username < accounts[j].Username })
 	data, err := json.MarshalIndent(accounts, "", "  ")
@@ -241,6 +330,32 @@ func (s *AccountStore) persistLocked() error {
 func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 	if a.Accounts == nil {
 		http.Error(w, "shared-hosting accounts are unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasSuffix(strings.Trim(r.URL.Path, "/"), "/mfa") {
+		if !a.Auth.CSRF(r) {
+			http.Error(w, "invalid request", http.StatusForbidden)
+			return
+		}
+		path := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/accounts/"), "/mfa")
+		username := safeUser(strings.Trim(path, "/"))
+		if username == "" || strings.Contains(path, "/") {
+			http.Error(w, "invalid account", http.StatusBadRequest)
+			return
+		}
+		account, secret, err := a.Accounts.ResetTOTP(username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if a.Auth.sessions != nil {
+			if err := a.Auth.sessions.revokeUser(username); err != nil {
+				http.Error(w, "MFA reset saved but session revocation could not be persisted", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.mfa-reset", username, "TOTP regenerated and sessions revoked")
+		writeJSON(w, http.StatusOK, map[string]any{"account": account, "totp_secret": secret})
 		return
 	}
 	if r.Method == http.MethodPatch || r.Method == http.MethodDelete {

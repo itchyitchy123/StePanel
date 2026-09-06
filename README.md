@@ -189,6 +189,8 @@ checkbox and should be backed up first.
 | `GET` | `/api/database` | Selected database engine, service/client health, and browser-admin readiness |
 | `GET` | `/api/capabilities` | Runtime feature availability, including database restore compatibility |
 | `GET` / `POST` | `/api/accounts` | Administrator-only shared-hosting account inventory and provisioning |
+| `PATCH` / `DELETE` | `/api/accounts/<username>` | Suspend/unsuspend or remove a customer login; workloads are retained |
+| `POST` | `/api/accounts/<username>/mfa` | Regenerate encrypted customer TOTP and revoke that customer's sessions |
 | `GET` | `/api/cloud` | Authenticated Linode/AWS/OpenStack inventory for servers, DNS, load balancers, and snapshots |
 | `POST` | `/api/cloud/action` | Queue a cloud server start, stop, reboot, or snapshot action |
 | `GET` | `/api/cloud/dns` | List Linode DNS records |
@@ -296,6 +298,7 @@ checkbox and should be backed up first.
 | `STEPANEL_JOB_STATE` | Durable restore and certificate job state file |
 | `STEPANEL_SESSION_STATE` | Durable revocable administrator session state file |
 | `STEPANEL_ACCOUNT_STATE` | Private JSON state for shared-hosting customer accounts; defaults beside session state in production |
+| `STEPANEL_ACCOUNT_KEY` | Stable secret used to encrypt customer TOTP secrets in account state; required in production |
 | `STEPANEL_RECOVERY_ROOT` | Durable site rollback transactions on the site filesystem |
 | `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; production default `/usr/local/bin/wpress-extract` |
 | `STEPANEL_WPCLI` | WP-CLI executable; production default `/usr/local/bin/wp` |

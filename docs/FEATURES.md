@@ -45,10 +45,14 @@ not implemented.
   file-and-managed-database backup and connect a validated web route; the UI
   explains the required DNS cutover after a route is created.
 - Shared-hosting beta: administrator-provisioned customer accounts with
-  independently hashed passwords, mandatory per-customer TOTP, plan-enforced
+  independently hashed passwords, encrypted customer TOTP at rest when
+  `STEPANEL_ACCOUNT_KEY` is configured, mandatory per-customer TOTP, plan-enforced
   assigned-site limits, and authorization that scopes customer site workspace,
   backup, and job access to their assignments. Provider operations remain
   administrator-only.
+- Administrator-only customer MFA regeneration through
+  `/api/accounts/{username}/mfa`, returning the replacement seed once and
+  revoking that customer's sessions.
 - Constrained Git releases and one-click rollback at `/api/sites/git-deploy` and `/api/sites/git-rollback`, with public HTTPS sources or per-site deploy-key-authenticated `git@host:path.git` sources, an exact hostname allowlist, shallow ref checkout, commit identification, symlink rejection, Git-metadata removal, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
 - Developer runtime APIs for encrypted site environments, version-selected
   PHP-FPM profiles, Composer inspection/install, Node package tooling, Python

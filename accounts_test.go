@@ -37,6 +37,52 @@ func TestAccountStorePersistsOnlyValidatedAssignments(t *testing.T) {
 	}
 }
 
+func TestAccountStoreEncryptsTOTPAndSupportsRegeneration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	store, err := OpenAccountStore(path, "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), testTOTPSecret) || !strings.Contains(string(data), "totp_encrypted") {
+		t.Fatalf("account state did not encrypt TOTP secret: %s", data)
+	}
+	reopened, err := OpenAccountStore(path, "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account, ok := reopened.Get("customer"); !ok || account.TOTPSecret != testTOTPSecret {
+		t.Fatal("encrypted TOTP secret did not decrypt")
+	}
+	account, replacement, err := reopened.ResetTOTP("customer")
+	if err != nil || replacement == testTOTPSecret || account.TOTPSecret != replacement {
+		t.Fatalf("MFA regeneration = %#v, %q, %v", account, replacement, err)
+	}
+	if _, err := decodeTOTPSecret(replacement); err != nil {
+		t.Fatalf("replacement TOTP was invalid: %v", err)
+	}
+}
+
+func TestEncryptedAccountStateRequiresKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	store, err := OpenAccountStore(path, "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenAccountStore(path); err == nil || !strings.Contains(err.Error(), "STEPANEL_ACCOUNT_KEY") {
+		t.Fatalf("opening encrypted account state without key = %v", err)
+	}
+}
+
 func TestCustomerLoginRequiresAccountTOTP(t *testing.T) {
 	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
 	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")

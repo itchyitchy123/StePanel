@@ -20,6 +20,12 @@ delete the old backup until recovery has been tested.
 
 ## Audit, session, and account state
 
+`STEPANEL_ACCOUNT_KEY` encrypts customer TOTP secrets in account state. Back it
+up with `STEPANEL_ACCOUNT_STATE`; losing the key means affected MFA seeds must
+be regenerated. `POST /api/accounts/{username}/mfa` regenerates one seed,
+revokes that customer's sessions, and returns the replacement once for secure
+delivery. Recovery codes are not currently implemented.
+
 `STEPANEL_AUDIT_KEY` protects the HMAC-linked audit chain. Do not rotate it in
 place: existing events would no longer verify. Preserve the old key with the
 audit log, and start a separately documented chain only through an intentional

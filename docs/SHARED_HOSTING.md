@@ -47,10 +47,15 @@ The operation is audited as login removal and retains assigned workloads for a
 separate, reviewed lifecycle workflow.
 The endpoint is intentionally documented as **login removal**; no current API
 claims to terminate the associated hosting workloads.
-Account data is stored in `STEPANEL_ACCOUNT_STATE`, mode
-`0600`, and must be included in host backups. The production default is beside
-the session state as `accounts.json`; configure a dedicated absolute path when
-needed.
+Account data is stored in `STEPANEL_ACCOUNT_STATE`, mode `0600`, and must be
+included in host backups. With `STEPANEL_ACCOUNT_KEY`, customer TOTP secrets
+are AES-GCM encrypted at rest and never serialized as plaintext. Existing
+legacy plaintext records can be loaded for migration and are encrypted on the
+next account write. The production default is beside the session state as
+`accounts.json`; configure a dedicated absolute path when needed. Administrators
+can regenerate a customer's MFA secret with `POST
+/api/accounts/{username}/mfa`; the new seed is returned once, existing sessions
+are revoked, and the seed must be delivered through a secure channel.
 
 ## Site environment variables
 

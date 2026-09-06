@@ -75,9 +75,10 @@ backup RPO signals are available as `stepanel_backup_oldest_age_seconds`,
 Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
 `/var/lib/ste-panel` before upgrading. If shared-hosting accounts are enabled,
 that state directory includes `accounts.json` by default. It contains customer
-password hashes and TOTP seeds, so keep it mode `0600`, include it only in
-encrypted control-plane backups, and never place it in support bundles or
-public backup artifacts.
+password hashes and encrypted TOTP material when `STEPANEL_ACCOUNT_KEY` is
+configured; keep it mode `0600`, include the account key only in encrypted
+control-plane backups, and never place either in support bundles or public
+backup artifacts.
 
 For an in-place upgrade, build the candidate binary, ensure no restore or backup
 job is active, then run `install.sh` without re-supplying secrets. The installer

@@ -259,11 +259,18 @@ paths:
       responses:
         '200': {description: Updated account}
     delete:
-      summary: Terminate a shared-hosting customer account (administrator only)
+      summary: Remove a shared-hosting customer login (administrator only; workloads retained)
       parameters:
         - {name: username, in: path, required: true, schema: {type: string}}
       responses:
         '204': {description: Customer login removed; hosting workloads are retained}
+  /api/accounts/{username}/mfa:
+    post:
+      summary: Regenerate a customer's TOTP secret and revoke sessions (administrator only)
+      parameters:
+        - {name: username, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Replacement TOTP secret returned once}
   /api/security/scan:
     post:
       summary: Scan a managed site for suspicious PHP

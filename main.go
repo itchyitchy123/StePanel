@@ -94,6 +94,9 @@ func main() {
 	if cfg.Production && os.Getenv("STEPANEL_ACCOUNT_STATE") == "" {
 		cfg.AccountState = filepath.Join(filepath.Dir(cfg.SessionState), "accounts.json")
 	}
+	if cfg.Production && strings.TrimSpace(cfg.AccountKey) == "" {
+		log.Fatal("production requires STEPANEL_ACCOUNT_KEY to encrypt customer TOTP secrets")
+	}
 	if err := ValidateConfig(cfg); err != nil {
 		log.Fatalf("invalid configuration: %v", err)
 	}
@@ -124,7 +127,7 @@ func main() {
 	if err := auth.ConfigureSessionStore(cfg.SessionState); err != nil {
 		log.Fatalf("open persistent session state: %v", err)
 	}
-	accounts, err := OpenAccountStore(cfg.AccountState)
+	accounts, err := OpenAccountStore(cfg.AccountState, cfg.AccountKey)
 	if err != nil {
 		log.Fatalf("open persistent shared-hosting account state: %v", err)
 	}
@@ -352,7 +355,7 @@ func main() {
 	mux.Handle("/api/wordpress/status/", allowMethods(app.Auth.Require(http.HandlerFunc(app.wordpressStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/wordpress/", allowMethods(app.Auth.Require(http.HandlerFunc(app.wordpressAction)), http.MethodPost))
 	mux.Handle("/api/accounts", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodGet, http.MethodHead, http.MethodPost))
-	mux.Handle("/api/accounts/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodPatch, http.MethodDelete))
+	mux.Handle("/api/accounts/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodPatch, http.MethodDelete, http.MethodPost))
 	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/jobs", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobList)), http.MethodGet, http.MethodHead))
 	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))

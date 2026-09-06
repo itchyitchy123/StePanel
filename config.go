@@ -23,6 +23,7 @@ type Config struct {
 	DBEngine, DBVersion, DBAdminURL                                                          string
 	GitAllowedHosts, GitWebhookSecret                                                        string
 	EnvironmentState, EnvironmentKey                                                         string
+	AccountKey                                                                               string
 	RedisState                                                                               string
 	OffsiteTarget                                                                            string
 	CloudProvider                                                                            string
@@ -78,6 +79,7 @@ func LoadConfig() Config {
 		c.EnvironmentState = v
 	}
 	c.EnvironmentKey = os.Getenv("STEPANEL_ENVIRONMENT_KEY")
+	c.AccountKey = os.Getenv("STEPANEL_ACCOUNT_KEY")
 	c.RedisState = filepath.Join(filepath.Dir(c.JobState), "redis-allocations.json")
 	if v := os.Getenv("STEPANEL_REDIS_STATE"); v != "" {
 		c.RedisState = v
