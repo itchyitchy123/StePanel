@@ -255,6 +255,8 @@ func (a *App) gitRollback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid site root", http.StatusUnprocessableEntity)
 		return
 	}
+	releaseUnlock := a.gitSiteOperations.acquire(input.Site)
+	defer releaseUnlock()
 	a.gitActivationMu.Lock()
 	defer a.gitActivationMu.Unlock()
 	previous, err := latestPreviousRelease(siteRoot)
