@@ -33,7 +33,8 @@ type DNSRecord struct {
 	TTL    int    `json:"ttl"`
 }
 type DNSSECStatus struct {
-	Supported, Enabled bool `json:"supported"`
+	Supported bool `json:"supported"`
+	Enabled   bool `json:"enabled"`
 }
 
 type DNSCapability struct {

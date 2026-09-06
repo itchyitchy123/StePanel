@@ -79,7 +79,9 @@ func main() {
 		return
 	}
 	if len(os.Args) == 2 && os.Args[1] == "dr-check" {
-		if err := runDRCheck(LoadConfig()); err != nil { log.Fatal(err) }
+		if err := runDRCheck(LoadConfig()); err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 	if len(os.Args) == 2 && os.Args[1] == "hash-password" {
