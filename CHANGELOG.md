@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Read-only administrator Security Center endpoint aggregating existing posture
+  checks, service state, disk/inode pressure, and backup schedule health.
+
 - Optional Basic Auth protection for staging routes with bcrypt-only
   credential persistence and managed Caddy/Apache enforcement.
 

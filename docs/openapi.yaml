@@ -376,6 +376,10 @@ paths:
       summary: Measure bounded regular-file usage for a site without following symlinks
       parameters: [{name: site, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Bytes, file count, directory count and completeness}}
+  /api/security/center:
+    get:
+      summary: Read administrator host security and operational posture
+      responses: {'200': {description: Existing security checks, service states, disk/inode and backup posture}}
   /api/backups/restore-to-staging:
     post:
       summary: Restore verified backup files into a new isolated staging site
