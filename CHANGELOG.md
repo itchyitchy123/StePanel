@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Serialized same-site Git and release-pipeline operations to protect the
+  shared build-artifact path and release pointer, while retaining concurrency
+  across different sites.
+
 - Applied each site's CPU, memory, and PID resource profile to rootless Podman
   build containers, with conservative limits for legacy sites, and tightened
   runner path validation at the privileged boundary.

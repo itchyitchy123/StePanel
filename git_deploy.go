@@ -123,6 +123,8 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid site or Git ref", http.StatusUnprocessableEntity)
 		return
 	}
+	releaseUnlock := a.gitSiteOperations.acquire(input.Site)
+	defer releaseUnlock()
 	repository, err := parseGitRepository(input.Repository, a.Config.GitAllowedHosts)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)

@@ -66,6 +66,8 @@ func (a *App) releasePipeline(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site root does not exist", 422)
 		return
 	}
+	releaseUnlock := a.gitSiteOperations.acquire(input.Site)
+	defer releaseUnlock()
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Minute)
 	defer cancel()
 	result := gitDeployResult{Site: input.Site, Repository: input.Repository, Ref: input.Ref}

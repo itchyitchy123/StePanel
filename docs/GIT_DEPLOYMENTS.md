@@ -53,9 +53,11 @@ symlinks and special files, applies the configured entry limit, removes `.git`,
 and atomically replaces the site's `public` directory. The prior directory is
 retained under the site root as `.stepanel-previous-<id>`.
 
-Only the final filesystem switch is serialized. Repository transfer happens
-before that lock so unrelated checkouts do not block one another. The request
-has a ten-minute timeout and returns the exact deployed commit on success.
+Git checkout, build-pipeline, activation, and rollback operations are serialized
+per site. Operations for different sites may proceed concurrently; same-site
+pipelines cannot race over the shared `.stepanel-artifact` path or release
+pointer. The request has a ten-minute timeout and returns the exact deployed
+commit on success.
 
 ## Roll back
 

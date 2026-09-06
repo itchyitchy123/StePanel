@@ -129,6 +129,8 @@ operation: it performs an allowlisted Git checkout into a non-live release
 directory, optionally creates a verified files-and-managed-database backup,
 runs the supplied bounded commands in the rootless runner, verifies the build
 artifact, and atomically activates it while preserving the previous release.
+Same-site Git and pipeline operations are serialized, while unrelated sites
+remain concurrent.
 
 Build commands must write the complete deployable release tree to `/artifact`.
 The checked-out source is mounted read-only, so a build cannot modify it in
