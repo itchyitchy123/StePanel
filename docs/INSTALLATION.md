@@ -27,15 +27,23 @@ certificates automatically. Apache `.htaccess` migrations are described in
 
 ## Build and install
 
-Build on a Go 1.26+ build host:
+For production, use a verified tagged release archive:
 
 ```sh
-go build -trimpath -ldflags='-s -w' -o stepanel .
-sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \\
-  STEPANEL_PANEL_HOSTNAME=panel.example.com \\
-  STEPANEL_DB_ENGINE=mariadb \\
-  STEPANEL_DB_VERSION=10.11 ./install.sh
+release=v0.6.0
+arch=amd64 # use arm64 on aarch64 hosts
+curl -fsSLO "https://github.com/itchyitchy123/StePanel/releases/download/${release}/stepanel_${release#v}_linux_${arch}.tar.gz"
+curl -fsSLO "https://github.com/itchyitchy123/StePanel/releases/download/${release}/SHA256SUMS"
+grep "stepanel_${release#v}_linux_${arch}.tar.gz" SHA256SUMS | sha256sum -c -
+tar -xzf "stepanel_${release#v}_linux_${arch}.tar.gz"
+sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
+  STEPANEL_PANEL_HOSTNAME=panel.example.com \
+  STEPANEL_DB_ENGINE=mariadb \
+  STEPANEL_DB_VERSION=default ./install.sh
 ```
+
+Building from source is for contributors and development hosts; release
+archives include the binary, installer, helpers, service files, and web assets.
 
 For a fresh installation, the installer requires an admin password, stores only
 its bcrypt hash, generates a session secret when one is not supplied, and starts in production mode. It

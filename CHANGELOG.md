@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Release archives now include the production installer, privileged helpers,
+  service definitions, and web assets so operators can install verified
+  artifacts without building from source.
+
 - Pinned the release GoReleaser action to an immutable commit and pinned the
   GoReleaser binary to exactly `v2.17.1` for reproducible artifact publishing.
 - Declared `FEATURES.md` canonical for feature statuses and added explicit

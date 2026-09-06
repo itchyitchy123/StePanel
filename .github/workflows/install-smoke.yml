@@ -1,0 +1,50 @@
+name: Installation smoke
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: almalinux-9-caddy-mariadb
+            image: almalinux:9
+            db: mariadb
+          - name: ubuntu-24.04-caddy-mysql
+            image: ubuntu:24.04
+            db: mysql
+          - name: debian-12-caddy-postgresql
+            image: debian:12
+            db: postgresql
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.7'
+          cache: true
+      - name: Build release-shaped installer tree
+        run: go build -trimpath -ldflags='-s -w' -o stepanel .
+      - name: Start disposable systemd host
+        env:
+          IMAGE: ${{ matrix.image }}
+          DB: ${{ matrix.db }}
+        run: |
+          set -eu
+          docker run -d --privileged --name stepanel-install \
+            --tmpfs /run --tmpfs /run/lock \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -v "$PWD:/work" "$IMAGE" /sbin/init
+          cleanup() { docker rm -f stepanel-install >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          for _ in $(seq 1 30); do docker exec stepanel-install systemctl is-system-running >/dev/null 2>&1 && break; sleep 2; done
+          docker exec -e STEPANEL_DB_ENGINE="$DB" stepanel-install /work/deploy/lab/install-smoke.sh

@@ -32,6 +32,9 @@ archives:
       - LICENSE
       - README.md
       - SECURITY.md
+      - install.sh
+      - deploy/**
+      - web/**
 
 checksum:
   name_template: SHA256SUMS

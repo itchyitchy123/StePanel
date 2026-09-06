@@ -110,12 +110,19 @@ docker run --rm -p 8080:8080 \
   stepanel:local
 ```
 
-### Server installation
+### Server installation from a release
 
-Build a release binary and run the installer as root:
+Use a tagged release artifact for production installation. The archive
+contains the binary, installer, helpers, service files, and web assets needed
+by `install.sh`:
 
 ```sh
-go build -trimpath -ldflags='-s -w' -o stepanel .
+release=v0.6.0
+arch=amd64 # use arm64 on aarch64 hosts
+curl -fsSLO "https://github.com/itchyitchy123/StePanel/releases/download/${release}/stepanel_${release#v}_linux_${arch}.tar.gz"
+curl -fsSLO "https://github.com/itchyitchy123/StePanel/releases/download/${release}/SHA256SUMS"
+grep "stepanel_${release#v}_linux_${arch}.tar.gz" SHA256SUMS | sha256sum -c -
+tar -xzf "stepanel_${release#v}_linux_${arch}.tar.gz"
 sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
   STEPANEL_PANEL_HOSTNAME=panel.example.com \
   STEPANEL_DB_ENGINE=mariadb \
@@ -123,6 +130,13 @@ sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
 ```
 
 The installer records the selected database engine/version, creates a restricted `stepanel` service account, writes the requested panel hostname into the selected webserver, and binds the control plane to `127.0.0.1:8090`. Caddy provisions HTTPS automatically; Apache installations must complete TLS termination before signing in.
+
+Verify release provenance and the GitHub attestation before installing on a
+production host. The checksum authenticates download integrity; the release
+page's SBOM and build-provenance attestation provide the corresponding supply
+chain evidence. Building from source is a developer/contributor workflow:
+see [Local development](#local-development) and keep it separate from the
+normal operator installation path.
 
 ## cpmove migration
 

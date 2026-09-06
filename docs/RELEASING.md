@@ -23,7 +23,8 @@ match the source version.
    git push origin "v${release_version}"
    ```
 
-5. The release workflow runs GoReleaser for Linux AMD64 and ARM64 binaries,
+5. The release workflow runs GoReleaser for Linux AMD64 and ARM64 installer
+   archives containing the binary and installer support tree,
    creates tar archives and SHA-256 checksums, publishes provenance, pushes
    multi-architecture container images, and attaches the artifacts to the
    GitHub release. The workflow also attaches an SPDX SBOM generated for the
