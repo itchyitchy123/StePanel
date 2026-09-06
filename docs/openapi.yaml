@@ -367,6 +367,10 @@ paths:
       summary: Apply CPU, memory, task and PHP-FPM worker ceilings for a site
       parameters: [{name: site, in: path, required: true, schema: {type: string}}]
       responses: {'202': {description: Systemd slice and FPM profile applied}}
+  /api/reconcile/resources:
+    post:
+      summary: Reconcile pending/inactive desired resource profiles with systemd and PHP-FPM
+      responses: {'200': {description: Reconciled and failed site lists}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation

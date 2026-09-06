@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -67,7 +68,11 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		a.Resources.mu.RLock()
 		p, ok := a.Resources.values[site]
 		a.Resources.mu.RUnlock()
-		writeJSON(w, 200, map[string]any{"configured": ok, "profile": p, "enforcement": "systemd slice for managed apps/workers; isolated PHP-FPM max_children"})
+		observed := map[string]string{"state": "unknown"}
+		if ok {
+			observed = a.resourceObserved(r.Context(), site)
+		}
+		writeJSON(w, 200, map[string]any{"configured": ok, "profile": p, "observed": observed, "enforcement": "systemd slice for managed apps/workers; isolated PHP-FPM max_children"})
 		return
 	}
 	if r.Method != http.MethodPut || !a.Auth.CSRF(r) || !a.Auth.IsAdministrator(r) {
@@ -113,4 +118,67 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.resources.applied", site, "cgroup/FPM profile")
 	writeJSON(w, 202, p)
+}
+
+func (a *App) resourceObserved(ctx context.Context, site string) map[string]string {
+	output, err := runBoundedCommand(ctx, helperCommandContext(ctx, a.Config, a.Config.AppCtl, "resource-status", site))
+	if err != nil {
+		return map[string]string{"state": "unavailable"}
+	}
+	values := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			values[parts[0]] = parts[1]
+		}
+	}
+	if values["ActiveState"] == "" {
+		values["state"] = "unknown"
+	} else {
+		values["state"] = values["ActiveState"]
+	}
+	return values
+}
+
+func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) || !a.Auth.IsAdministrator(r) {
+		http.Error(w, "administrator CSRF request required", 403)
+		return
+	}
+	if a.Resources == nil {
+		http.Error(w, "resource state unavailable", 503)
+		return
+	}
+	a.Resources.mu.RLock()
+	pending := make([]ResourceProfile, 0, len(a.Resources.values))
+	for _, p := range a.Resources.values {
+		if p.State != "applied" || a.resourceObserved(r.Context(), p.Site)["state"] != "active" {
+			pending = append(pending, p)
+		}
+	}
+	a.Resources.mu.RUnlock()
+	reconciled, failed := []string{}, map[string]string{}
+	for _, p := range pending {
+		err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.TasksMax))
+		if err == nil {
+			err = runHelperCommand(r.Context(), a.Config, a.Config.SiteCtl, "resources", p.Site, strconv.Itoa(p.PHPWorkers))
+		}
+		if err != nil {
+			failed[p.Site] = "apply failed"
+			continue
+		}
+		p.State = "applied"
+		p.AppliedAt = time.Now().UTC()
+		a.Resources.mu.Lock()
+		a.Resources.values[p.Site] = p
+		err = a.Resources.persistLocked()
+		a.Resources.mu.Unlock()
+		if err != nil {
+			failed[p.Site] = "state persistence failed"
+			continue
+		}
+		reconciled = append(reconciled, p.Site)
+	}
+	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "resources.reconciled", "resources", strings.Join(reconciled, ","))
+	writeJSON(w, 200, map[string]any{"reconciled": reconciled, "failed": failed})
 }

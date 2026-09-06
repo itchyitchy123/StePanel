@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Observed systemd-slice resource status and an audited administrator
+  reconciliation endpoint that re-applies pending or inactive desired profiles.
+
 - Preview per-site resource profiles with persisted desired state, systemd
   CPU/memory/task enforcement for managed application and worker services, and
   validated PHP-FPM worker ceilings.

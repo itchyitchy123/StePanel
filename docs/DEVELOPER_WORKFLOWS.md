@@ -24,6 +24,11 @@ attaches managed application/worker units to it. The desired profile is saved
 as `pending` before host application and becomes `applied` only after both the
 systemd slice and FPM pool validate successfully.
 
+`GET /api/sites/resources/{site}` also reports observed systemd-slice state.
+Administrators can call `POST /api/reconcile/resources` to re-apply pending or
+inactive desired profiles after a helper failure or host restart; each repair
+is audited.
+
 This does **not** yet impose disk/inode/project quotas, network/bandwidth or
 block-I/O limits, database limits, or Redis ACL/memory enforcement. Those need
 host/provider-specific controls before they can be presented as tenant limits.
