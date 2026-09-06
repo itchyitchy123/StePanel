@@ -102,6 +102,8 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid worker action", 422)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquire(site)
+		defer releaseUnlock()
 		if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, parts[2], site+"/"+name); err != nil {
 			http.Error(w, "worker action failed", 502)
 			return
@@ -120,6 +122,8 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", 403)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquire(site)
+		defer releaseUnlock()
 		key := site + "/" + name
 		a.Workers.mu.Lock()
 		worker := a.Workers.values[key]
@@ -172,6 +176,8 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid worker root", 422)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(site)
+	defer releaseUnlock()
 	a.Workers.mu.Lock()
 	a.Workers.values[site+"/"+name] = input
 	e := a.Workers.persistLocked()
@@ -232,9 +238,11 @@ func (a *App) reconcileWorkers(ctx context.Context) (reconciled []string, failed
 	a.Workers.mu.RUnlock()
 	for _, worker := range pending {
 		key := worker.Site + "/" + worker.Name
+		releaseUnlock := a.siteOperations.acquire(worker.Site)
 		if err := a.applyWorker(ctx, worker); err != nil {
 			failed[key] = err.Error()
 			a.recordWorkerError(key, err)
+			releaseUnlock()
 			continue
 		}
 		a.Workers.mu.Lock()
@@ -252,9 +260,11 @@ func (a *App) reconcileWorkers(ctx context.Context) (reconciled []string, failed
 		a.Workers.mu.Unlock()
 		if err != nil {
 			failed[key] = "state persistence failed"
+			releaseUnlock()
 			continue
 		}
 		reconciled = append(reconciled, key)
+		releaseUnlock()
 	}
 	return reconciled, failed
 }

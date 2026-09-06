@@ -74,6 +74,8 @@ func (a *App) selectNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to prepare site root", 500)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(input.Site)
+	defer releaseUnlock()
 	if err := writeAtomic(filepath.Join(siteRoot, ".nvmrc"), []byte("v"+version+"\n"), 0640); err != nil {
 		http.Error(w, "unable to select Node version", 500)
 		return
@@ -104,6 +106,8 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := proxyConfigName(a.Config.WebServer, input.Site, input.Domain)
+	releaseUnlock := a.siteOperations.acquireMany(input.Site, "proxy:"+name)
+	defer releaseUnlock()
 	path := filepath.Join(a.Config.ProxyRoot, name)
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.ProxyCtl, "apply", input.Site, strings.ToLower(input.Domain), backend); err != nil {
 		http.Error(w, "proxy helper rejected the configuration or webserver reload failed", http.StatusServiceUnavailable)
@@ -168,6 +172,8 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "proxy not found", http.StatusNotFound)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire("proxy:" + name)
+	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.ProxyCtl, "delete", name); err != nil {
 		http.Error(w, "proxy was not removed because the helper or webserver reload failed", http.StatusServiceUnavailable)
 		return

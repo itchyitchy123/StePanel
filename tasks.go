@@ -94,6 +94,8 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", 403)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquire(site)
+		defer releaseUnlock()
 		a.Tasks.mu.Lock()
 		key := site + "/" + name
 		task := a.Tasks.values[key]
@@ -140,6 +142,8 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid scheduled task definition", 422)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(site)
+	defer releaseUnlock()
 	a.Tasks.mu.Lock()
 	key := site + "/" + name
 	a.Tasks.values[key] = input
@@ -210,9 +214,11 @@ func (a *App) reconcileTasks(ctx context.Context) (reconciled []string, failed m
 	a.Tasks.mu.RUnlock()
 	for _, task := range pending {
 		key := task.Site + "/" + task.Name
+		releaseUnlock := a.siteOperations.acquire(task.Site)
 		if err := a.applyTask(ctx, task); err != nil {
 			failed[key] = err.Error()
 			a.recordTaskError(key, err)
+			releaseUnlock()
 			continue
 		}
 		a.Tasks.mu.Lock()
@@ -226,9 +232,11 @@ func (a *App) reconcileTasks(ctx context.Context) (reconciled []string, failed m
 		a.Tasks.mu.Unlock()
 		if err != nil {
 			failed[key] = "state persistence failed"
+			releaseUnlock()
 			continue
 		}
 		reconciled = append(reconciled, key)
+		releaseUnlock()
 	}
 	return reconciled, failed
 }

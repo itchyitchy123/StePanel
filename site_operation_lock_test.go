@@ -48,3 +48,28 @@ func TestSiteOperationLocksAllowDifferentSites(t *testing.T) {
 	}
 	first()
 }
+
+func TestSiteOperationLocksAcquireManyHasStableOrder(t *testing.T) {
+	var locks siteOperationLocks
+	first := locks.acquireMany("site-b", "site-a")
+	finished := make(chan struct{})
+	go func() {
+		second := locks.acquireMany("site-a", "site-b")
+		second()
+		close(finished)
+	}()
+	select {
+	case <-finished:
+		t.Fatal("related operation acquired locks before the first operation released them")
+	case <-time.After(20 * time.Millisecond):
+	}
+	first()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("related operation did not acquire after release")
+	}
+	if len(locks.locks) != 0 {
+		t.Fatalf("lock entries leaked after multi-lock operation: %d", len(locks.locks))
+	}
+}

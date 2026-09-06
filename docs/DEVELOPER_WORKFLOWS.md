@@ -55,6 +55,13 @@ directories without following symlinks. It reports measured usage; configured
 resource profiles may additionally enforce disk/inode ceilings through the
 filesystem user-quota provider described above.
 
+Mutating environment, resource-profile, scheduled-task, and worker requests
+for the same site share the site operation lock with deployments, staging, and
+restore-to-staging. This prevents concurrent helper calls from overwriting
+systemd units, environment files, PHP limits, or other site-level state;
+unrelated sites remain concurrent. Startup and administrator reconciliation
+uses the same lock before applying pending desired state.
+
 Administrators can queue a files-only restore with `POST
 /api/backups/restore-files` using `backup`, `site`, and the explicit
 `confirm=RESTORE_FILES` value. The archive and signature are verified before a

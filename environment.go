@@ -42,11 +42,14 @@ func (a *App) reconcileEnvironments(ctx context.Context) (reconciled []string, f
 	}
 	a.Environments.mu.RUnlock()
 	for site, vars := range desired {
+		releaseUnlock := a.siteOperations.acquire(site)
 		if err := a.applyEnvironment(ctx, site, vars); err != nil {
 			failed[site] = err.Error()
+			releaseUnlock()
 			continue
 		}
 		reconciled = append(reconciled, site)
+		releaseUnlock()
 	}
 	return reconciled, failed
 }
@@ -220,6 +223,8 @@ func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		releaseUnlock := a.siteOperations.acquire(site)
+		defer releaseUnlock()
 		a.Environments.mu.Lock()
 		previous, existed := a.Environments.values[site]
 		a.Environments.values[site] = input
@@ -247,6 +252,8 @@ func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", 403)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquire(site)
+		defer releaseUnlock()
 		if err := a.removeEnvironment(r.Context(), site); err != nil {
 			if strings.Contains(err.Error(), "host restore failed") {
 				http.Error(w, "environment state and host restore both failed", 503)

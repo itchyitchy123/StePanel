@@ -204,15 +204,17 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site document root does not exist", http.StatusUnprocessableEntity)
 		return
 	}
-	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain); err != nil {
-		http.Error(w, "site helper rejected the route or webserver reload failed", http.StatusServiceUnavailable)
-		return
-	}
 	extension := ".conf"
 	if a.Config.WebServer == "caddy" {
 		extension = ".caddy"
 	}
 	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + extension
+	releaseUnlock := a.siteOperations.acquireMany(input.Site, "vhost:"+name)
+	defer releaseUnlock()
+	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain); err != nil {
+		http.Error(w, "site helper rejected the route or webserver reload failed", http.StatusServiceUnavailable)
+		return
+	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.deployed", input.Site, input.Domain); err != nil {
 		log.Printf("site deployed but audit persistence is unavailable: %v", err)
 	}
@@ -234,6 +236,10 @@ func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site route not found", http.StatusNotFound)
 		return
 	}
+	// Route deletion receives the generated filename rather than a separately
+	// parsed site identifier. Serialize by route identity at this boundary.
+	releaseUnlock := a.siteOperations.acquire("vhost:" + name)
+	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "delete", name); err != nil {
 		http.Error(w, "site route was not removed because validation or webserver reload failed", http.StatusServiceUnavailable)
 		return

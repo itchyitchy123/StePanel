@@ -125,6 +125,8 @@ func (a *App) composer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(site)
+	defer releaseUnlock()
 	started := time.Now()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "composer-install", site, root, boolString(input.Development), boolString(input.OptimizeAutoloader)); err != nil {
 		http.Error(w, "Composer install failed", 502)

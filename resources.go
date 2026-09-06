@@ -234,6 +234,8 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid resource profile", 422)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(site)
+	defer releaseUnlock()
 	a.Resources.mu.Lock()
 	a.Resources.values[site] = p
 	e := a.Resources.persistLocked()
@@ -310,9 +312,11 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 	}
 	reconciled, failed := []string{}, map[string]string{}
 	for _, p := range pending {
+		releaseUnlock := a.siteOperations.acquire(p.Site)
 		err := a.applyResourceProfile(r.Context(), p, p.FilesystemQuotaState == "clear-pending")
 		if err != nil {
 			failed[p.Site] = "apply failed"
+			releaseUnlock()
 			continue
 		}
 		p.State = "applied"
@@ -328,9 +332,11 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 		a.Resources.mu.Unlock()
 		if err != nil {
 			failed[p.Site] = "state persistence failed"
+			releaseUnlock()
 			continue
 		}
 		reconciled = append(reconciled, p.Site)
+		releaseUnlock()
 	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "resources.reconciled", "resources", strings.Join(reconciled, ","))
 	writeJSON(w, 200, map[string]any{"reconciled": reconciled, "failed": failed})

@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Extended per-site mutation serialization to environment, resource-profile,
+  scheduled-task, and worker updates/reconciliation, preventing concurrent
+  helper calls from racing over systemd, PHP, and site-level state.
+
+- Extended the same site-operation boundary to PHP, Python, Node tooling,
+  Composer, Node proxies, PHP routes, and SSH/SFTP access mutations and their
+  reconciliation paths.
+
 - Extended per-site mutation serialization to staging creation and local/off-site
   restore-to-staging, preventing concurrent requests from racing over site,
   environment, database, route, or release state.
