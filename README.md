@@ -199,6 +199,12 @@ checkbox and should be backed up first.
 | `GET` | `/api/audit/events` | Verified, bounded, filtered audit/deployment history |
 | `GET` | `/api/node/versions` | List installed NVM Node versions |
 | `POST` | `/api/node/select` | Select an installed Node version for a managed site |
+| `POST` | `/api/node/tooling` | Run an allowlisted Node package install or production build |
+| `POST` | `/api/runner/build` | Run a validated build definition in the rootless Podman runner |
+| `GET` | `/api/composer/<site>` | Detect Composer project files and show the latest operation |
+| `POST` | `/api/composer/<site>/install` | Install Composer dependencies under the site identity |
+| `GET` / `PUT` | `/api/sites/php/<site>` | Inspect installed PHP runtimes or apply a validated per-site FPM profile |
+| `POST` | `/api/staging` | Transactionally create a staging site from files and non-secret environment values |
 | `POST` | `/api/proxy/deploy` | Generate and reload a validated reverse proxy for the selected webserver |
 | `GET` | `/api/proxy` | List managed reverse proxies |
 | `POST` | `/api/proxy/test` | Test a local/private application backend |
@@ -218,6 +224,19 @@ checkbox and should be backed up first.
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
 | `POST` | `/api/sites/git-deploy` | Checkout a validated HTTPS Git ref into an atomic site release |
 | `POST` | `/api/sites/git-webhook` | Deploy a signed Git payload when `STEPANEL_GIT_WEBHOOK_SECRET` is configured |
+| `GET` | `/api/sites/redis/<site>` | Inspect a site Redis/Valkey allocation and service status |
+| `PUT` | `/api/sites/redis/<site>` | Assign a site logical Redis database/namespace and limits |
+| `DELETE` | `/api/sites/redis/<site>` | Remove a site Redis allocation |
+| `GET` | `/api/sites/access/<site>` | Inspect SFTP/shell policy and SSH key fingerprints |
+| `PATCH` | `/api/sites/access/<site>` | Enable or disable SFTP and shell access |
+| `POST` | `/api/sites/access/<site>` | Add a validated SSH public key |
+| `DELETE` | `/api/sites/access/<site>/<label>` | Revoke an SSH public key |
+| `GET` | `/api/workers/<site>` | List managed site workers |
+| `PUT` | `/api/workers/<site>/<name>` | Create or update a fixed-type worker service |
+| `DELETE` | `/api/workers/<site>/<name>` | Stop and remove a worker service |
+| `GET` | `/api/sites/logs/<site>` | Read a bounded, filtered site log (`source` query required) |
+| `GET` | `/api/wordpress/status/<site>` | Check WordPress and WP-CLI availability |
+| `POST` | `/api/wordpress/<site>` | Run a supported audited WordPress operation |
 | `POST` | `/api/sites/git-rollback` | Atomically restore the latest preserved Git site release |
 | `GET` | `/api/databases/<name>` | Inspect one managed database without exposing credentials |
 | `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |

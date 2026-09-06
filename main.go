@@ -30,6 +30,11 @@ type App struct {
 	Accounts                 *AccountStore
 	RecoveryError            error
 	Environments             *EnvironmentStore
+	Redis                    *RedisAllocationStore
+	Access                   *SiteAccessStore
+	Workers                  *WorkerStore
+	Composer                 *ComposerStore
+	PHP                      *PHPProfileStore
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
 	gitActivationMu          sync.Mutex
@@ -125,6 +130,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("open site environment state: %v", err)
 	}
+	redisAllocations, err := OpenRedisAllocationStore(cfg.RedisState)
+	if err != nil {
+		log.Fatalf("open Redis allocation state: %v", err)
+	}
+	access, err := OpenSiteAccessStore(siteAccessStatePath(cfg))
+	if err != nil {
+		log.Fatalf("open site SSH access state: %v", err)
+	}
+	workers, err := OpenWorkerStore(filepath.Join(filepath.Dir(cfg.JobState), "workers.json"))
+	if err != nil {
+		log.Fatalf("open worker state: %v", err)
+	}
+	composer, err := OpenComposerStore(filepath.Join(filepath.Dir(cfg.JobState), "composer-operations.json"))
+	if err != nil {
+		log.Fatalf("open Composer state: %v", err)
+	}
+	phpProfiles, err := OpenPHPProfileStore(filepath.Join(filepath.Dir(cfg.JobState), "php-profiles.json"))
+	if err != nil {
+		log.Fatalf("open PHP profile state: %v", err)
+	}
 	if cfg.DBCtl != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "reconcile"))
@@ -186,7 +211,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open backup schedules: %v", err)
 	}
-	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, RecoveryError: errors.Join(recoveryFailures...)}
+	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, RecoveryError: errors.Join(recoveryFailures...)}
 	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
 		log.Printf("initialize audit chain: %v", err)
 	}
@@ -251,6 +276,7 @@ func main() {
 	mux.Handle("/api/certificates/issue", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.issueCertificate)), http.MethodPost))
 	mux.Handle("/api/node/versions", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.nodeVersions)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/node/select", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.selectNode)), http.MethodPost))
+	mux.Handle("/api/node/tooling", allowMethods(app.Auth.Require(http.HandlerFunc(app.nodeTooling)), http.MethodPost))
 	mux.Handle("/api/proxy/deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.deployProxy)), http.MethodPost))
 	mux.Handle("/api/proxy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.proxyList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/proxy/test", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.proxyTest)), http.MethodPost))
@@ -259,6 +285,22 @@ func main() {
 	mux.Handle("/api/sites/overview", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteOverviewList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/overview/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteOverviewResource)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/environment/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteEnvironment)), http.MethodGet, http.MethodPut, http.MethodDelete))
+	mux.Handle("/api/sites/redis/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteRedis)), http.MethodGet, http.MethodPut, http.MethodDelete))
+	mux.Handle("/api/sites/access/", allowMethods(app.Auth.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			app.siteAccessKey(w, r)
+			return
+		}
+		app.siteAccess(w, r)
+	})), http.MethodGet, http.MethodPatch, http.MethodPost, http.MethodDelete))
+	mux.Handle("/api/workers/", allowMethods(app.Auth.Require(http.HandlerFunc(app.workers)), http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete))
+	mux.Handle("/api/python/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.pythonDeploy)), http.MethodPost))
+	mux.Handle("/api/python/", allowMethods(app.Auth.Require(http.HandlerFunc(app.pythonAction)), http.MethodPost))
+	mux.Handle("/api/composer/", allowMethods(app.Auth.Require(http.HandlerFunc(app.composer)), http.MethodGet, http.MethodHead, http.MethodPost))
+	mux.Handle("/api/sites/php/", allowMethods(app.Auth.Require(http.HandlerFunc(app.phpRuntime)), http.MethodGet, http.MethodHead, http.MethodPut))
+	mux.Handle("/api/staging", allowMethods(app.Auth.Require(http.HandlerFunc(app.stagingCreate)), http.MethodPost))
+	mux.Handle("/api/runner/build", allowMethods(app.Auth.Require(http.HandlerFunc(app.runnerBuild)), http.MethodPost))
+	mux.Handle("/api/sites/logs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteLogs)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.siteManage)), http.MethodDelete))
 	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
@@ -274,6 +316,8 @@ func main() {
 	mux.Handle("/api/cpmove/import", allowMethods(app.Auth.RequireAdministrator(limitConcurrent(http.HandlerFunc(app.importBackup), uploads)), http.MethodPost))
 	mux.Handle("/api/wpress/preflight", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.wpressPreflight)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/wpress/import", allowMethods(app.Auth.RequireAdministrator(limitConcurrent(http.HandlerFunc(app.wpressImport), uploads)), http.MethodPost))
+	mux.Handle("/api/wordpress/status/", allowMethods(app.Auth.Require(http.HandlerFunc(app.wordpressStatus)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/wordpress/", allowMethods(app.Auth.Require(http.HandlerFunc(app.wordpressAction)), http.MethodPost))
 	mux.Handle("/api/accounts", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodGet, http.MethodHead, http.MethodPost))
 	mux.Handle("/api/accounts/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodPatch, http.MethodDelete))
 	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead))

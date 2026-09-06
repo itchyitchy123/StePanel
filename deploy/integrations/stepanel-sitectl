@@ -2,12 +2,12 @@
 set -Eeuo pipefail
 
 if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
-(( $# == 2 )) || { echo 'usage: stepanel-sitectl prepare|seal SITE' >&2; exit 64; }
+(( $# == 2 || $# == 11 )) || { echo 'usage: stepanel-sitectl prepare|seal SITE | runtime SITE VERSION MEMORY EXEC UPLOAD POST INPUT OPCACHE DISPLAY ERROR' >&2; exit 64; }
 
 action=$1
 site=$2
 [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
-[[ $action == prepare || $action == seal ]] || { echo 'invalid action' >&2; exit 64; }
+[[ $action == prepare || $action == seal || $action == runtime ]] || { echo 'invalid action' >&2; exit 64; }
 
 if getent group www-data >/dev/null; then
   web_group=www-data
@@ -34,6 +34,28 @@ if ! id "$site_user" >/dev/null 2>&1; then
 fi
 install -d -m 2750 -o "$site_user" -g "$web_group" "$site_root" "$public_root"
 install -d -m 0750 -o "$site_user" -g "$web_group" "$php_state" "$php_state/sessions" "$php_state/tmp"
+
+profile="$php_state/runtime.env"
+php_version=""
+memory_limit=128M
+max_execution_time=60
+upload_max_filesize=32M
+post_max_size=32M
+max_input_vars=1000
+opcache_enabled=1
+display_errors=0
+error_reporting='E_ALL & ~E_DEPRECATED & ~E_STRICT'
+if [[ $action == runtime ]]; then
+  php_version=$3; memory_limit=$4; max_execution_time=$5; upload_max_filesize=$6; post_max_size=$7; max_input_vars=$8; opcache_enabled=$9; display_errors=${10}; error_reporting=${11}
+  error_pattern='^[A-Z0-9_~& |]{1,80}$'
+  [[ $php_version =~ ^[0-9]+\.[0-9]+$ && $memory_limit =~ ^[1-9][0-9]{0,4}M$ && $max_execution_time =~ ^[1-9][0-9]{0,4}$ && $upload_max_filesize =~ ^[1-9][0-9]{0,4}M$ && $post_max_size =~ ^[1-9][0-9]{0,4}M$ && $max_input_vars =~ ^[1-9][0-9]{0,6}$ && $opcache_enabled =~ ^[01]$ && $display_errors =~ ^[01]$ && $error_reporting =~ $error_pattern ]] || { echo 'invalid PHP runtime profile' >&2; exit 1; }
+  tmp=$(mktemp "$php_state/.runtime.XXXXXX")
+  printf 'php_version=%q\nmemory_limit=%q\nmax_execution_time=%q\nupload_max_filesize=%q\npost_max_size=%q\nmax_input_vars=%q\nopcache_enabled=%q\ndisplay_errors=%q\nerror_reporting=%q\n' "$php_version" "$memory_limit" "$max_execution_time" "$upload_max_filesize" "$post_max_size" "$max_input_vars" "$opcache_enabled" "$display_errors" "$error_reporting" > "$tmp"
+  chown root:root "$tmp"; chmod 0600 "$tmp"; mv -f "$tmp" "$profile"
+  action=seal
+elif [[ -f $profile && ! -L $profile ]]; then
+  source "$profile"
+fi
 
 command -v setfacl >/dev/null 2>&1 || { echo 'setfacl is required for site isolation' >&2; exit 1; }
 setfacl -R -m u:stepanel:rwX "$site_root"
@@ -113,6 +135,14 @@ php_admin_value[open_basedir] = $public_root:$php_state
 php_admin_value[session.save_path] = $php_state/sessions
 php_admin_value[sys_temp_dir] = $php_state/tmp
 php_admin_value[upload_tmp_dir] = $php_state/tmp
+php_admin_value[memory_limit] = $memory_limit
+php_admin_value[max_execution_time] = $max_execution_time
+php_admin_value[upload_max_filesize] = $upload_max_filesize
+php_admin_value[post_max_size] = $post_max_size
+php_admin_value[max_input_vars] = $max_input_vars
+php_admin_flag[opcache.enable] = $opcache_enabled
+php_admin_flag[display_errors] = $display_errors
+php_admin_value[error_reporting] = $error_reporting
 EOF
   chmod 0644 "$staged"
   chown root:root "$staged"
@@ -124,6 +154,7 @@ for pool_root in /etc/php/*/fpm/pool.d; do
   [[ -d $pool_root ]] || continue
   version_root=$(dirname "$(dirname "$pool_root")")
   version=${version_root##*/}
+  [[ -z $php_version || $version == "$php_version" ]] || continue
   validator=$(command -v "php-fpm$version") || { echo "php-fpm$version validator was not found" >&2; false; }
   validators+=("$validator")
   install -d -m 0755 "$socket_root"

@@ -165,6 +165,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_ACCOUNT_STATE` | Absolute path in production | Optional private customer-account state file; defaults beside session state |
 | `STEPANEL_ENVIRONMENT_KEY` | Secret string | Enables AES-GCM encrypted site environment storage; keep stable and back it up securely |
 | `STEPANEL_ENVIRONMENT_STATE` | Filesystem path | Site environment state file; defaults beside the job state |
+| `STEPANEL_REDIS_STATE` | Filesystem path | Redis/Valkey site allocation state; defaults beside the job state |
 
 For Apache installations, it enables proxy, proxy_http, proxy_fcgi, setenvif,
 rewrite, and headers modules on Debian-family systems. For Caddy installations,

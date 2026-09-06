@@ -504,6 +504,7 @@ printf '%s\n' "$AUDIT_KEY" > "$INSTALL_TXN/audit.key"
 install -m 0600 -o root -g root "$INSTALL_TXN/audit.key" /etc/stepanel-audit.key
 install -m 0755 "$ROOT_DIR/deploy/integrations/install-fail2ban.sh" "$APP_DIR/integrations/install-fail2ban.sh"
 install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-appctl" /usr/local/sbin/stepanel-appctl
+install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-runnerctl" /usr/local/sbin/stepanel-runnerctl
 if [[ "$WEB_SERVER" == "caddy" ]]; then
   install -m 0755 "$ROOT_DIR/deploy/integrations/stepanel-caddy-proxyctl" /usr/local/sbin/stepanel-proxyctl
 elif [[ "$WEB_SERVER" == "openlitespeed" ]]; then
@@ -648,6 +649,7 @@ sudoers_tmp=$(mktemp)
 TXN_TEMPS+=("$sudoers_tmp")
 printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-appctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-proxyctl *\n%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-sitectl *\n' "$APP_USER" "$APP_USER" "$APP_USER" > "$sudoers_tmp"
 printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-vhostctl *\n' "$APP_USER" >> "$sudoers_tmp"
+printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-runnerctl *\n' "$APP_USER" >> "$sudoers_tmp"
 if [[ "$DB_LOCAL_HELPER" == "1" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-dbctl *\n' "$APP_USER" >> "$sudoers_tmp"; fi
 if [[ "$INSTALL_TLS" == "1" && "$WEB_SERVER" == "apache" ]]; then printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/stepanel-certbot *\n' "$APP_USER" >> "$sudoers_tmp"; fi
 visudo -cf "$sudoers_tmp" >/dev/null

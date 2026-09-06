@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -12,9 +13,25 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 )
+
+func (a *App) applyEnvironment(ctx context.Context, site string, vars map[string]environmentValue) error {
+	lines := make([]string, 0, len(vars))
+	for name, value := range vars {
+		if strings.ContainsAny(value.Value, "\x00\r\n") {
+			return errors.New("environment values may not contain NUL or newlines")
+		}
+		lines = append(lines, name+"="+value.Value)
+	}
+	sort.Strings(lines)
+	commandCtx, cancel := context.WithTimeout(ctx, helperCommandTimeout)
+	defer cancel()
+	_, err := runBoundedCommandInput(commandCtx, helperCommandContext(commandCtx, a.Config, a.Config.AppCtl, "env-apply", site), strings.NewReader(strings.Join(lines, "\n")+"\n"))
+	return err
+}
 
 type environmentValue struct {
 	Value  string `json:"value"`
@@ -144,6 +161,10 @@ func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if err := a.applyEnvironment(r.Context(), site, input); err != nil {
+			http.Error(w, "environment could not be applied to site services", 502)
+			return
+		}
 		a.Environments.mu.Lock()
 		a.Environments.values[site] = input
 		err := a.Environments.persistLocked()
@@ -157,6 +178,10 @@ func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		if !a.Auth.CSRF(r) {
 			http.Error(w, "invalid CSRF token", 403)
+			return
+		}
+		if err := a.applyEnvironment(r.Context(), site, map[string]environmentValue{}); err != nil {
+			http.Error(w, "environment could not be removed from site services", 502)
 			return
 		}
 		a.Environments.mu.Lock()

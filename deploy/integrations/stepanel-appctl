@@ -47,6 +47,7 @@ User=$site_user
 Group=$site_user
 WorkingDirectory=$root
 Environment=PORT=$port NODE_ENV=production HOME=/var/www/sites/$site
+EnvironmentFile=-/etc/stepanel/environment/$site.env
 ExecStart=/bin/bash -lc 'export NVM_DIR=/opt/stepanel/.nvm; . "\$NVM_DIR/nvm.sh"; nvm use $version >/dev/null; exec npm start'
 Restart=on-failure
 RestartSec=5s
@@ -67,6 +68,7 @@ UMask=0027
 LimitNOFILE=65536
 TasksMax=256
 ReadWritePaths=$root
+EnvironmentFile=-/etc/stepanel/environment/$site.env
 
 [Install]
 WantedBy=multi-user.target
@@ -79,8 +81,117 @@ EOF
       exit 1
     fi
     ;;
+  worker-apply)
+    (( $# == 7 )) || { echo 'usage: stepanel-appctl worker-apply SITE NAME TYPE ROOT PROCESSES MEMORY_MB RETRIES' >&2; exit 64; }
+    name=$3; type=$4; root=$5; processes=$6; memory=$7; retries=${8:-0}
+    [[ $name =~ ^[A-Za-z0-9_-]{1,32}$ && $type =~ ^(laravel|horizon|node|celery|rq)$ && $root == "/var/www/sites/$site/public" ]] || { echo 'invalid worker parameters' >&2; exit 1; }
+    [[ $processes =~ ^[0-9]+$ && $memory =~ ^[0-9]+$ && $retries =~ ^[0-9]+$ ]] || { echo 'invalid worker limits' >&2; exit 1; }
+    unit="stepanel-worker-${site}-${name}.service"; path="/etc/systemd/system/$unit"
+    # The executable is deliberately a fixed, runtime-specific command. A
+    # future build runner may provide artifacts, but this helper never accepts
+    # arbitrary command text from the API.
+    case "$type" in
+      laravel) exec_start="/usr/bin/php $root/artisan queue:work --tries=$retries";;
+      horizon) exec_start="/usr/bin/php $root/artisan horizon";;
+      node) exec_start="/usr/bin/npm start";;
+      celery) exec_start="/usr/bin/celery -A app worker --loglevel=INFO";;
+      rq) exec_start="/usr/bin/rq worker";;
+    esac
+    cat > "$path" <<EOF
+[Unit]
+Description=StePanel worker $site/$name
+After=network-online.target
+[Service]
+User=$site_user
+Group=$site_user
+WorkingDirectory=$root
+ExecStart=$exec_start
+Restart=on-failure
+RestartSec=5s
+MemoryMax=${memory}M
+TasksMax=$((processes * 64))
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$root
+EnvironmentFile=-/etc/stepanel/environment/$site.env
+UMask=0027
+[Install]
+WantedBy=multi-user.target
+EOF
+    chmod 0644 "$path"; chown root:root "$path"; systemctl daemon-reload; systemctl enable --now "$unit" ;;
+  worker-delete)
+    (( $# == 3 )) || { echo 'usage: stepanel-appctl worker-delete SITE NAME' >&2; exit 64; }
+    name=$3; [[ $name =~ ^[A-Za-z0-9_-]{1,32}$ ]] || { echo 'invalid worker name' >&2; exit 1; }
+    unit="stepanel-worker-${site}-${name}.service"; systemctl disable --now "$unit" 2>/dev/null || true; rm -f "/etc/systemd/system/$unit"; systemctl daemon-reload ;;
+  python-apply)
+    (( $# == 7 )) || { echo 'usage: stepanel-appctl python-apply SITE VERSION ROOT ENTRYPOINT PORT WORKERS' >&2; exit 64; }
+    version=$3; root=$4; entry=$5; port=$6; workers=$7
+    [[ $version =~ ^3\.(12|13)$ && $root == "/var/www/sites/$site/public" && $entry =~ ^[A-Za-z0-9_./:-]{1,160}$ && $port =~ ^[0-9]+$ && $workers =~ ^[0-9]+$ ]] || { echo 'invalid Python parameters' >&2; exit 1; }
+    (( port >= 1024 && port <= 65535 && workers >= 1 && workers <= 64 )) || { echo 'invalid Python limits' >&2; exit 1; }
+    unit="stepanel-app-${site}-python.service"; venv="$root/.venv"; command -v "python$version" >/dev/null || { echo "python$version is not installed" >&2; exit 1; }; "python$version" -m venv "$venv"; [[ -x "$venv/bin/gunicorn" ]] || { echo 'gunicorn is not installed in the site virtualenv' >&2; exit 1; }
+    cat > "/etc/systemd/system/$unit" <<EOF
+[Unit]
+Description=StePanel Python app $site
+After=network-online.target
+[Service]
+User=$site_user
+Group=$site_user
+WorkingDirectory=$root
+ExecStart=$venv/bin/gunicorn --workers $workers --bind 127.0.0.1:$port $entry
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$root
+EnvironmentFile=-/etc/stepanel/environment/$site.env
+MemoryMax=1G
+TasksMax=256
+UMask=0027
+[Install]
+WantedBy=multi-user.target
+EOF
+    chown -R "$site_user:$site_user" "$venv"; chmod 0644 "/etc/systemd/system/$unit"; systemctl daemon-reload; systemctl enable --now "$unit" ;;
+  node-tool)
+    (( $# == 5 )) || { echo 'usage: stepanel-appctl node-tool SITE ACTION PACKAGE_MANAGER ROOT' >&2; exit 64; }
+    action=$3; package_manager=$4; root=$5
+    [[ $action =~ ^(install|build)$ && $package_manager =~ ^(npm|yarn|pnpm)$ && $root == "/var/www/sites/$site/public" ]] || { echo 'invalid Node tooling parameters' >&2; exit 1; }
+    case "$action:$package_manager" in
+      install:npm) command=(npm ci --no-audit --no-fund);;
+      install:yarn) command=(yarn install --frozen-lockfile --non-interactive);;
+      install:pnpm) command=(pnpm install --frozen-lockfile --ignore-scripts);;
+      build:npm) command=(npm run build --if-present);;
+      build:yarn) command=(yarn run build --if-present);;
+      build:pnpm) command=(pnpm run build --if-present);;
+    esac
+    runuser -u "$site_user" -- env HOME="$root" NODE_ENV=production PATH="/usr/local/bin:/usr/bin:/bin" "${command[@]}" ;;
+  composer-install)
+    (( $# == 5 )) || { echo 'usage: stepanel-appctl composer-install SITE ROOT DEVELOPMENT OPTIMIZE' >&2; exit 64; }
+    root=$3; development=$4; optimize=$5
+    [[ $root == "/var/www/sites/$site/public" && $development =~ ^[01]$ && $optimize =~ ^[01]$ ]] || { echo 'invalid Composer parameters' >&2; exit 1; }
+    command -v composer >/dev/null || { echo 'Composer is not installed' >&2; exit 1; }
+    args=(install --no-interaction --no-progress --no-scripts --no-plugins)
+    [[ $development == 1 ]] || args+=(--no-dev)
+    [[ $optimize == 1 ]] && args+=(--optimize-autoloader)
+    runuser -u "$site_user" -- env HOME="$root" COMPOSER_HOME="$root/.composer" PATH="/usr/local/bin:/usr/bin:/bin" composer "${args[@]}" ;;
+  env-apply)
+    (( $# == 2 )) || { echo 'usage: stepanel-appctl env-apply SITE' >&2; exit 64; }
+    install -d -m 0700 -o root -g root /etc/stepanel/environment
+    target="/etc/stepanel/environment/$site.env"
+    staged=$(mktemp /etc/stepanel/environment/.stepanel-env.XXXXXX)
+    while IFS= read -r line; do
+      [[ -z $line ]] && continue
+      [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || { rm -f "$staged"; echo 'invalid environment entry' >&2; exit 1; }
+      printf '%s\n' "$line" >> "$staged"
+    done
+    chown root:root "$staged"; chmod 0600 "$staged"; mv -f "$staged" "$target"
+    systemctl try-restart "stepanel-app-$site.service" "stepanel-app-$site-python.service" "stepanel-worker-$site-*.service" 2>/dev/null || true ;;
   start|stop|restart)
     (( $# == 2 )) || { echo "usage: stepanel-appctl $action SITE" >&2; exit 64; }
+    if [[ $site == */* ]]; then site_name=${site##*/}; site=${site%%/*}; [[ $site =~ ^[a-z0-9_-]{1,32}$ && $site_name =~ ^[A-Za-z0-9_-]{1,32}$ ]] || { echo 'invalid worker target' >&2; exit 1; }; unit="stepanel-worker-${site}-${site_name}.service"; fi
     systemctl "$action" "$unit" ;;
   *) echo 'usage: stepanel-appctl apply|start|stop|restart SITE ...' >&2; exit 64 ;;
 esac

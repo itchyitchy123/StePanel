@@ -49,6 +49,10 @@ Use `GET`, `PUT`, and `DELETE /api/sites/environment/{site}` to inspect metadata
 replace variables, or remove them. Secret variables are encrypted at rest and
 are returned only as metadata; values are never returned after they are written.
 Back up the environment state file together with the encryption key.
+Updates render a root-owned systemd environment file and restart managed Node,
+Python, and worker services so new values take effect. PHP applications should
+consume environment values through their application configuration rather than
+the global FPM process environment.
 
 ## Signed Git webhooks
 
@@ -56,6 +60,96 @@ Set `STEPANEL_GIT_WEBHOOK_SECRET` to enable `POST /api/sites/git-webhook`.
 Send `X-StePanel-Signature: sha256=<hex HMAC-SHA256>` with a JSON payload
 containing `site`, `repository`, and an optional `ref`. Normal repository
 allowlists and release validation still apply.
+
+## Redis / Valkey allocations
+
+`GET`, `PUT`, and `DELETE /api/sites/redis/{site}` manage a site’s logical
+Redis/Valkey allocation. The contract includes `database` (0–15), `namespace`,
+`memory_mb`, and `eviction` (`allkeys-lru` or `noeviction`). The API reports
+whether `redis-server` or `valkey-server` is installed. These are allocation
+records; actual ACL, namespace, and cgroup memory enforcement require a
+reviewed privileged helper before use with untrusted tenants.
+
+## Composer
+
+`GET /api/composer/{site}` reports Composer availability, `composer.json`,
+`composer.lock`, and the last successful operation. `POST
+/api/composer/{site}/install` accepts `development` and `optimize_autoloader`
+booleans. It executes a fixed Composer install as the site account with
+non-interactive, no-script, and no-plugin flags. Application build hooks must
+remain in a separately sandboxed build runner.
+
+## Per-site PHP runtime
+
+`GET /api/sites/php/{site}` inventories installed PHP-FPM versions and the
+site’s active profile. `PUT /api/sites/php/{site}` selects a version and sets
+`memory_limit`, `max_execution_time`, `upload_max_filesize`, `post_max_size`,
+`max_input_vars`, `opcache`, `display_errors`, and `error_reporting`. The
+root-owned helper validates the selected pool configuration before reloading
+FPM; managed Caddy and Apache routes use the selected version’s socket.
+
+## Staging sites
+
+`POST /api/staging` creates a distinct staging site and domain from a production
+site. The request supports `files` and `environment`; only non-secret environment
+values are copied, and the operation uses the site recovery journal. Database
+cloning deliberately fails closed until the managed database helper provides a
+transactional clone operation. Staging access protection and search-indexing
+controls should be configured at the proxy/application layer for now.
+
+## Sandboxed build runner
+
+`POST /api/runner/build` submits a site, OCI image, and bounded command list to
+the rootless Podman runner. The runner mounts source read-only and writes only
+to the site artifact directory. It uses a separate network namespace, dropped
+Linux capabilities, a read-only container filesystem, and a bounded temporary
+area. Activation remains a separate StePanel atomic-release operation.
+
+## Node developer tooling
+
+`POST /api/node/tooling` accepts `{site, action, package_manager}`. Actions are
+`install` or `build`; package managers are `npm`, `yarn`, and `pnpm`. The
+privileged helper maps these to fixed commands, disables interactive prompts,
+uses production environment settings, and runs them as the site user. It does
+not accept arbitrary command text or install lifecycle scripts for pnpm.
+
+## SSH / SFTP developer access
+
+`GET`, `PATCH`, and `POST /api/sites/access/{site}` expose per-site access
+policy and add validated SSH public keys. `DELETE
+/api/sites/access/{site}/{label}` revokes a key. Private keys are never accepted
+or stored, and responses expose fingerprints rather than private material.
+Activation into site `authorized_keys`, SFTP-only restrictions, and shell
+account enforcement must be connected to the reviewed site helper before
+enabling this for untrusted tenants.
+
+## Background workers
+
+Workers are managed with `GET /api/workers/{site}`, `PUT
+/api/workers/{site}/{name}`, and `DELETE /api/workers/{site}/{name}`. Supported
+types are `laravel`, `horizon`, `node`, `celery`, and `rq`; the helper maps
+these to fixed commands and creates hardened systemd units with bounded memory,
+task count, restart-on-failure, and site ownership. Arbitrary worker command
+text is not accepted. Worker logs are available through the site log API when
+the host captures unit output into the site log directory.
+
+## Site logs
+
+`GET /api/sites/logs/{site}?source=...` reads up to 1,000 lines from an
+allowlisted source: `access`, `error`, `php-fpm`, `php`, `application`,
+`deployment`, `build`, `cron`, or `worker`. Use `lines=1..1000`, `filter=...`,
+or `download=1`. Logs are read only from the site’s managed `logs` directory;
+arbitrary paths and commands are not accepted. Helpers and application runners
+should write their site-specific output there.
+
+## WordPress operations
+
+Authenticated users can query `GET /api/wordpress/status/{site}` and run the
+closed set of operations through `POST /api/wordpress/{site}` with an action of
+`status`, `update_core`, `update_plugins`, `update_themes`, `maintenance_on`,
+`maintenance_off`, or `cron`. Actions require `wp-cli`, a valid `wp-config.php`,
+site ownership, CSRF protection, and are bounded and audited. Arbitrary WP-CLI
+arguments and repository build commands remain intentionally unsupported.
 
 ## Not implemented yet
 

@@ -56,10 +56,14 @@ case "$action" in
     domain_in_use "$domain" "$path" && { echo 'domain is already assigned to another managed route' >&2; exit 1; }
     if [[ -d /etc/apache2 ]]; then
       pool=
+      selected_version=
+      profile="/var/www/sites/$site/.php/runtime.env"
+      [[ ! -f $profile || -L $profile ]] || selected_version=$(awk -F= '$1 == "php_version" { gsub(/['"'"'\047]/, "", $2); print $2; exit }' "$profile")
       for candidate in /etc/php/*/fpm/pool.d/stepanel-"$site".conf; do
         [[ -f $candidate ]] || continue
         version_root=$(dirname "$(dirname "$(dirname "$candidate")")")
         candidate_version=${version_root##*/}
+        [[ -z $selected_version || $candidate_version == "$selected_version" ]] || continue
         systemctl is-active --quiet "php$candidate_version-fpm.service" || continue
         pool=$candidate
         version=$candidate_version

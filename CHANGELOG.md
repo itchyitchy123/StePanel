@@ -8,6 +8,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Rootless Podman build-runner boundary for validated site build definitions.
+  Build commands execute in a capability-dropped, read-only container with only
+  source and artifact mounts; the control plane retains release activation.
+- Root-owned systemd environment-file rendering for encrypted per-site
+  variables, with managed Node, Python, and worker service restarts after an
+  audited environment update.
+- Transactional staging site creation with validated destination routing,
+  safe regular-file copying, isolated destination setup, recovery journals, and
+  optional non-secret environment cloning. Database cloning remains fail-closed
+  until the managed database helper supplies a transactional clone primitive.
+- Per-site PHP-FPM runtime profiles with selected-version socket routing,
+  validated memory/execution/upload/input settings, OPcache/display-error and
+  error-reporting controls, atomic pool validation, and reload rollback.
+- First-class Composer project inspection and dependency installation with
+  site-identity execution, production/development and autoloader options, and
+  persisted operation metadata.
+- Node developer tooling API for bounded, audited package installation and
+  production builds using npm, Yarn, or pnpm under the isolated site identity.
+- Managed site worker lifecycle for Laravel, Horizon, Node, Celery, and RQ
+  services with fixed commands, systemd restart policy, memory/task limits,
+  audited definitions, and safe create/remove APIs.
+- Bounded site log viewer API with allowlisted web/PHP/application/deployment,
+  build, cron, and worker sources, filtering, download support, site access
+  controls, and safe missing-log handling.
+- Per-site SSH developer-access API with validated public-key fingerprints,
+  SFTP/shell policy state, revocation, ownership checks, and audit events.
+- Guarded WordPress developer operations through WP-CLI: status, core/plugin/
+  theme updates, maintenance mode, and due cron execution, with site ownership
+  checks, bounded execution, and audit events.
+- Redis/Valkey site allocation API with logical database and namespace
+  isolation, validated memory/eviction policy metadata, service detection, and
+  audited lifecycle operations. Host-level ACL and cgroup enforcement remain
+  privileged-helper work.
 - Encrypted per-site environment storage with AES-GCM, masked secret reads,
   ownership checks, audited replacement/deletion, and the
   `/api/sites/environment/{site}` API. Configure `STEPANEL_ENVIRONMENT_KEY`.

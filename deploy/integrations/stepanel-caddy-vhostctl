@@ -37,7 +37,11 @@ domain=${3,,}
 public_root="/var/www/sites/$site/public"
 [[ -d $public_root && ! -L $public_root ]] || { echo 'site document root is unavailable or unsafe' >&2; exit 1; }
 socket=
-for candidate in /run/php/stepanel-"$site"-*.sock /run/php-fpm/stepanel-"$site".sock; do
+selected_version=
+profile="/var/www/sites/$site/.php/runtime.env"
+[[ ! -f $profile || -L $profile ]] || selected_version=$(awk -F= '$1 == "php_version" { gsub(/['"'"'\047]/, "", $2); print $2; exit }' "$profile")
+if [[ -n $selected_version ]]; then candidates=("/run/php/stepanel-$site-$selected_version.sock"); else candidates=(/run/php/stepanel-"$site"-*.sock /run/php-fpm/stepanel-"$site".sock); fi
+for candidate in "${candidates[@]}"; do
   [[ -S $candidate ]] || continue
   socket=$candidate
   break

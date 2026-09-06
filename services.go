@@ -36,7 +36,7 @@ func ServiceStatus() map[string]string {
 	}
 	serviceStatusCache.RUnlock()
 	result := map[string]string{}
-	for _, service := range []string{"apache2", "httpd", "lsws", "caddy", "mysql", "mariadb", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
+	for _, service := range []string{"apache2", "httpd", "lsws", "caddy", "mysql", "mariadb", "redis-server", "valkey-server", "fail2ban", "fpm-lens", "exim4", "exim", "dovecot", "spamassassin", "spamd", "vsftpd"} {
 		if _, err := exec.LookPath(service); err == nil {
 			result[service] = serviceUnitState(service)
 		}
