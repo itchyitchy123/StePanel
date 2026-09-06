@@ -77,6 +77,11 @@ does **not** reverse database migrations. Declarative database migration and
 post-activation health-check stages remain planned before this endpoint is
 appropriate for unattended production deployment.
 
+Git activation and rollback retain the newest previous release and prune older
+validated StePanel release directories according to
+`STEPANEL_GIT_RELEASE_RETENTION` (default `3`, range `1..100`). Retention
+never considers the active `public` tree for deletion.
+
 ## Git deploy keys (Shipped)
 
 `POST /api/sites/git-key/{site}` creates a read-only per-site ED25519 deploy

@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -209,6 +210,9 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := gitDeployResult{Site: input.Site, Repository: input.Repository, Ref: input.Ref, Commit: commit, Previous: previous}
+	if err := pruneGitReleases(siteRoot, a.Config.GitReleaseRetention); err != nil {
+		log.Printf("Git release retention for %s: %v", input.Site, err)
+	}
 	a.recordDeployment(input.Site, "activation", "completed", "atomic Git release activated", result, "")
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.git-deployed", input.Site, input.Repository+"@"+commit); err != nil {
 		log.Printf("Git release activated but audit persistence is unavailable: %v", err)
@@ -283,7 +287,45 @@ func (a *App) gitRollback(w http.ResponseWriter, r *http.Request) {
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.git-rolled-back", input.Site, filepath.Base(previous)); err != nil {
 		log.Printf("Git rollback completed but audit persistence is unavailable: %v", err)
 	}
+	if err := pruneGitReleases(siteRoot, a.Config.GitReleaseRetention); err != nil {
+		log.Printf("Git release retention for %s: %v", input.Site, err)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"site": input.Site, "activated": filepath.Base(previous), "replaced_release": filepath.Base(replaced)})
+}
+
+func pruneGitReleases(siteRoot string, retain int) error {
+	if retain < 1 {
+		return errors.New("release retention must preserve at least one rollback release")
+	}
+	entries, err := os.ReadDir(siteRoot)
+	if err != nil {
+		return err
+	}
+	type candidate struct {
+		path     string
+		modified time.Time
+	}
+	items := []candidate{}
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), ".stepanel-previous-") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		items = append(items, candidate{filepath.Join(siteRoot, entry.Name()), info.ModTime()})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].modified.After(items[j].modified) })
+	for _, item := range items[retain:] {
+		if err := validateGitRelease(item.path, 1000000); err != nil {
+			return fmt.Errorf("refuse to prune invalid release: %w", err)
+		}
+		if err := os.RemoveAll(item.path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func latestPreviousRelease(siteRoot string) (string, error) {

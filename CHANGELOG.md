@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Configurable validated Git rollback-release retention, preserving the newest
+  rollback target while safely pruning older StePanel-owned release trees.
+
 - Verified files-only backup restore to a new recovery-journaled staging site;
   existing destinations and database restore remain deliberately refused.
 
