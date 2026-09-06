@@ -57,6 +57,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   configured site resource profiles propagated into each scheduled-task unit.
   Fixed worker creation to accept its documented retry argument and made
   environment updates restart all matching worker units reliably.
+- Resource state now fails closed on invalid persisted profiles, and resource
+  reconciliation no longer holds the store lock while querying systemd.
 
 - Added AES-GCM encryption for customer TOTP secrets with dedicated
   `STEPANEL_ACCOUNT_KEY`, one-time MFA regeneration, and session revocation.

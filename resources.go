@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -47,6 +48,12 @@ func OpenResourceStore(path string) (*ResourceStore, error) {
 	}
 	for site, profile := range s.values {
 		profile = normalizeResourceProfile(profile)
+		if profile.Site == "" {
+			profile.Site = site
+		}
+		if profile.Site != site || !validResourceProfile(profile) {
+			return nil, fmt.Errorf("invalid resource profile for site %q", site)
+		}
 		s.values[site] = profile
 	}
 	return s, nil
@@ -173,13 +180,18 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.Resources.mu.RLock()
-	pending := make([]ResourceProfile, 0, len(a.Resources.values))
+	profiles := make([]ResourceProfile, 0, len(a.Resources.values))
 	for _, p := range a.Resources.values {
+		profiles = append(profiles, p)
+	}
+	a.Resources.mu.RUnlock()
+
+	pending := make([]ResourceProfile, 0, len(profiles))
+	for _, p := range profiles {
 		if p.State != "applied" || a.resourceObserved(r.Context(), p.Site)["state"] != "active" {
 			pending = append(pending, p)
 		}
 	}
-	a.Resources.mu.RUnlock()
 	reconciled, failed := []string{}, map[string]string{}
 	for _, p := range pending {
 		err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax))
