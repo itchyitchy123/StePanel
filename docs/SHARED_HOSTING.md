@@ -43,12 +43,15 @@ disk/inode values require an explicit filesystem quota profile.
 ```
 
 `GET /api/accounts` returns account metadata and plan limits, never password
-hashes or TOTP seeds. Accounts expose a `suspended` lifecycle flag. Administrators
-can suspend or unsuspend an account with `PATCH /api/accounts/{username}` and
-`{"suspended":true|false}`; suspension immediately rejects active sessions and
-revokes persisted sessions for that customer. It currently suspends **panel
-access**, not hosting workloads: sites, services, data, backups, and external
-resources remain intact. `DELETE /api/accounts/{username}` removes only the
+hashes or TOTP seeds. Administrators can update a customer's plan and site
+assignments transactionally with `PATCH /api/accounts/{username}` using
+`{"plan":"professional","sites":["acme-site"]}`. The API verifies that
+each assigned document root exists and that no site is owned by another account
+before persisting the change. Accounts also expose a `suspended` lifecycle flag;
+`{"suspended":true|false}` immediately rejects active sessions and revokes
+persisted sessions for that customer. It suspends **panel access**, not hosting
+workloads: sites, services, data, backups, and external resources remain intact.
+`DELETE /api/accounts/{username}` removes only the
 customer login record and its sessions; it is not a hosting-account teardown.
 The operation is audited as login removal and retains assigned workloads for a
 separate, reviewed lifecycle workflow.

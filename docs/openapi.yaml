@@ -249,7 +249,7 @@ paths:
         '422': {description: Invalid plan, assigned sites, password, or TOTP seed}
   /api/accounts/{username}:
     patch:
-      summary: Suspend or unsuspend a shared-hosting customer account (administrator only)
+      summary: Update plan/site assignments or suspend a shared-hosting customer account (administrator only)
       parameters:
         - {name: username, in: path, required: true, schema: {type: string}}
       requestBody:
@@ -258,9 +258,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [suspended]
               properties:
                 suspended: {type: boolean}
+                plan: {type: string, enum: [starter, professional, agency]}
+                sites:
+                  type: array
+                  maxItems: 25
+                  items: {type: string}
       responses:
         '200': {description: Updated account}
     delete:
