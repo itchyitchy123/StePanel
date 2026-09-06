@@ -117,8 +117,17 @@ func (a *App) reconcileAccountResourcePlan(previous, account HostingAccount) ([]
 		assigned[site] = true
 	}
 	changed := make([]ResourceProfile, 0, len(previous.Sites)+len(account.Sites))
+	// Keep an in-memory rollback image until the desired state is durable. A
+	// failed write must not leave the running process diverged from the state
+	// that will be loaded after restart.
+	previousValues := make(map[string]ResourceProfile, len(previous.Sites)+len(account.Sites))
+	previousExists := make(map[string]bool, len(previous.Sites)+len(account.Sites))
 	a.Resources.mu.Lock()
 	for _, site := range previous.Sites {
+		if profile, exists := a.Resources.values[site]; exists {
+			previousValues[site] = profile
+			previousExists[site] = true
+		}
 		if assigned[site] {
 			continue
 		}
@@ -130,6 +139,12 @@ func (a *App) reconcileAccountResourcePlan(previous, account HostingAccount) ([]
 		}
 	}
 	for _, site := range account.Sites {
+		if _, captured := previousExists[site]; !captured {
+			if profile, exists := a.Resources.values[site]; exists {
+				previousValues[site] = profile
+				previousExists[site] = true
+			}
+		}
 		profile, exists := a.Resources.values[site]
 		if !exists {
 			profile = resourceProfileForPlan(account.Username, site, plan)
@@ -149,6 +164,13 @@ func (a *App) reconcileAccountResourcePlan(previous, account HostingAccount) ([]
 		changed = append(changed, profile)
 	}
 	if err := a.Resources.persistLocked(); err != nil {
+		for _, site := range append(append([]string{}, previous.Sites...), account.Sites...) {
+			if previousExists[site] {
+				a.Resources.values[site] = previousValues[site]
+			} else {
+				delete(a.Resources.values, site)
+			}
+		}
 		a.Resources.mu.Unlock()
 		return nil, fmt.Errorf("persist account resource plan: %w", err)
 	}

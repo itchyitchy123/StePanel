@@ -50,3 +50,34 @@ func TestEnsurePlanResourcesPersistsEnforcedEnvelopeAsPendingOnHelperFailure(t *
 		t.Fatalf("plan profile = %#v", profile)
 	}
 }
+
+func TestReconcileAccountResourcePlanRollsBackMemoryOnPersistFailure(t *testing.T) {
+	path := t.TempDir() // Deliberately unwritable as a file target.
+	store, err := OpenResourceStore(filepath.Join(path, "resources.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := ResourceProfile{
+		Account:    "customer",
+		Site:       "demo",
+		CPUPercent: 200,
+		MemoryMB:   1024,
+		TasksMax:   256,
+		PHPWorkers: 16,
+		State:      "applied",
+	}
+	store.values["demo"] = original
+	store.path = path // writeAtomic must fail because this is a directory.
+
+	app := &App{Resources: store}
+	_, err = app.reconcileAccountResourcePlan(
+		HostingAccount{Username: "customer", Plan: "agency", Sites: []string{"demo"}},
+		HostingAccount{Username: "customer", Plan: "starter", Sites: []string{"demo"}},
+	)
+	if err == nil {
+		t.Fatal("expected desired-state persistence failure")
+	}
+	if got := store.values["demo"]; got != original {
+		t.Fatalf("resource profile changed after failed persistence: got %#v want %#v", got, original)
+	}
+}
