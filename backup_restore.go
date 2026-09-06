@@ -177,6 +177,9 @@ func backupRestoreFiles(cfg Config, backupName, site string) (BackupRestoreResul
 	if err != nil {
 		return BackupRestoreResult{}, fmt.Errorf("verify backup: %w", err)
 	}
+	if manifest.Site != site {
+		return BackupRestoreResult{}, errors.New("backup does not belong to destination site")
+	}
 	if err := os.MkdirAll(cfg.ImportRoot, 0700); err != nil {
 		return BackupRestoreResult{}, fmt.Errorf("create restore staging root: %w", err)
 	}
@@ -393,4 +396,59 @@ func (a *App) backupRestoreDatabaseHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "database-only", "schema_rollback": "manual"})
+}
+
+func (a *App) backupRestoreOffsiteFilesHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) || !a.Auth.IsAdministrator(r) {
+		http.Error(w, "administrator CSRF request required", http.StatusForbidden)
+		return
+	}
+	var input struct {
+		Backup  string `json:"backup"`
+		Site    string `json:"site"`
+		Confirm string `json:"confirm"`
+	}
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	input.Site = safeUser(input.Site)
+	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	if input.Site == "" || !validBackupName(input.Backup) || input.Confirm != "RESTORE_OFFSITE_FILES" {
+		http.Error(w, "site, backup, and confirm=RESTORE_OFFSITE_FILES are required", http.StatusUnprocessableEntity)
+		return
+	}
+	if a.Jobs == nil || a.Config.OffsiteTarget == "" {
+		http.Error(w, "offsite backup restore is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	jobID, err := newJobID("offsite-restore")
+	if err != nil {
+		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		return
+	}
+	if err := a.Jobs.SubmitBackupRestore(jobID, input.Site, func() (BackupRestoreResult, error) {
+		root, cleanup, downloadErr := downloadOffsiteBackup(a.Config, input.Site, input.Backup)
+		if downloadErr != nil {
+			return BackupRestoreResult{}, downloadErr
+		}
+		defer cleanup()
+		cfg := a.Config
+		cfg.BackupRoot = root
+		result, restoreErr := backupRestoreFiles(cfg, input.Backup, input.Site)
+		if restoreErr != nil {
+			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-offsite-files.failed", input.Site, restoreErr.Error())
+			return result, restoreErr
+		}
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-offsite-files.completed", input.Site, input.Backup)
+		return result, nil
+	}); err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+		} else {
+			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "offsite-files-only"})
 }

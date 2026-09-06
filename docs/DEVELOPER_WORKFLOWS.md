@@ -57,6 +57,13 @@ site and present in the verified backup. StePanel creates a new verified
 pre-restore safety backup before importing the dump. Database schema rollback
 is manual; application rollback does not reverse schema migrations.
 
+When an off-site rclone target is configured, administrators can queue
+`POST /api/backups/restore-offsite-files` with `backup`, `site`, and
+`confirm=RESTORE_OFFSITE_FILES`. StePanel retrieves only the fixed manifest,
+archive, checksum, and optional signature objects for that site/backup ID,
+then performs the same verification and journaled files-only restore. Remote
+database restore and off-site browsing remain unavailable.
+
 Administrators can use `GET /api/security/center` for a consolidated,
 read-only host posture view: existing authentication/privileged-helper checks,
 service states, free disk/inodes, and backup schedule failures. It deliberately

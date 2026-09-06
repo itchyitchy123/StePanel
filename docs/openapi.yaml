@@ -440,6 +440,11 @@ paths:
       summary: Queue an administrator-only verified database restore
       description: Creates a verified safety backup, then imports the selected dump into an existing managed database registered to the site. Schema rollback remains manual.
       responses: {'202': {description: Database restore job queued}}
+  /api/backups/restore-offsite-files:
+    post:
+      summary: Queue an administrator-only verified off-site files restore
+      description: Retrieves only the fixed backup objects for the configured rclone site/backup layout, verifies them, and atomically restores files while preserving databases.
+      responses: {'202': {description: Off-site restore job queued}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation

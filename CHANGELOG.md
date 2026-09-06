@@ -67,6 +67,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   databases. It verifies the selected dump, creates a pre-restore safety
   backup, imports through the database helper over stdin, and records that
   schema rollback remains manual.
+- Added administrator-only off-site files restore through the configured
+  rclone target. Retrieval is restricted to fixed backup objects for the
+  requested site/backup ID before normal signature verification and recovery
+  journaling.
 
 - Added AES-GCM encryption for customer TOTP secrets with dedicated
   `STEPANEL_ACCOUNT_KEY`, one-time MFA regeneration, and session revocation.

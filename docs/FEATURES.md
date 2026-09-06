@@ -121,9 +121,10 @@ Latest stable release: `v0.6.0`
   authenticated with an external `STEPANEL_BACKUP_SIGNING_KEY`. Administrator
   files-only restore and restore-to-staging are available for verified files;
   database-only restore is available for existing managed databases with a
-  verified pre-restore safety backup. Off-site browsing/restore and full
-  customer self-service restore remain deliberately guarded. Schema rollback
-  remains manual.
+  verified pre-restore safety backup. Administrator off-site files-only restore
+  is also available when rclone is configured; off-site browsing, off-site
+  database restore, and full customer self-service restore remain deliberately
+  guarded. Schema rollback remains manual.
 - The customer workspace currently authorizes assigned site viewing, verified
   backup creation, domain routing, and job history only. It is not yet a full
   tenant self-service portal.
