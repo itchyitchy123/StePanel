@@ -20,6 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   and cPanel restore mutations with the corresponding site operation, closing
   remaining concurrent-host-mutation paths.
 
+- Serialized managed database, Redis allocation, WordPress action, and
+  malware-quarantine mutations with other operations for the same site.
+
 - Extended per-site mutation serialization to staging creation and local/off-site
   restore-to-staging, preventing concurrent requests from racing over site,
   environment, database, route, or release state.

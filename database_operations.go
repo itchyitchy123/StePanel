@@ -171,6 +171,8 @@ func (a *App) databaseCollection(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "encoding must be UTF8 for PostgreSQL or utf8mb4 for MySQL/MariaDB", http.StatusUnprocessableEntity)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquireMany(in.Site, "database:"+in.Name)
+		defer releaseUnlock()
 		if _, err := runDatabaseHelper(a.Config, time.Minute, in.Password, "provision", in.Name, in.User, in.Site, in.Encoding); err != nil {
 			log.Printf("database provision rejected for %s: %v", in.Name, err)
 			http.Error(w, "database or user already exists, or provisioning failed", http.StatusConflict)
@@ -271,6 +273,8 @@ func (a *App) databaseResource(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "password must contain 20-128 supported characters", http.StatusUnprocessableEntity)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquire("database:" + name)
+		defer releaseUnlock()
 		if _, err := runDatabaseHelper(a.Config, 30*time.Second, in.Password, "rotate", name, in.User); err != nil {
 			http.Error(w, "credential rotation failed", http.StatusConflict)
 			return
@@ -282,6 +286,8 @@ func (a *App) databaseResource(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "confirmation must exactly match DROP "+name, http.StatusUnprocessableEntity)
 			return
 		}
+		releaseUnlock := a.siteOperations.acquire("database:" + name)
+		defer releaseUnlock()
 		safetyBackup, err := createDatabaseSafetyBackup(a.Config, name)
 		if err != nil {
 			log.Printf("database safety backup failed for %s: %v", name, err)

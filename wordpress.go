@@ -63,6 +63,8 @@ func (a *App) wordpressAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "WordPress is not installed for this site", 422)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(site)
+	defer releaseUnlock()
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 	commandArgs := append([]string{"--path=" + root, "--no-color"}, args...)

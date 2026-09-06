@@ -64,6 +64,10 @@ uses the same lock before applying pending desired state.
 Application lifecycle, runtime tooling, deploy-key, route conversion, and
 WordPress/cPanel restore operations use the same boundary, including when a
 restore runs asynchronously as a persisted job.
+Managed database provisioning/deletion/credential rotation, Redis allocation,
+WordPress actions, and malware quarantine are serialized by site or managed
+object identity as well, so concurrent lifecycle requests cannot interleave
+their helper calls.
 
 Administrators can queue a files-only restore with `POST
 /api/backups/restore-files` using `backup`, `site`, and the explicit
