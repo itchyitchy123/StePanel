@@ -81,6 +81,8 @@ tamper-evident audit events.
 - Use the dedicated sandboxed runner for Composer, npm, framework builds,
   tests, artifact signing, and secret injection. Its artifact output is not
   activated automatically yet; a first-class release pipeline is Preview work.
-- Preserved releases consume site storage and currently require operator-managed
-  retention. Monitor disk usage and retain backups independently.
+- Preserved releases consume site storage. StePanel automatically retains the
+  configured rollback window and prunes older validated releases at startup
+  and periodically; monitor the exposed release-storage metrics and retain
+  backups independently.
 - Database changes require a separate migration and rollback plan.

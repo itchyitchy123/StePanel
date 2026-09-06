@@ -209,13 +209,6 @@ database cloning, database schema rollback, off-site browsing, and promotion
 semantics remain unavailable. Administrator-only files-only in-place and
 database-only restores are also available through their explicit APIs.
 
-Git deployments retain replaced public trees as
-`/var/www/sites/<site>/.stepanel-previous-*`; they are not governed by backup
-retention. Review and remove them only after a verified backup and rollback
-window. Use the authenticated site workspace and `/api/audit/events` to
-correlate file releases with process, proxy, and database changes. See
-[`GIT_DEPLOYMENTS.md`](GIT_DEPLOYMENTS.md).
-
 Git rollback releases are automatically retained per site. The count limit is
 controlled by `STEPANEL_GIT_RELEASE_RETENTION` (default 3), while
 `STEPANEL_GIT_RELEASE_MAX_AGE_HOURS` (default 168 hours) and
@@ -224,7 +217,9 @@ current release and newest previous release are never removed. Cleanup is
 serialized with deployment and rollback, and runs at startup and periodically
 so abandoned releases are collected without waiting for another deployment.
 Prometheus exposes `stepanel_git_release_bytes` and
-`stepanel_git_releases_total`.
+`stepanel_git_releases_total`. Use the authenticated site workspace and
+`/api/audit/events` to correlate releases with process, proxy, and database
+changes. See [`GIT_DEPLOYMENTS.md`](GIT_DEPLOYMENTS.md).
 
 Use the authenticated database endpoints during an incident:
 
