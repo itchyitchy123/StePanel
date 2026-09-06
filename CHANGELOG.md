@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Shortened the README landing page around the project identity, dashboard
+  preview, architecture, quick workflows, production status, and deeper
+  documentation links. Detailed configuration and migration procedures now
+  live in their dedicated operator guides.
+
 - Extracted site-operation serialization into the tested
   `internal/operations` package and routed all site mutation callers through
   its explicit API, reducing root-package coupling without a disruptive

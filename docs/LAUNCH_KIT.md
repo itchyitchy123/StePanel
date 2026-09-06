@@ -18,7 +18,7 @@ Repository: https://github.com/itchyitchy123/StePanel
 
 ## Longer description
 
-StePanel is built for operators who want a clear, inspectable migration path away from cPanel. The project combines a small Go control plane with a conventional LAMP deployment, systemd service isolation, archive safety checks, asynchronous restore jobs, audit events, health endpoints, and reproducible release artifacts.
+StePanel is built for operators who want a clear, inspectable migration path away from cPanel. The project combines a small Go control plane with Caddy-first web/application hosting, explicit systemd service isolation, archive safety checks, asynchronous restore jobs, audit events, health endpoints, and reproducible release artifacts.
 
 ## Before promoting publicly
 
