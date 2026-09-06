@@ -101,9 +101,12 @@ not implemented.
 - Site deletion currently removes the managed vhost/proxy state; it is not yet
   a complete customer/account teardown across mail, DNS, databases, quotas,
   and external providers.
-- Backup verification and administrator restore-to-staging are available, but
-  snapshot-backed rollback, database restore, off-site browsing, and a full
-  customer self-service restore workflow are not complete.
+- Backup verification is available through the CLI and administrator API. Each
+  backup records `crash-consistent / logical backup` classification and can be
+  authenticated with an external `STEPANEL_BACKUP_SIGNING_KEY`. Administrator
+  restore-to-staging is available for verified files; database restore,
+  off-site browsing/restore, and full customer self-service restore remain
+  deliberately guarded until a transactional database restore workflow exists.
 - The customer workspace currently authorizes assigned site viewing, verified
   backup creation, domain routing, and job history only. It is not yet a full
   tenant self-service portal.

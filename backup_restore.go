@@ -14,6 +14,45 @@ type RestoreToStagingRequest struct {
 	Domain string `json:"domain"`
 }
 
+// backupVerify performs the same archive and manifest checks used before a
+// restore, without extracting or changing host state.
+func (a *App) backupVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	var input struct {
+		Backup string `json:"backup"`
+		Site   string `json:"site"`
+	}
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	input.Site = safeUser(input.Site)
+	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	if input.Site == "" || input.Backup == "" || input.Backup == "." || !a.canAccessSite(r, input.Site) {
+		http.Error(w, "invalid backup", http.StatusUnprocessableEntity)
+		return
+	}
+	path := filepath.Join(a.Config.BackupRoot, input.Backup)
+	if filepath.Dir(path) != filepath.Clean(a.Config.BackupRoot) {
+		http.Error(w, "invalid backup", http.StatusUnprocessableEntity)
+		return
+	}
+	manifest, err := VerifySiteBackup(path, a.Config.BackupSigningKey)
+	if err != nil {
+		http.Error(w, "backup verification failed", http.StatusUnprocessableEntity)
+		return
+	}
+	if manifest.Site != input.Site {
+		http.Error(w, "backup does not belong to site", http.StatusForbidden)
+		return
+	}
+	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.verify", input.Site, input.Backup)
+	writeJSON(w, http.StatusOK, map[string]any{"verified": true, "backup": input.Backup, "site": manifest.Site, "consistency": manifest.Consistency, "archive_verified": manifest.ArchiveVerified, "database_dump_verified": manifest.DatabaseDumpVerified, "application_quiesced": manifest.ApplicationQuiesced, "filesystem_snapshot": manifest.FilesystemSnapshot, "manifest_signed": manifest.SignatureAlgorithm != ""})
+}
+
 func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
 		http.Error(w, "invalid request", 403)
@@ -36,7 +75,7 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid backup", 422)
 		return
 	}
-	manifest, e := VerifySiteBackup(backup)
+	manifest, e := VerifySiteBackup(backup, a.Config.BackupSigningKey)
 	if e != nil {
 		http.Error(w, "backup verification failed", 422)
 		return
@@ -106,5 +145,5 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 	}
 	ok = true
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-to-staging", input.Site, input.Backup)
-	writeJSON(w, 202, map[string]any{"site": input.Site, "domain": input.Domain, "backup": input.Backup, "source_site": manifest.Site, "files_restored": true, "databases_restored": false, "created_at": time.Now().UTC()})
+	writeJSON(w, 202, map[string]any{"site": input.Site, "domain": input.Domain, "backup": input.Backup, "source_site": manifest.Site, "files_restored": true, "databases_restored": false, "restore_mode": "staging", "consistency": manifest.Consistency, "created_at": time.Now().UTC()})
 }

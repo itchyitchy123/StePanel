@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -29,24 +30,32 @@ type BackupEntry struct {
 }
 
 type BackupManifest struct {
-	Version       int           `json:"version"`
-	Site          string        `json:"site"`
-	CreatedAt     time.Time     `json:"created_at"`
-	VerifiedAt    time.Time     `json:"verified_at"`
-	Archive       string        `json:"archive"`
-	ArchiveSHA256 string        `json:"archive_sha256"`
-	Bytes         int64         `json:"bytes"`
-	Databases     []string      `json:"databases"`
-	Entries       []BackupEntry `json:"entries"`
+	Version              int           `json:"version"`
+	Site                 string        `json:"site"`
+	CreatedAt            time.Time     `json:"created_at"`
+	VerifiedAt           time.Time     `json:"verified_at"`
+	Archive              string        `json:"archive"`
+	ArchiveSHA256        string        `json:"archive_sha256"`
+	Bytes                int64         `json:"bytes"`
+	Databases            []string      `json:"databases"`
+	Entries              []BackupEntry `json:"entries"`
+	Consistency          string        `json:"consistency"`
+	ArchiveVerified      bool          `json:"archive_verified"`
+	DatabaseDumpVerified bool          `json:"database_dump_verified"`
+	ApplicationQuiesced  bool          `json:"application_quiesced"`
+	FilesystemSnapshot   bool          `json:"filesystem_snapshot"`
+	SignatureAlgorithm   string        `json:"signature_algorithm,omitempty"`
 }
 
 type BackupResult struct {
-	Site          string    `json:"site"`
-	Path          string    `json:"path"`
-	ArchiveSHA256 string    `json:"archive_sha256"`
-	Bytes         int64     `json:"bytes"`
-	Databases     []string  `json:"databases"`
-	VerifiedAt    time.Time `json:"verified_at"`
+	Site           string    `json:"site"`
+	Path           string    `json:"path"`
+	ArchiveSHA256  string    `json:"archive_sha256"`
+	Bytes          int64     `json:"bytes"`
+	Databases      []string  `json:"databases"`
+	VerifiedAt     time.Time `json:"verified_at"`
+	Consistency    string    `json:"consistency"`
+	ManifestSigned bool      `json:"manifest_signed"`
 }
 
 func (a *App) backups(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +212,7 @@ func CreateSiteBackup(cfg Config, site string, includeDatabases bool) (result Ba
 	}
 	gz := gzip.NewWriter(archive)
 	tw := tar.NewWriter(gz)
-	manifest := BackupManifest{Version: 1, Site: site, CreatedAt: time.Now().UTC(), Archive: "backup.tar.gz", Databases: []string{}, Entries: []BackupEntry{}}
+	manifest := BackupManifest{Version: 1, Site: site, CreatedAt: time.Now().UTC(), Archive: "backup.tar.gz", Databases: []string{}, Entries: []BackupEntry{}, Consistency: "crash-consistent / logical backup"}
 	var uncompressedBytes int64
 	closeArchive := func() error {
 		if err := tw.Close(); err != nil {
@@ -272,7 +281,9 @@ func CreateSiteBackup(cfg Config, site string, includeDatabases bool) (result Ba
 		return result, fmt.Errorf("verify completed backup: %w", err)
 	}
 	manifest.VerifiedAt = time.Now().UTC()
-	if err := writeBackupManifest(tempDir, manifest); err != nil {
+	manifest.ArchiveVerified = true
+	manifest.DatabaseDumpVerified = len(manifest.Databases) > 0
+	if err := writeBackupManifest(tempDir, manifest, cfg.BackupSigningKey); err != nil {
 		return result, err
 	}
 	if err := writeSyncedFile(filepath.Join(tempDir, "backup.tar.gz.sha256"), []byte(manifest.ArchiveSHA256+"  backup.tar.gz\n"), 0600); err != nil {
@@ -290,7 +301,7 @@ func CreateSiteBackup(cfg Config, site string, includeDatabases bool) (result Ba
 		_ = os.Rename(finalPath, tempDir)
 		return result, err
 	}
-	result = BackupResult{Site: site, Path: finalPath, ArchiveSHA256: manifest.ArchiveSHA256, Bytes: manifest.Bytes, Databases: manifest.Databases, VerifiedAt: manifest.VerifiedAt}
+	result = BackupResult{Site: site, Path: finalPath, ArchiveSHA256: manifest.ArchiveSHA256, Bytes: manifest.Bytes, Databases: manifest.Databases, VerifiedAt: manifest.VerifiedAt, Consistency: manifest.Consistency, ManifestSigned: cfg.BackupSigningKey != ""}
 	return result, nil
 }
 
@@ -519,7 +530,14 @@ func VerifyBackupArchive(path string, manifest BackupManifest) error {
 	return nil
 }
 
-func writeBackupManifest(root string, manifest BackupManifest) error {
+func writeBackupManifest(root string, manifest BackupManifest, signingKey ...string) error {
+	key := ""
+	if len(signingKey) > 0 {
+		key = signingKey[0]
+	}
+	if key != "" {
+		manifest.SignatureAlgorithm = "HMAC-SHA256"
+	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
@@ -542,7 +560,16 @@ func writeBackupManifest(root string, manifest BackupManifest) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(tempName, filepath.Join(root, "manifest.json"))
+	if err := os.Rename(tempName, filepath.Join(root, "manifest.json")); err != nil {
+		return err
+	}
+	if key != "" {
+		signedData := append(append([]byte(nil), data...), '\n')
+		if err := writeSyncedFile(filepath.Join(root, "manifest.sig"), []byte(backupManifestSignature(signedData, key)+"\n"), 0600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeSyncedFile(path string, data []byte, mode os.FileMode) error {
@@ -598,12 +625,55 @@ func readBackupManifest(root string) (BackupManifest, error) {
 	return manifest, nil
 }
 
-func VerifySiteBackup(root string) (BackupManifest, error) {
+func backupManifestSignature(data []byte, key string) string {
+	derived := sha256.Sum256([]byte(key))
+	h := hmac.New(sha256.New, derived[:])
+	_, _ = h.Write(data)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func verifyBackupManifestSignature(root string, data []byte, manifest BackupManifest, signingKey string) error {
+	signature, err := os.ReadFile(filepath.Join(root, "manifest.sig"))
+	if errors.Is(err, os.ErrNotExist) {
+		if signingKey != "" || manifest.SignatureAlgorithm != "" {
+			return errors.New("backup manifest signature is missing")
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if signingKey == "" {
+		return errors.New("backup manifest is signed but STEPANEL_BACKUP_SIGNING_KEY is unavailable")
+	}
+	provided, err := hex.DecodeString(strings.TrimSpace(string(signature)))
+	if err != nil || len(provided) != sha256.Size {
+		return errors.New("backup manifest signature is malformed")
+	}
+	expected, _ := hex.DecodeString(backupManifestSignature(data, signingKey))
+	if !hmac.Equal(provided, expected) {
+		return errors.New("backup manifest signature does not verify")
+	}
+	return nil
+}
+
+func VerifySiteBackup(root string, signingKey ...string) (BackupManifest, error) {
 	manifest, err := readBackupManifest(root)
 	if err != nil {
 		return BackupManifest{}, err
 	}
 	if err := VerifyBackupArchive(filepath.Join(root, manifest.Archive), manifest); err != nil {
+		return BackupManifest{}, err
+	}
+	data, err := os.ReadFile(filepath.Join(root, "manifest.json"))
+	if err != nil {
+		return BackupManifest{}, err
+	}
+	key := ""
+	if len(signingKey) > 0 {
+		key = signingKey[0]
+	}
+	if err := verifyBackupManifestSignature(root, data, manifest, key); err != nil {
 		return BackupManifest{}, err
 	}
 	return manifest, nil
@@ -637,7 +707,7 @@ func listBackupsPage(root, site string, limit int) ([]BackupResult, error) {
 		if site != "" && manifest.Site != site {
 			continue
 		}
-		backups = append(backups, BackupResult{Site: manifest.Site, Path: path, ArchiveSHA256: manifest.ArchiveSHA256, Bytes: manifest.Bytes, Databases: manifest.Databases, VerifiedAt: manifest.VerifiedAt})
+		backups = append(backups, BackupResult{Site: manifest.Site, Path: path, ArchiveSHA256: manifest.ArchiveSHA256, Bytes: manifest.Bytes, Databases: manifest.Databases, VerifiedAt: manifest.VerifiedAt, Consistency: manifest.Consistency, ManifestSigned: manifest.SignatureAlgorithm != ""})
 	}
 	sort.Slice(backups, func(i, j int) bool { return backups[i].VerifiedAt.After(backups[j].VerifiedAt) })
 	if limit > 0 && len(backups) > limit {

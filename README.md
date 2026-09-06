@@ -263,6 +263,7 @@ checkbox and should be backed up first.
 | `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |
 | `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
 | `POST` | `/api/cpmove/import` | Start an authorized restore job |
+| `POST` | `/api/backups/verify` | Verify a published backup and its optional signed manifest without restoring |
 | `GET` | `/api/jobs/<id>` | Poll restore status |
 | `GET` | `/metrics` | Prometheus-compatible process metric |
 
@@ -303,6 +304,7 @@ checkbox and should be backed up first.
 | `STEPANEL_SESSION_STATE` | Durable revocable administrator session state file |
 | `STEPANEL_ACCOUNT_STATE` | Private JSON state for shared-hosting customer accounts; defaults beside session state in production |
 | `STEPANEL_ACCOUNT_KEY` | Stable secret used to encrypt customer TOTP secrets in account state; required in production |
+| `STEPANEL_BACKUP_SIGNING_KEY` | External HMAC-SHA256 secret for signing and verifying backup manifests; keep outside the backup root |
 | `STEPANEL_RECOVERY_ROOT` | Durable site rollback transactions on the site filesystem |
 | `STEPANEL_WPRESS_EXTRACT` | WPress extractor executable; production default `/usr/local/bin/wpress-extract` |
 | `STEPANEL_WPCLI` | WP-CLI executable; production default `/usr/local/bin/wp` |

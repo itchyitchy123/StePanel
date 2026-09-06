@@ -420,6 +420,11 @@ paths:
       summary: Restore verified backup files into a new isolated staging site
       description: Refuses existing destinations and deliberately does not restore database dumps.
       responses: {'202': {description: Files restored and staging route activated}}
+  /api/backups/verify:
+    post:
+      summary: Verify a backup archive and optional authenticated manifest
+      description: Performs archive, entry, checksum, and manifest-signature checks without extracting or changing host state.
+      responses: {'200': {description: Verified backup and consistency classification}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation

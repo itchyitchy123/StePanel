@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Added crash-consistency metadata and optional external HMAC-SHA256 signatures
+  for backup manifests, plus an authenticated `POST /api/backups/verify`
+  operation that verifies backups without restoring them. Restore-to-staging
+  now reports its consistency classification.
+
 - Extended preview resource profiles with systemd CPU weight, memory high-water
   limit, and I/O weight controls, plus live status reporting. Updated the FPM
   Lens integration guidance to its current evidence-aware observe/review flow.

@@ -32,6 +32,39 @@ func TestCreateSiteBackupPublishesVerifiedManifest(t *testing.T) {
 	}
 }
 
+func TestSignedBackupManifestRequiresValidExternalKey(t *testing.T) {
+	root := t.TempDir()
+	webRoot := filepath.Join(root, "www")
+	backupRoot := filepath.Join(root, "backups")
+	writeTestFile(t, filepath.Join(webRoot, "sites", "account", "public", "index.html"), "signed")
+	result, err := CreateSiteBackup(Config{WebRoot: webRoot, BackupRoot: backupRoot, BackupSigningKey: "a-secret-key-with-enough-entropy"}, "account", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(result.Path, "manifest.sig")); err != nil {
+		t.Fatalf("manifest signature missing: %v", err)
+	}
+	if _, err := VerifySiteBackup(result.Path, "a-secret-key-with-enough-entropy"); err != nil {
+		t.Fatalf("signed backup did not verify: %v", err)
+	}
+	if _, err := VerifySiteBackup(result.Path, "wrong-key"); err == nil {
+		t.Fatal("backup verified with the wrong signing key")
+	}
+}
+
+func TestBackupManifestReportsLogicalConsistency(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "www", "sites", "account", "public", "index.html"), "logical")
+	result, err := CreateSiteBackup(Config{WebRoot: filepath.Join(root, "www"), BackupRoot: filepath.Join(root, "backups")}, "account", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := readTestBackupManifest(t, result.Path)
+	if manifest.Consistency != "crash-consistent / logical backup" || !manifest.ArchiveVerified || manifest.ApplicationQuiesced || manifest.FilesystemSnapshot {
+		t.Fatalf("unexpected consistency metadata: %#v", manifest)
+	}
+}
+
 func TestVerifyBackupArchiveRejectsTampering(t *testing.T) {
 	root := t.TempDir()
 	webRoot := filepath.Join(root, "www")

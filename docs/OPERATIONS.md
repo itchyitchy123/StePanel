@@ -153,6 +153,32 @@ backups. A scheduled backup's `keep_last` policy prunes its oldest verified
 local copies only after a replacement succeeds; safety dumps made before
 database deletion remain under `.database-deletions` for explicit DBA review.
 
+Backups are classified explicitly as `crash-consistent / logical backup`:
+the archive and any logical database dump are verified, but the application is
+not quiesced and no filesystem snapshot is taken. If
+`STEPANEL_BACKUP_SIGNING_KEY` is configured, publication also creates
+`manifest.sig`, an HMAC-SHA256 signature kept beside the manifest but verified
+with a key held outside the backup root. Keep that key in the host's secret
+store and escrow it separately from backup copies. A signature proves the
+manifest was produced by the configured panel key; it does not provide
+immutability, so use object-lock/immutable retention at the off-site provider.
+
+Verify without restoring or extracting through the CLI or API:
+
+```sh
+/opt/stepanel/stepanel verify-backup /var/backups/stepanel/TIMESTAMP-ACCOUNT
+curl -fsS -X POST -H 'Content-Type: application/json' \
+  --data '{"site":"ACCOUNT","backup":"TIMESTAMP-ACCOUNT"}' \
+  http://127.0.0.1:8090/api/backups/verify
+```
+
+The administrator restore-to-staging endpoint extracts only a verified backup's
+files into a new isolated, no-index route. It deliberately does not restore
+database dumps yet. Full, files-only in-place, database-only, and off-site
+restore should be treated as operator workflows until transactional database
+creation, collision checks, recovery journaling, and promotion semantics are
+available.
+
 Git deployments retain replaced public trees as
 `/var/www/sites/<site>/.stepanel-previous-*`; they are not governed by backup
 retention. Review and remove them only after a verified backup and rollback

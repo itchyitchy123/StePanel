@@ -39,6 +39,16 @@ place: existing events would no longer verify. Preserve the old key with the
 audit log, and start a separately documented chain only through an intentional
 key-rotation procedure.
 
+## Backup manifest signing
+
+Set `STEPANEL_BACKUP_SIGNING_KEY` to a stable high-entropy secret kept outside
+`STEPANEL_BACKUP_ROOT`. New backups contain a `manifest.sig` HMAC-SHA256
+signature. `verify-backup` and `POST /api/backups/verify` require the key to
+verify signed artifacts. Store an escrow copy separately from off-site backup
+objects; changing or losing the key makes existing signatures unverifiable.
+This authenticates the manifest but does not make storage immutable. Use
+provider Object Lock or equivalent immutable retention for compromise recovery.
+
 `STEPANEL_SESSION_SECRET`, session state, and account state must be backed up
 together when session recovery is required. Rotating the session secret is a
 deliberate logout of existing sessions. If account or session state may have

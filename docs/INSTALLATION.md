@@ -170,6 +170,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_ACCOUNT_STATE` | Absolute path in production | Optional private customer-account state file; defaults beside session state |
 | `STEPANEL_ENVIRONMENT_KEY` | Secret string | Enables AES-GCM encrypted site environment storage; keep stable and back it up securely |
 | `STEPANEL_ACCOUNT_KEY` | Secret string | Encrypts customer TOTP secrets in account state; required in production and must be backed up with `STEPANEL_ACCOUNT_STATE` |
+| `STEPANEL_BACKUP_SIGNING_KEY` | Secret string | Signs backup manifests with HMAC-SHA256; keep outside the backup root and escrow separately for disaster recovery |
 | `STEPANEL_ENVIRONMENT_STATE` | Filesystem path | Site environment state file; defaults beside the job state |
 | `STEPANEL_REDIS_STATE` | Filesystem path | Redis/Valkey site allocation state; defaults beside the job state |
 
