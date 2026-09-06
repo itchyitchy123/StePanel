@@ -214,6 +214,45 @@ func (s *AccountStore) RemoveLogin(username string) error {
 	return nil
 }
 
+// Update changes the non-credential account configuration atomically. Site
+// ownership is checked against every other account while holding the store
+// lock, so reassignment cannot create overlapping tenant access.
+func (s *AccountStore) Update(username, plan string, sites []string) (HostingAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return HostingAccount{}, errors.New("account not found")
+	}
+	updated := account
+	updated.Plan = strings.ToLower(strings.TrimSpace(plan))
+	updated.Sites = append([]string(nil), sites...)
+	if err := validateHostingAccount(updated, true); err != nil {
+		return HostingAccount{}, err
+	}
+	for otherUsername, other := range s.accounts {
+		if otherUsername == username {
+			continue
+		}
+		for _, assigned := range other.Sites {
+			for _, requested := range updated.Sites {
+				if assigned == requested {
+					return HostingAccount{}, fmt.Errorf("site %q is already assigned to account %q", requested, otherUsername)
+				}
+			}
+		}
+	}
+	s.accounts[username] = updated
+	if err := s.persistLocked(); err != nil {
+		s.accounts[username] = account
+		return HostingAccount{}, err
+	}
+	updated.PasswordHash = ""
+	updated.TOTPSecret = ""
+	updated.RecoveryCodeHashes = nil
+	return updated, nil
+}
+
 func (s *AccountStore) List() []HostingAccount {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -622,10 +661,50 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var input struct {
-			Suspended *bool `json:"suspended"`
+			Suspended *bool    `json:"suspended"`
+			Plan      string   `json:"plan"`
+			Sites     []string `json:"sites"`
 		}
-		if err := decodeJSON(w, r, 1024, &input); err != nil || input.Suspended == nil {
-			http.Error(w, "suspended must be a boolean", http.StatusBadRequest)
+		if err := decodeJSON(w, r, 8192, &input); err != nil {
+			http.Error(w, "invalid account update", http.StatusBadRequest)
+			return
+		}
+		if input.Suspended == nil && strings.TrimSpace(input.Plan) == "" && input.Sites == nil {
+			http.Error(w, "suspended, plan, or sites is required", http.StatusBadRequest)
+			return
+		}
+		if input.Suspended == nil {
+			account, existing := a.Accounts.Get(username)
+			if !existing {
+				http.Error(w, "account not found", http.StatusNotFound)
+				return
+			}
+			plan := account.Plan
+			if strings.TrimSpace(input.Plan) != "" {
+				plan = input.Plan
+			}
+			sites := account.Sites
+			if input.Sites != nil {
+				sites = input.Sites
+			}
+			for _, site := range sites {
+				root := filepath.Join(a.Config.WebRoot, "sites", safeUser(site), "public")
+				if safeUser(site) == "" || ensureInside(a.Config.WebRoot, root) != nil {
+					http.Error(w, "invalid assigned site", http.StatusUnprocessableEntity)
+					return
+				}
+				if info, statErr := os.Stat(root); statErr != nil || !info.IsDir() {
+					http.Error(w, "assigned site document root does not exist", http.StatusUnprocessableEntity)
+					return
+				}
+			}
+			updated, err := a.Accounts.Update(username, plan, sites)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+				return
+			}
+			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.updated", username, "plan or site assignments changed")
+			writeJSON(w, http.StatusOK, updated)
 			return
 		}
 		account, err := a.Accounts.SetSuspended(username, *input.Suspended)

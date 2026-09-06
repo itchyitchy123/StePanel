@@ -40,6 +40,31 @@ func TestAccountStorePersistsOnlyValidatedAssignments(t *testing.T) {
 	}
 }
 
+func TestAccountStoreUpdatesPlanAndAssignmentsAtomically(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	store, err := OpenAccountStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", []string{"site-one"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("other", "another sufficiently long customer password", testTOTPSecret, "starter", []string{"site-two"}); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.Update("customer", "professional", []string{"site-one"})
+	if err != nil || updated.Plan != "professional" || len(updated.Sites) != 1 {
+		t.Fatalf("account update = %#v, err = %v", updated, err)
+	}
+	if _, err := store.Update("customer", "professional", []string{"site-two"}); err == nil || !strings.Contains(err.Error(), "already assigned") {
+		t.Fatalf("expected duplicate ownership rejection, got %v", err)
+	}
+	account, ok := store.Get("customer")
+	if !ok || account.Plan != "professional" || len(account.Sites) != 1 || account.Sites[0] != "site-one" {
+		t.Fatalf("failed update changed persisted account: %#v", account)
+	}
+}
+
 func TestAccountStoreRejectsDuplicateSiteOwnershipOnLoad(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "accounts.json")
 	data := `[
