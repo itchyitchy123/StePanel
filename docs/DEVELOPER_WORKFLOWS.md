@@ -64,6 +64,11 @@ archive, checksum, and optional signature objects for that site/backup ID,
 then performs the same verification and journaled files-only restore. Remote
 database restore and off-site browsing remain unavailable.
 
+For an off-site database dump, use `POST /api/backups/restore-offsite-database`
+with `backup`, `site`, `database`, and `confirm=RESTORE_OFFSITE_DATABASE`.
+This retrieves the fixed remote objects, creates a verified local safety backup,
+and uses the same ownership checks and database helper as local restore.
+
 Administrators can use `GET /api/security/center` for a consolidated,
 read-only host posture view: existing authentication/privileged-helper checks,
 service states, free disk/inodes, and backup schedule failures. It deliberately

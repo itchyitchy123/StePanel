@@ -71,6 +71,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   rclone target. Retrieval is restricted to fixed backup objects for the
   requested site/backup ID before normal signature verification and recovery
   journaling.
+- Added administrator-only off-site database restore using the same fixed
+  object retrieval, pre-restore safety backup, ownership checks, and restricted
+  database helper as local database restore.
 
 - Added AES-GCM encryption for customer TOTP secrets with dedicated
   `STEPANEL_ACCOUNT_KEY`, one-time MFA regeneration, and session revocation.

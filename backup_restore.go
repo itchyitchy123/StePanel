@@ -452,3 +452,64 @@ func (a *App) backupRestoreOffsiteFilesHTTP(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "offsite-files-only"})
 }
+
+func (a *App) backupRestoreOffsiteDatabaseHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) || !a.Auth.IsAdministrator(r) {
+		http.Error(w, "administrator CSRF request required", http.StatusForbidden)
+		return
+	}
+	var input struct {
+		Backup   string `json:"backup"`
+		Site     string `json:"site"`
+		Database string `json:"database"`
+		Confirm  string `json:"confirm"`
+	}
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	input.Site = safeUser(input.Site)
+	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	if input.Site == "" || !validBackupName(input.Backup) || !validManagedDatabaseIdentifier(input.Database, 64) || input.Confirm != "RESTORE_OFFSITE_DATABASE" {
+		http.Error(w, "site, backup, database, and confirm=RESTORE_OFFSITE_DATABASE are required", http.StatusUnprocessableEntity)
+		return
+	}
+	if a.Jobs == nil || a.Config.OffsiteTarget == "" || a.Config.DBCtl == "" {
+		http.Error(w, "offsite database restore is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	jobID, err := newJobID("offsite-db-restore")
+	if err != nil {
+		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		return
+	}
+	if err := a.Jobs.SubmitBackupRestore(jobID, input.Site, func() (BackupRestoreResult, error) {
+		root, cleanup, downloadErr := downloadOffsiteBackup(a.Config, input.Site, input.Backup)
+		if downloadErr != nil {
+			return BackupRestoreResult{}, downloadErr
+		}
+		defer cleanup()
+		safety, safetyErr := CreateSiteBackup(a.Config, input.Site, true)
+		if safetyErr != nil {
+			return BackupRestoreResult{}, fmt.Errorf("create pre-restore safety backup: %w", safetyErr)
+		}
+		cfg := a.Config
+		cfg.BackupRoot = root
+		result, restoreErr := restoreManagedDatabase(cfg, input.Backup, input.Site, input.Database)
+		if restoreErr != nil {
+			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-offsite-database.failed", input.Site, restoreErr.Error())
+			return result, restoreErr
+		}
+		result.SafetyBackup = safety.Path
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-offsite-database.completed", input.Site, input.Database+" safety_backup="+safety.Path)
+		return result, nil
+	}); err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+		} else {
+			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "offsite-database-only", "schema_rollback": "manual"})
+}

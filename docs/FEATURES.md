@@ -122,9 +122,10 @@ Latest stable release: `v0.6.0`
   files-only restore and restore-to-staging are available for verified files;
   database-only restore is available for existing managed databases with a
   verified pre-restore safety backup. Administrator off-site files-only restore
-  is also available when rclone is configured; off-site browsing, off-site
-  database restore, and full customer self-service restore remain deliberately
-  guarded. Schema rollback remains manual.
+  is also available when rclone is configured. Administrator off-site
+  database-only restore is available for existing managed databases when
+  rclone is configured; off-site browsing and full customer self-service
+  restore remain deliberately guarded. Schema rollback remains manual.
 - The customer workspace currently authorizes assigned site viewing, verified
   backup creation, domain routing, and job history only. It is not yet a full
   tenant self-service portal.
