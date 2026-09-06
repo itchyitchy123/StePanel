@@ -20,7 +20,8 @@ export STEPANEL_INSTALL_MAIL=0
 export STEPANEL_INSTALL_FTP=0
 export STEPANEL_INSTALL_NODE=0
 export STEPANEL_INSTALL_SECURITY=0
-export STEPANEL_REQUIRE_OFFSITE_BACKUP=0
+export STEPANEL_REQUIRE_OFFSITE_BACKUP=1
+export STEPANEL_OFFSITE_TARGET=local:/tmp/stepanel-offsite
 
 ./install.sh
 systemctl is-active --quiet stepanel.service

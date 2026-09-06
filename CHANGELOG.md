@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Fixed disposable installation smoke coverage to exercise the production
+  off-site-backup requirement with a local synthetic target instead of
+  contradicting the installer contract.
+
 - Updated the standalone `/api/runner/build` path for the resource-limited
   runner contract and serialized it with other same-site builds, preventing
   runtime argument mismatches and artifact races.
