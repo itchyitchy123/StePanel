@@ -60,7 +60,7 @@ safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
 For Apache migrations to the default Caddy stack, see the
 [`.htaccess` migration guide](docs/HTACCESS_MIGRATION.md).
 
-> **Status:** StePanel includes a constrained single-host shared-hosting beta. It is not yet a complete multi-tenant hosting platform: plans currently limit assigned sites, not host resources, and customer mail/file/database/restore lifecycle remains unavailable. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
+> **Status:** StePanel includes a constrained single-host shared-hosting beta. It is not yet a complete multi-tenant hosting platform: plans currently limit assigned sites, not host resources, and customer mail/file/database/restore lifecycle remains unavailable. Administrator resource profiles, security posture, and restore-to-staging are available with explicit beta/operator boundaries. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
 
 ## See it quickly
 
@@ -70,6 +70,9 @@ See the [product preview](docs/SCREENSHOTS.md) for the current development
 dashboard layout. The repository image is a deterministic illustration with
 representative values; capture a tagged-build screenshot for host-specific
 service and capability states.
+
+Operational key backup and rotation procedures are documented in
+[`docs/SECRETS.md`](docs/SECRETS.md).
 
 ### Local development
 

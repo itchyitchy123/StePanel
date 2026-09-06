@@ -36,6 +36,12 @@ platform.
 - The shared-hosting beta persists customer credentials separately from the
   administrator, requires per-customer TOTP, caps explicit site assignments by
   plan, and restricts customer site, backup, and job visibility to assignments.
+- Administrators can enforce preview CPU, memory, task, and PHP-FPM worker
+  profiles for managed application processes, inspect live cgroup/site usage,
+  and reconcile inactive desired profiles. These are not customer quotas.
+- Administrators can inspect a consolidated read-only Security Center and
+  restore verified site files into an isolated, protected, no-index staging
+  route. Database restore and outbound-email blocking remain unavailable.
 
 ## Required before exposing the panel to customers
 

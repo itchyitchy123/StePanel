@@ -12,6 +12,9 @@ This is a deliberate first boundary, not a claim of cPanel/Plesk parity.
   required, including outside production mode.
 - `starter`, `professional`, and `agency` cap assignments at 1, 5, and 25
   sites respectively. These are enforced assignment limits, not resource plans.
+- Administrators can apply preview resource profiles to managed application
+  processes, but plans do not yet enforce disk, inode, bandwidth, I/O,
+  database, or Redis entitlements.
 - Customer sessions can view only assigned site workspaces and their matching
   backup and job records. They can create a verified backup or add a domain
   route only for an assigned site.
@@ -99,8 +102,9 @@ FPM; managed Caddy and Apache routes use the selected version’s socket.
 site. The request supports `files` and `environment`; only non-secret environment
 values are copied, and the operation uses the site recovery journal. Database
 cloning deliberately fails closed until the managed database helper provides a
-transactional clone operation. Staging access protection and search-indexing
-controls should be configured at the proxy/application layer for now.
+transactional clone operation. New staging routes support default no-index
+headers and optional bcrypt-backed Basic Auth; outbound-email blocking and
+database cloning remain unavailable.
 
 ## Sandboxed build runner
 
@@ -156,12 +160,15 @@ closed set of operations through `POST /api/wordpress/{site}` with an action of
 site ownership, CSRF protection, and are bounded and audited. Arbitrary WP-CLI
 arguments and repository build commands remain intentionally unsupported.
 
-## Not implemented yet
+## Not yet available to customers
 
 Do not market this beta as unrestricted shared hosting. It does not yet provide
-mailbox/FTP/SFTP/SSH lifecycle, browser file management, customer database
-credentials, customer self-service scheduled tasks, DNS/registrar lifecycle, usage accounting, bandwidth
-or CPU/memory/disk quotas, billing, customer-initiated restores, support
-workflows, reseller roles, or a multi-host control
-plane. Those features require host-level enforcement and durable tenancy-aware
-state, not merely additional dashboard forms.
+mailbox/FTP lifecycle, full SFTP/SSH account enforcement, browser file
+management, customer database credentials, customer self-service scheduled
+tasks, DNS/registrar lifecycle, enforced disk/inode/bandwidth/I/O quotas,
+billing, customer-initiated restores, database-aware staging, support
+workflows, reseller roles, or a multi-host control plane. These gaps require
+host-level enforcement and durable tenancy-aware state, not merely dashboard
+forms. Administrator-only scheduled tasks, deploy keys, resource profiles,
+Security Center, and restore-to-staging are documented in
+[`FEATURES.md`](FEATURES.md) with their beta/operator boundaries.

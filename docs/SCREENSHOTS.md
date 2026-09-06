@@ -1,7 +1,8 @@
 # Product preview
 
 The assets in this document are synchronized with the current development
-administrator dashboard after `0.6.0`, including the managed-sites workspace.
+administrator dashboard after `0.6.0`, including the managed-sites workspace,
+resource posture, Security Center, deployment records, and recovery workflows.
 They are deterministic product illustrations, not captures from a live host;
 values are representative and the real dashboard renders service, site,
 database, capability, job state, and user role from the configured server.
@@ -25,6 +26,15 @@ runner, staging, logs, workers, deploy keys, and scheduled tasks. Each card
 maps to authenticated API and helper behavior documented in
 [Developer workflows](DEVELOPER_WORKFLOWS.md).
 
+## Operator workspace
+
+![StePanel operator workspace preview](assets/operator-workspace-preview.png)
+
+This updated illustrative mockup connects enforced application resource
+profiles and live counters, read-only host security posture, deployment stages
+with retained rollback releases, and verified files-only restore to a protected
+no-index staging route. Values are synthetic and do not represent a live host.
+
 ## What the preview covers
 
 <table>
@@ -38,7 +48,11 @@ maps to authenticated API and helper behavior documented in
 </tr>
 <tr>
 <td><strong>Security posture</strong><br>Operator checks, readiness, request correlation, and capability-aware controls are surfaced before changes are made.</td>
-<td><strong>Developer workspace</strong><br>Managed sites group domains, application state, proxies, database counts, and verified recent activity.</td>
+<td><strong>Developer workspace</strong><br>Managed sites group domains, runtime/environment controls, deployments, logs, workers, scheduled tasks, and verified recent activity.</td>
+</tr>
+<tr>
+<td><strong>Resource and recovery operations</strong><br>Administrators can inspect desired/applied resource profiles, live cgroup counters, reconciliation state, bounded site usage, and restore verified files into isolated staging.</td>
+<td><strong>Security operations</strong><br>The read-only Security Center combines posture checks, service health, disk/inode pressure, and backup schedule health without implying firewall or patch automation.</td>
 </tr>
 </table>
 
@@ -59,7 +73,7 @@ Infrastructure, security, database, migration, cloud, SSH, and account
 administration controls are intentionally absent. The server enforces the same
 scope at the API boundary; this is not only a visual simplification.
 
-The preview above is an administrator illustration, not a customer screenshot.
+The operator preview above is an administrator illustration, not a customer screenshot.
 For release review, capture both roles from the tagged build with synthetic
 data and verify the mobile layout as well as the role boundary. See
 [`SHARED_HOSTING.md`](SHARED_HOSTING.md) for the supported customer scope.

@@ -4,6 +4,11 @@ StePanel is a small control plane for operators moving workloads from cPanel
 to a LAMP server. This page describes shipped behavior separately from the
 longer-term hosting-panel roadmap.
 
+Status vocabulary: **Shipped** means implemented and supported; **Beta** means
+implemented with explicit operator caveats; **Operator-only** means available
+to administrators but not exposed as a tenant entitlement; **Planned** means
+not implemented.
+
 ## Available now
 
 - Go HTTP control plane with signed administrator sessions.
@@ -87,7 +92,8 @@ longer-term hosting-panel roadmap.
 - Site deletion currently removes the managed vhost/proxy state; it is not yet
   a complete customer/account teardown across mail, DNS, databases, quotas,
   and external providers.
-- Backup verification is available, but snapshot-backed rollback and a full
+- Backup verification and administrator restore-to-staging are available, but
+  snapshot-backed rollback, database restore, off-site browsing, and a full
   customer self-service restore workflow are not complete.
 - The customer workspace currently authorizes assigned site viewing, verified
   backup creation, domain routing, and job history only. It is not yet a full
@@ -110,7 +116,9 @@ must be implemented before offering untrusted customer access:
   resource-plan, and billing lifecycle management.
 - Customer-facing file manager, Git-provider App/OAuth integrations,
   database-aware staging, notifications, and self-service
-  backup/restore.
+  backup/restore. The shipped deploy-key, resource-profile, Security Center,
+  scheduled-task, and restore-to-staging APIs remain operator/beta controls
+  until tenant enforcement and durable state are complete.
 
 These are product and architecture work items, not safe one-file patches. The
 sequencing, acceptance gates, and operational prerequisites are tracked in

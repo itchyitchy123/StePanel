@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Updated operator/developer product previews and synchronized feature-status
+  documentation, including resource posture, Security Center, deployment
+  stages, restore-to-staging, staging protection, and release retention.
+- Added a secret lifecycle and disaster-recovery runbook covering environment,
+  audit, session, account, deploy-key, and off-site credentials.
+
 - Read-only administrator Security Center endpoint aggregating existing posture
   checks, service state, disk/inode pressure, and backup schedule health.
 

@@ -22,7 +22,8 @@
   lifecycle and customer authorization remain future work.
 - Constrained shared-hosting customer accounts, assigned-site plan limits, and
   customer-scoped site/backup/job visibility (available in `Unreleased`);
-  resource accounting and lifecycle controls remain future work.
+  panel-session suspension is shipped, while hosting-workload lifecycle and
+  enforceable customer resource quotas remain future work.
 
 ## 0.3 — Recovery and scale
 
@@ -60,6 +61,7 @@
   lifecycle
 - Database PITR/WAL or binlog orchestration, replication topology, controlled
   switchover, and externally fenced automatic failover
-- Customer portal, file manager, Git-provider/webhook and sandboxed-build
-  integrations, WordPress tooling, notifications, and self-service
-  backup/restore
+- Customer portal, file manager, Git-provider App/OAuth integrations,
+  database-aware staging, notifications, and self-service backup/restore;
+  deploy-key Git webhooks, sandboxed builds, scheduled tasks, and operator
+  restore-to-staging are already available with documented beta boundaries.
