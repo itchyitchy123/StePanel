@@ -263,7 +263,7 @@ paths:
       parameters:
         - {name: username, in: path, required: true, schema: {type: string}}
       responses:
-        '204': {description: Account terminated}
+        '204': {description: Customer login removed; hosting workloads are retained}
   /api/security/scan:
     post:
       summary: Scan a managed site for suspicious PHP

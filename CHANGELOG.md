@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Clarified account deletion as customer-login removal rather than hosting
+  termination, and made scheduled-task scripts root-owned under the control
+  plane's task directory. Fixed validation to accept the standard Base64
+  alphabet emitted by the API. Renamed the store operation to `RemoveLogin` to
+  prevent callers from mistaking it for hosting teardown.
+
 - Updated operator/developer product previews and synchronized feature-status
   documentation, including resource posture, Security Center, deployment
   stages, restore-to-staging, staging protection, and release retention.
@@ -98,8 +104,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Signed, provider-neutral Git webhook deployments through
   `/api/sites/git-webhook`, using `X-StePanel-Signature` and the existing
   repository allowlist, release validation, atomic activation, and audit path.
-- Shared-hosting account suspension, unsuspension, and termination endpoints;
-  suspended customers cannot establish new sessions.
+- Shared-hosting account suspension, unsuspension, and customer-login removal
+  endpoints; suspended customers cannot establish new sessions. Hosting-
+  workload termination remains a separate planned workflow.
 - Shared-hosting beta with administrator-provisioned customer accounts,
   independent bcrypt credentials and mandatory per-customer TOTP, persisted
   account state, `starter`/`professional`/`agency` assignment limits, and

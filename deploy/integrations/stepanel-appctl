@@ -201,13 +201,13 @@ EOF
   task-apply)
     (( $# == 8 )) || { echo 'usage: stepanel-appctl task-apply SITE NAME RUNTIME ON_CALENDAR ENABLED TIMEOUT COMMAND_B64' >&2; exit 64; }
     name=$3; runtime=$4; on_calendar=$5; enabled=$6; timeout=$7; command_b64=$8
-    [[ $name =~ ^[A-Za-z0-9_-]{1,32}$ && $runtime =~ ^(php|node|python|shell)$ && $enabled =~ ^[01]$ && $timeout =~ ^[0-9]+$ && $command_b64 =~ ^[A-Za-z0-9_-]+$ ]] || { echo 'invalid scheduled task parameters' >&2; exit 1; }
+    [[ $name =~ ^[A-Za-z0-9_-]{1,32}$ && $runtime =~ ^(php|node|python|shell)$ && $enabled =~ ^[01]$ && $timeout =~ ^[0-9]+$ && $command_b64 =~ ^[A-Za-z0-9+/]+$ ]] || { echo 'invalid scheduled task parameters' >&2; exit 1; }
     (( timeout >= 1 && timeout <= 86400 )) || { echo 'invalid scheduled task timeout' >&2; exit 1; }
     systemd-analyze calendar "$on_calendar" >/dev/null || { echo 'invalid systemd calendar expression' >&2; exit 1; }
-    root="/var/www/sites/$site/public"; task_root="/var/www/sites/$site/.stepanel-tasks"; install -d -m 0750 -o "$site_user" -g "$site_user" "$task_root"
+    root="/var/www/sites/$site/public"; task_root="/var/lib/stepanel/tasks/$site"; install -d -m 0755 -o root -g root /var/lib/stepanel/tasks "$task_root"
     script="$task_root/$name.sh"; staged=$(mktemp "$task_root/.stepanel-task.XXXXXX")
     { printf '#!/usr/bin/env bash\nset -Eeuo pipefail\ncd %q\nexec /bin/bash -lc ' "$root"; printf '%s' "$command_b64" | base64 -d; printf '\n'; } > "$staged"
-    chown "$site_user:$site_user" "$staged"; chmod 0700 "$staged"; mv -f "$staged" "$script"
+    chown root:root "$staged"; chmod 0755 "$staged"; mv -f "$staged" "$script"
     unit="stepanel-task-${site}-${name}.service"; timer="stepanel-task-${site}-${name}.timer"
     cat > "/etc/systemd/system/$unit" <<EOF
 [Unit]
@@ -243,7 +243,7 @@ EOF
   task-delete)
     (( $# == 3 )) || { echo 'usage: stepanel-appctl task-delete SITE NAME' >&2; exit 64; }
     name=$3; [[ $name =~ ^[A-Za-z0-9_-]{1,32}$ ]] || { echo 'invalid task name' >&2; exit 1; }
-    unit="stepanel-task-${site}-${name}.service"; timer="stepanel-task-${site}-${name}.timer"; systemctl disable --now "$timer" 2>/dev/null || true; rm -f "/etc/systemd/system/$unit" "/etc/systemd/system/$timer" "/var/www/sites/$site/.stepanel-tasks/$name.sh"; systemctl daemon-reload ;;
+    unit="stepanel-task-${site}-${name}.service"; timer="stepanel-task-${site}-${name}.timer"; systemctl disable --now "$timer" 2>/dev/null || true; rm -f "/etc/systemd/system/$unit" "/etc/systemd/system/$timer" "/var/lib/stepanel/tasks/$site/$name.sh" "/var/www/sites/$site/.stepanel-tasks/$name.sh"; systemctl daemon-reload ;;
   env-apply)
     (( $# == 2 )) || { echo 'usage: stepanel-appctl env-apply SITE' >&2; exit 64; }
     install -d -m 0700 -o root -g root /etc/stepanel/environment

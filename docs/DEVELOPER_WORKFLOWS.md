@@ -100,8 +100,10 @@ root-owned `stepanel-gitctl` uses it only for a non-interactive clone.
 `GET`/`PUT`/`DELETE /api/tasks/{site}/{name}` manages a bounded site-identity
 systemd service and timer. Use a systemd `OnCalendar` expression (for example,
 `*-*-* *:*:00` for each minute), select PHP/Node/Python/shell, provide a
-timeout, and inspect service output through the `cron` log source. This is
-deliberately not a writable server crontab.
+timeout, and inspect service output through the `cron` log source. Task scripts
+are root-owned under `/var/lib/stepanel/tasks/{site}` so the site identity can
+execute but cannot silently rewrite the audited command. This is deliberately
+not a writable server crontab.
 
 ## Staging (Preview/Beta)
 

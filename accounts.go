@@ -136,7 +136,8 @@ func (s *AccountStore) GetSites(username string) []string {
 
 // SetSuspended changes the account lifecycle state atomically and persists it
 // before returning. Suspended accounts remain recoverable and retain their
-// assignments; termination is intentionally a separate destructive operation.
+// assignments; hosting termination is intentionally a separate destructive
+// workflow.
 func (s *AccountStore) SetSuspended(username string, suspended bool) (HostingAccount, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -157,7 +158,9 @@ func (s *AccountStore) SetSuspended(username string, suspended bool) (HostingAcc
 	return account, nil
 }
 
-func (s *AccountStore) Delete(username string) error {
+// RemoveLogin deletes only the customer identity. It deliberately does not
+// touch assigned sites or any hosting workload.
+func (s *AccountStore) RemoveLogin(username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	account, ok := s.accounts[username]
@@ -252,7 +255,7 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.Method == http.MethodDelete {
-			if err := a.Accounts.Delete(username); err != nil {
+			if err := a.Accounts.RemoveLogin(username); err != nil {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}

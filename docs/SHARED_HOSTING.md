@@ -45,6 +45,8 @@ resources remain intact. `DELETE /api/accounts/{username}` removes only the
 customer login record and its sessions; it is not a hosting-account teardown.
 The operation is audited as login removal and retains assigned workloads for a
 separate, reviewed lifecycle workflow.
+The endpoint is intentionally documented as **login removal**; no current API
+claims to terminate the associated hosting workloads.
 Account data is stored in `STEPANEL_ACCOUNT_STATE`, mode
 `0600`, and must be included in host backups. The production default is beside
 the session state as `accounts.json`; configure a dedicated absolute path when

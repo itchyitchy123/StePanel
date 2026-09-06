@@ -81,7 +81,7 @@ func TestCustomerLoginRequiresAccountTOTP(t *testing.T) {
 	}
 }
 
-func TestAccountLifecyclePersistsSuspensionAndTermination(t *testing.T) {
+func TestAccountLifecyclePersistsSuspensionAndLoginRemoval(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "accounts.json")
 	store, err := OpenAccountStore(path)
 	if err != nil {
@@ -101,11 +101,11 @@ func TestAccountLifecyclePersistsSuspensionAndTermination(t *testing.T) {
 	if account, ok := reopened.Get("customer"); !ok || !account.Suspended {
 		t.Fatal("suspension was not persisted")
 	}
-	if err := reopened.Delete("customer"); err != nil {
+	if err := reopened.RemoveLogin("customer"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := reopened.Get("customer"); ok {
-		t.Fatal("terminated account remained present")
+		t.Fatal("removed customer login remained present")
 	}
 }
 
