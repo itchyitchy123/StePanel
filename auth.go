@@ -9,7 +9,6 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	sessionstate "github.com/itchyitchy123/StePanel/internal/session"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -36,15 +36,7 @@ type Auth struct {
 }
 
 type sessionRegistry struct {
-	mu      sync.RWMutex
-	path    string
-	entries map[string]sessionEntry
-	err     error
-}
-
-type sessionEntry struct {
-	Username string `json:"username"`
-	Expiry   int64  `json:"expiry"`
+	inner *sessionstate.Registry
 }
 
 type totpReplayState struct {
@@ -97,134 +89,42 @@ func NewAuth(secureCookies bool) (Auth, error) {
 		passwordDigest := sha256.Sum256([]byte(password))
 		credentialKey = "password-digest:" + hex.EncodeToString(passwordDigest[:])
 	}
-	return Auth{Username: username, PasswordHash: hash, Secret: secret, credentialKey: credentialKey, credentialHash: hash, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{lastCounter: make(map[string]uint64)}, loginLimiter: newLoginLimiter(), sessions: &sessionRegistry{entries: make(map[string]sessionEntry)}}, nil
+	return Auth{Username: username, PasswordHash: hash, Secret: secret, credentialKey: credentialKey, credentialHash: hash, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{lastCounter: make(map[string]uint64)}, loginLimiter: newLoginLimiter(), sessions: &sessionRegistry{inner: sessionstate.New("")}}, nil
 }
 
 func (a *Auth) ConfigureSessionStore(path string) error {
 	if !a.Enabled {
 		return nil
 	}
-	registry := &sessionRegistry{path: path, entries: make(map[string]sessionEntry)}
-	data, err := os.ReadFile(path)
-	if err == nil {
-		if len(data) > 1<<20 {
-			return errors.New("session state exceeds 1 MiB")
-		}
-		if err := json.Unmarshal(data, &registry.entries); err != nil {
-			var legacy map[string]int64
-			if legacyErr := json.Unmarshal(data, &legacy); legacyErr != nil {
-				return fmt.Errorf("decode session state: %w", err)
-			}
-			for id, expiry := range legacy {
-				registry.entries[id] = sessionEntry{Expiry: expiry}
-			}
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read session state: %w", err)
-	}
-	now := time.Now().Unix()
-	for id, entry := range registry.entries {
-		if id == "" || entry.Expiry <= now {
-			delete(registry.entries, id)
-		}
-	}
-	if err := registry.persistLocked(); err != nil {
-		return err
-	}
-	a.sessions = registry
-	return nil
-}
-
-func (s *sessionRegistry) persistLocked() error {
-	if s == nil || s.path == "" {
-		return nil
-	}
-	data, err := json.Marshal(s.entries)
+	registry, err := sessionstate.Open(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("open session state: %w", err)
 	}
-	return writeAtomic(s.path, append(data, '\n'), 0600)
+	a.sessions = &sessionRegistry{inner: registry}
+	return nil
 }
 
 func (s *sessionRegistry) add(id, username string, expiry int64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().Unix()
-	for candidate, candidateEntry := range s.entries {
-		if candidateEntry.Expiry <= now {
-			delete(s.entries, candidate)
-		}
-	}
-	if len(s.entries) >= 10000 {
-		// Evict the earliest-expiring session before admitting a new one.
-		var oldestID string
-		var oldest int64
-		for candidate, candidateEntry := range s.entries {
-			if oldestID == "" || candidateEntry.Expiry < oldest {
-				oldestID, oldest = candidate, candidateEntry.Expiry
-			}
-		}
-		if oldestID != "" {
-			delete(s.entries, oldestID)
-		}
-	}
-	s.entries[id] = sessionEntry{Username: username, Expiry: expiry}
-	if err := s.persistLocked(); err != nil {
-		delete(s.entries, id)
-		s.err = err
-		return err
-	}
-	s.err = nil
-	return nil
+	return s.inner.Add(id, username, expiry)
 }
 
 func (s *sessionRegistry) valid(id, username string, expiry int64) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	stored, ok := s.entries[id]
-	return ok && stored.Expiry == expiry && stored.Username == username && expiry > time.Now().Unix()
+	return s.inner.Valid(id, username, expiry)
 }
 
 func (s *sessionRegistry) revokeUser(username string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	previous := make(map[string]sessionEntry, len(s.entries))
-	for id, entry := range s.entries {
-		previous[id] = entry
-	}
-	for id, entry := range s.entries {
-		if entry.Username == username {
-			delete(s.entries, id)
-		}
-	}
-	err := s.persistLocked()
-	if err != nil {
-		s.entries = previous
-	}
-	s.err = err
-	return err
+	return s.inner.RevokeUser(username)
 }
 
 func (s *sessionRegistry) revoke(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	previous, existed := s.entries[id]
-	delete(s.entries, id)
-	err := s.persistLocked()
-	if err != nil && existed {
-		s.entries[id] = previous
-	}
-	s.err = err
-	return err
+	return s.inner.Revoke(id)
 }
 
 func (a Auth) SessionPersistenceError() error {
 	if a.sessions == nil {
 		return nil
 	}
-	a.sessions.mu.Lock()
-	defer a.sessions.mu.Unlock()
-	return a.sessions.err
+	return a.sessions.inner.PersistenceError()
 }
 
 func hashPassword(password string) (string, error) {

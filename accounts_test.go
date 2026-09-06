@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sessionstate "github.com/itchyitchy123/StePanel/internal/session"
 )
 
 const testTOTPSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
@@ -288,14 +290,24 @@ func TestSuspendedCustomerCannotLogin(t *testing.T) {
 
 func TestSuspensionRevokesExistingCustomerSessions(t *testing.T) {
 	expiry := time.Now().Add(time.Hour).Unix()
-	registry := &sessionRegistry{entries: map[string]sessionEntry{"customer-session": {Username: "customer", Expiry: expiry}, "admin-session": {Username: "admin", Expiry: expiry}}}
+	registryState, err := sessionstate.Open(filepath.Join(t.TempDir(), "sessions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registryState.Add("customer-session", "customer", expiry); err != nil {
+		t.Fatal(err)
+	}
+	if err := registryState.Add("admin-session", "admin", expiry); err != nil {
+		t.Fatal(err)
+	}
+	registry := &sessionRegistry{inner: registryState}
 	if err := registry.revokeUser("customer"); err != nil {
 		t.Fatal(err)
 	}
 	if registry.valid("customer-session", "customer", expiry) {
 		t.Fatal("customer session remained valid")
 	}
-	if _, ok := registry.entries["admin-session"]; !ok {
+	if !registry.valid("admin-session", "admin", expiry) {
 		t.Fatal("unrelated session was revoked")
 	}
 }
@@ -306,13 +318,12 @@ func TestSessionRevocationRestoresMemoryOnPersistenceFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	expiry := time.Now().Add(time.Hour).Unix()
-	registry := &sessionRegistry{
-		path: blocked + "/sessions.json",
-		entries: map[string]sessionEntry{
-			"customer-session": {Username: "customer", Expiry: expiry},
-			"admin-session":    {Username: "admin", Expiry: expiry},
-		},
+	registryState := sessionstate.New(blocked + "/sessions.json")
+	registryState.Entries = map[string]sessionstate.Entry{
+		"customer-session": {Username: "customer", Expiry: expiry},
+		"admin-session":    {Username: "admin", Expiry: expiry},
 	}
+	registry := &sessionRegistry{inner: registryState}
 	if err := registry.revokeUser("customer"); err == nil {
 		t.Fatal("expected session persistence failure")
 	}
