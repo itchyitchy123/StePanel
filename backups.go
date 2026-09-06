@@ -84,7 +84,7 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 				backups := []BackupResult{}
 				if a.Accounts != nil {
 					for _, assignedSite := range a.Accounts.GetSites(username) {
-						items, err := listBackupsPage(a.Config.BackupRoot, assignedSite, limit)
+						items, err := listBackupsPage(a.Config.BackupRoot, assignedSite, limit, a.Config.BackupSigningKey)
 						if err != nil {
 							http.Error(w, "unable to inspect backups", http.StatusInternalServerError)
 							return
@@ -103,7 +103,7 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		manifests, err := listBackupsPage(a.Config.BackupRoot, site, limit)
+		manifests, err := listBackupsPage(a.Config.BackupRoot, site, limit, a.Config.BackupSigningKey)
 		if err != nil {
 			http.Error(w, "unable to inspect backups", http.StatusInternalServerError)
 			return
@@ -679,11 +679,11 @@ func VerifySiteBackup(root string, signingKey ...string) (BackupManifest, error)
 	return manifest, nil
 }
 
-func listBackups(root string) ([]BackupResult, error) {
-	return listBackupsPage(root, "", 0)
+func listBackups(root string, signingKey ...string) ([]BackupResult, error) {
+	return listBackupsPage(root, "", 0, signingKey...)
 }
 
-func listBackupsPage(root, site string, limit int) ([]BackupResult, error) {
+func listBackupsPage(root, site string, limit int, signingKey ...string) ([]BackupResult, error) {
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return []BackupResult{}, nil
@@ -697,7 +697,7 @@ func listBackupsPage(root, site string, limit int) ([]BackupResult, error) {
 			continue
 		}
 		path := filepath.Join(root, entry.Name())
-		manifest, err := readBackupManifest(path)
+		manifest, err := VerifySiteBackup(path, signingKey...)
 		if err != nil {
 			// A damaged artifact must not hide every healthy backup from the
 			// operator. Keep it visible in logs for quarantine/repair workflows.

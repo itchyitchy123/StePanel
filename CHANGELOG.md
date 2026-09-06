@@ -74,6 +74,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added administrator-only off-site database restore using the same fixed
   object retrieval, pre-restore safety backup, ownership checks, and restricted
   database helper as local database restore.
+- Backup listings now verify archive contents and configured manifest
+  signatures before presenting a backup as restorable; unverifiable artifacts
+  are omitted and logged for operator repair.
 
 - Added AES-GCM encryption for customer TOTP secrets with dedicated
   `STEPANEL_ACCOUNT_KEY`, one-time MFA regeneration, and session revocation.

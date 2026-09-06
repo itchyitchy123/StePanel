@@ -90,6 +90,34 @@ func TestVerifyBackupArchiveRejectsTampering(t *testing.T) {
 	}
 }
 
+func TestBackupListingOmitsUnverifiableArchives(t *testing.T) {
+	root := t.TempDir()
+	backupRoot := filepath.Join(root, "backups")
+	writeTestFile(t, filepath.Join(root, "www", "sites", "account", "public", "index.html"), "listed")
+	result, err := CreateSiteBackup(Config{WebRoot: filepath.Join(root, "www"), BackupRoot: backupRoot}, "account", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(result.Path, "backup.tar.gz")
+	file, err := os.OpenFile(archive, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString("corrupt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	backups, err := listBackups(backupRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 0 {
+		t.Fatalf("unverifiable backup was listed: %#v", backups)
+	}
+}
+
 func TestCreateSiteBackupIncludesManagedDatabaseDump(t *testing.T) {
 	root := t.TempDir()
 	webRoot := filepath.Join(root, "www")
