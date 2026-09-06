@@ -45,6 +45,17 @@ longer-term hosting-panel roadmap.
   backup, and job access to their assignments. Provider operations remain
   administrator-only.
 - Constrained Git releases and one-click rollback at `/api/sites/git-deploy` and `/api/sites/git-rollback`, with HTTPS-only repositories, an exact hostname allowlist, shallow ref checkout, commit identification, symlink rejection, Git-metadata removal, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
+- Developer runtime APIs for encrypted site environments, version-selected
+  PHP-FPM profiles, Composer inspection/install, Node package tooling, Python
+  Gunicorn services, WordPress WP-CLI maintenance/update actions, fixed-command
+  workers, scoped site logs, and Redis/Valkey allocation metadata.
+- Rootless Podman build-runner integration. Builds receive an isolated container
+  with read-only source and a dedicated artifact directory; deployment activation
+  remains the existing atomic release workflow.
+- Recovery-journaled staging site creation with safe file copies and optional
+  non-secret environment cloning.
+- Site SSH public-key fingerprint/policy lifecycle and audited account
+  suspension, unsuspension, and termination.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
 - Independently verified site and registered-database backups.
@@ -87,9 +98,9 @@ must be implemented before offering untrusted customer access:
   servers, retries, cancellation, idempotency, and event delivery.
 - Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, cron, SSH, quota,
   resource-plan, and billing lifecycle management.
-- Customer-facing file manager, private-repository/provider webhooks,
-  sandboxed builds, WordPress lifecycle tooling, notifications, and
-  self-service backup/restore.
+- Customer-facing file manager, private-repository deploy-key/provider
+  integrations, database-aware staging, notifications, and self-service
+  backup/restore.
 
 These are product and architecture work items, not safe one-file patches. The
 sequencing, acceptance gates, and operational prerequisites are tracked in

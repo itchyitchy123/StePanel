@@ -151,6 +151,7 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_NODE_VERSIONS` | Comma-separated versions | Node versions to install through NVM |
 | `STEPANEL_GIT_ALLOWED_HOSTS` | Comma-separated hostnames | Exact HTTPS repository hosts allowed for Git deployment; defaults to GitHub, GitLab, and Bitbucket |
 | `STEPANEL_GIT_WEBHOOK_SECRET` | Shared secret | Enables signed webhook deployment using `X-StePanel-Signature: sha256=<hex>` |
+| `STEPANEL_RUNNERCTL` | Absolute helper path | Rootless Podman build-runner helper; defaults to `/usr/local/sbin/stepanel-runnerctl` |
 | `STEPANEL_INSTALL_SECURITY` | `0` or `1` | Install ClamAV and the PHP malware guard |
 | `STEPANEL_OFFSITE_TARGET` | rclone destination | Optional offsite copy target, for example `s3:bucket/stepanel` |
 | `STEPANEL_REQUIRE_OFFSITE_BACKUP` | `0` or `1` | Reject production startup unless an offsite target is configured |

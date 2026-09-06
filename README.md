@@ -153,6 +153,8 @@ checkbox and should be backed up first.
 - [Threat model](docs/THREAT_MODEL.md)
 - [Malware guard](docs/MALWARE_GUARD.md)
 - [HTTPS certificates](docs/CERTIFICATES.md)
+- [Developer workflows](docs/DEVELOPER_WORKFLOWS.md)
+- [Product previews](docs/SCREENSHOTS.md)
 - [API contract](docs/openapi.yaml)
 - [Release procedure](docs/RELEASING.md)
 - [Operations runbook](docs/OPERATIONS.md)

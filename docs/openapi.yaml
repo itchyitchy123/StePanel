@@ -349,6 +349,43 @@ paths:
       parameters:
         - {name: site, in: path, required: true, schema: {type: string}}
       responses: {'204': {description: Environment deleted}}
+  /api/sites/php/{site}:
+    get:
+      summary: Inspect a site PHP runtime profile and installed versions
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Runtime profile and capability inventory}}
+    put:
+      summary: Apply a validated per-site PHP-FPM runtime profile
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'202': {description: FPM profile validated and applied}}
+  /api/composer/{site}:
+    get:
+      summary: Inspect Composer project files and last operation
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Composer status}}
+  /api/composer/{site}/install:
+    post:
+      summary: Install Composer dependencies as the isolated site identity
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'202': {description: Install completed}}
+  /api/runner/build:
+    post:
+      summary: Execute a validated build definition in the rootless Podman runner
+      responses: {'202': {description: Build completed with artifact output}}
+  /api/staging:
+    post:
+      summary: Create a recovery-journaled staging site from safe file copies
+      responses: {'202': {description: Staging site created}}
+  /api/sites/logs/{site}:
+    get:
+      summary: Read bounded, filtered site logs from allowlisted sources
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Log lines or downloadable text}}
+  /api/workers/{site}:
+    get:
+      summary: List managed background workers for a site
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Worker definitions}}
   /api/sites/git-deploy:
     post:
       summary: Checkout and atomically activate an HTTPS Git release

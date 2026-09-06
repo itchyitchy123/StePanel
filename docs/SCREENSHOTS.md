@@ -14,6 +14,16 @@ The preview is rendered at 2× resolution for crisp display on GitHub and
 retina screens. The editable [SVG source](assets/dashboard-preview.svg) remains
 available for presentations and product materials.
 
+## Developer workspace
+
+![Developer workspace preview](assets/developer-workspace-preview.png)
+
+This is an illustrative product mockup for the new developer workflows, not a
+capture from a live host. It shows the intended workspace organization for PHP
+runtime profiles, encrypted environment metadata, Composer, the Podman build
+runner, staging, logs, and workers. Each card maps to authenticated API and
+helper behavior documented in [Developer workflows](DEVELOPER_WORKFLOWS.md).
+
 ## What the preview covers
 
 <table>

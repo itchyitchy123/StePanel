@@ -66,8 +66,8 @@ removing only a vhost is not account deletion.
 
 ### Customer experience
 
-Add a customer portal, file manager, Git-provider webhooks and deploy keys,
-sandboxed build pipelines, WordPress updates and staging, backup
+Add a customer portal, file manager, Git-provider deploy keys and provider
+integrations, database-aware staging, backup
 browsing/restore, notifications, API/webhooks, and clear operation progress.
 All customer-visible operations should be
 idempotent and explain what changed.
