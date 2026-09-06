@@ -256,7 +256,10 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
-			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.terminated", username, "account removed")
+			if a.Auth.sessions != nil {
+				_ = a.Auth.sessions.revokeUser(username)
+			}
+			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.login-removed", username, "customer identity removed; workloads are retained")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -275,6 +278,15 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 		event := "hosting.account.unsuspended"
 		if account.Suspended {
 			event = "hosting.account.suspended"
+			if a.Auth.sessions != nil {
+				if err := a.Auth.sessions.revokeUser(username); err != nil {
+					// Account state is already safely suspended and validSession also
+					// checks it, so panel access is denied even if session cleanup
+					// cannot be persisted. Surface the reconciliation failure.
+					http.Error(w, "account suspended but session revocation could not be persisted", http.StatusServiceUnavailable)
+					return
+				}
+			}
 		}
 		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), event, username, "account lifecycle changed")
 		writeJSON(w, http.StatusOK, account)

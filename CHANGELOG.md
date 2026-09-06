@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Immediate customer panel-session revocation on suspension, actor-bound
+  session records, and explicit terminology distinguishing customer login
+  removal from future hosting-workload termination.
+
 - Preview release-pipeline endpoint that connects constrained Git checkout,
   optional verified pre-activation backup, rootless artifact build, artifact
   validation, and atomic activation with preserved file rollback.

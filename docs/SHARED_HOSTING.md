@@ -35,8 +35,13 @@ This is a deliberate first boundary, not a claim of cPanel/Plesk parity.
 `GET /api/accounts` returns account metadata and plan limits, never password
 hashes or TOTP seeds. Accounts expose a `suspended` lifecycle flag. Administrators
 can suspend or unsuspend an account with `PATCH /api/accounts/{username}` and
-`{"suspended":true|false}`; suspended customers cannot create new sessions.
-`DELETE /api/accounts/{username}` terminates the account record and is audited.
+`{"suspended":true|false}`; suspension immediately rejects active sessions and
+revokes persisted sessions for that customer. It currently suspends **panel
+access**, not hosting workloads: sites, services, data, backups, and external
+resources remain intact. `DELETE /api/accounts/{username}` removes only the
+customer login record and its sessions; it is not a hosting-account teardown.
+The operation is audited as login removal and retains assigned workloads for a
+separate, reviewed lifecycle workflow.
 Account data is stored in `STEPANEL_ACCOUNT_STATE`, mode
 `0600`, and must be included in host backups. The production default is beside
 the session state as `accounts.json`; configure a dedicated absolute path when
@@ -155,7 +160,7 @@ arguments and repository build commands remain intentionally unsupported.
 
 Do not market this beta as unrestricted shared hosting. It does not yet provide
 mailbox/FTP/SFTP/SSH lifecycle, browser file management, customer database
-credentials, cron jobs, DNS/registrar lifecycle, usage accounting, bandwidth
+credentials, customer self-service scheduled tasks, DNS/registrar lifecycle, usage accounting, bandwidth
 or CPU/memory/disk quotas, billing, customer-initiated restores, support
 workflows, reseller roles, or a multi-host control
 plane. Those features require host-level enforcement and durable tenancy-aware

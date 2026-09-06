@@ -55,7 +55,9 @@ longer-term hosting-panel roadmap.
 - Recovery-journaled staging site creation with safe file copies and optional
   non-secret environment cloning.
 - Site SSH public-key fingerprint/policy lifecycle and audited account
-  suspension, unsuspension, and termination.
+  suspension, unsuspension, and login-record removal. Suspension immediately
+  revokes panel sessions; neither operation is a hosting-workload suspension
+  or termination.
 - Per-site deploy-key generation/retirement where private key material remains
   root-owned and is never returned by the panel API.
 - Scheduled site tasks backed by hardened systemd services and timers instead

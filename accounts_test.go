@@ -72,6 +72,12 @@ func TestCustomerLoginRequiresAccountTOTP(t *testing.T) {
 	if !auth.validSession(sessionRequest) || auth.IsAdministrator(sessionRequest) || auth.UsernameForRequest(sessionRequest) != "customer" {
 		t.Fatal("customer session was not scoped to the customer identity")
 	}
+	if _, err := store.SetSuspended("customer", true); err != nil {
+		t.Fatal(err)
+	}
+	if auth.validSession(sessionRequest) {
+		t.Fatal("existing customer session survived suspension")
+	}
 }
 
 func TestAccountLifecyclePersistsSuspensionAndTermination(t *testing.T) {
@@ -129,5 +135,18 @@ func TestSuspendedCustomerCannotLogin(t *testing.T) {
 	auth.Login(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("suspended login status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestSuspensionRevokesExistingCustomerSessions(t *testing.T) {
+	registry := &sessionRegistry{entries: map[string]sessionEntry{"customer-session": {Username: "customer", Expiry: time.Now().Add(time.Hour).Unix()}, "admin-session": {Username: "admin", Expiry: time.Now().Add(time.Hour).Unix()}}}
+	if err := registry.revokeUser("customer"); err != nil {
+		t.Fatal(err)
+	}
+	if registry.valid("customer-session", "customer", time.Now().Add(time.Hour).Unix()) {
+		t.Fatal("customer session remained valid")
+	}
+	if _, ok := registry.entries["admin-session"]; !ok {
+		t.Fatal("unrelated session was revoked")
 	}
 }
