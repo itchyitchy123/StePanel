@@ -450,6 +450,11 @@ paths:
       summary: Queue an administrator-only verified off-site database restore
       description: Retrieves fixed remote backup objects, creates a local safety backup, and imports the selected dump into an existing managed database. Schema rollback remains manual.
       responses: {'202': {description: Off-site database restore job queued}}
+  /api/backups/restore-offsite-to-staging:
+    post:
+      summary: Restore a verified off-site backup into a new staging site
+      description: Downloads only the fixed provider-layout objects, verifies the archive and signature, enforces source-site ownership, and uses the recovery-journaled staging flow. Existing destinations are refused; an optional selected dump is imported into a newly provisioned managed staging database.
+      responses: {'202': {description: Verified off-site staging restore accepted}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation

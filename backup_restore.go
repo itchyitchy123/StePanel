@@ -14,6 +14,7 @@ import (
 
 type RestoreToStagingRequest struct {
 	Backup         string `json:"backup"`
+	SourceSite     string `json:"source_site,omitempty"`
 	Site           string `json:"site"`
 	Domain         string `json:"domain"`
 	Database       string `json:"database,omitempty"`
@@ -88,13 +89,44 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 	input.Site = safeUser(input.Site)
 	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
 	input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
-	if input.Site == "" || input.Backup == "." || input.Backup == "" || !domainPattern.MatchString(input.Domain) || !a.canAccessSite(r, input.Site) {
-		http.Error(w, "invalid restore destination", 422)
-		return
-	}
 	backup := filepath.Join(a.Config.BackupRoot, input.Backup)
 	if filepath.Dir(backup) != filepath.Clean(a.Config.BackupRoot) {
 		http.Error(w, "invalid backup", 422)
+		return
+	}
+	a.backupRestoreToStagingPath(w, r, input, backup)
+}
+
+func (a *App) backupRestoreOffsiteToStaging(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", 403)
+		return
+	}
+	var input RestoreToStagingRequest
+	if e := decodeJSON(w, r, 4096, &input); e != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	input.SourceSite = safeUser(input.SourceSite)
+	input.Site = safeUser(input.Site)
+	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
+	if input.SourceSite == "" || input.Backup == "." || input.Backup == "" || !a.canAccessSite(r, input.SourceSite) {
+		http.Error(w, "invalid or inaccessible source site", http.StatusForbidden)
+		return
+	}
+	root, cleanup, err := downloadOffsiteBackup(a.Config, input.SourceSite, input.Backup)
+	if err != nil {
+		http.Error(w, "could not download offsite backup: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer cleanup()
+	a.backupRestoreToStagingPath(w, r, input, root)
+}
+
+func (a *App) backupRestoreToStagingPath(w http.ResponseWriter, r *http.Request, input RestoreToStagingRequest, backup string) {
+	if input.Site == "" || input.Backup == "." || input.Backup == "" || !domainPattern.MatchString(input.Domain) || !a.canAccessSite(r, input.Site) {
+		http.Error(w, "invalid restore destination", 422)
 		return
 	}
 	manifest, e := VerifySiteBackup(backup, a.Config.BackupSigningKey)

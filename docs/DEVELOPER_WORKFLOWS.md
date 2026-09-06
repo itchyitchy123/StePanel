@@ -184,6 +184,9 @@ restore one selected verified database dump into a newly provisioned managed
 staging database when the target database credentials are supplied. It
 deliberately refuses existing destinations and cleans up a newly created target
 database if the import or route transaction fails.
+`POST /api/backups/restore-offsite-to-staging` accepts the same fields plus a
+required `source_site`; it downloads the named backup from the configured
+rclone layout before entering the same verification and rollback flow.
 
 ## Access, logs, and workers
 

@@ -252,6 +252,7 @@ checkbox and should be backed up first.
 | `POST` | `/api/backups/restore-database` | Queue an administrator-only verified managed-database restore |
 | `POST` | `/api/backups/restore-offsite-files` | Queue a verified files-only restore from the configured rclone target |
 | `POST` | `/api/backups/restore-offsite-database` | Queue a verified managed-database restore from the configured rclone target |
+| `POST` | `/api/backups/restore-offsite-to-staging` | Restore a verified off-site backup into a new staging site, optionally importing one selected database dump |
 | `POST` | `/api/reconcile/resources` | Re-apply pending or inactive per-site resource profiles |
 | `POST` | `/api/reconcile/tasks` | Re-apply pending or remove deleted scheduled-task definitions |
 | `GET` | `/api/sites/usage/<site>` | Bounded regular-file, file-count, and directory-count usage for a site |
