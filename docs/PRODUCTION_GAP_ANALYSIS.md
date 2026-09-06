@@ -41,7 +41,9 @@ platform.
   and reconcile inactive desired profiles. These are not customer quotas.
 - Administrators can inspect a consolidated read-only Security Center and
   restore verified site files into an isolated, protected, no-index staging
-  route. Database restore and outbound-email blocking remain unavailable.
+  route, or queue administrator-only files-only/database-only restores with
+  safety verification. Database-aware staging and outbound-email blocking
+  remain unavailable.
 
 ## Required before exposing the panel to customers
 

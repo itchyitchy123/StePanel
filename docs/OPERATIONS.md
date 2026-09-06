@@ -199,10 +199,10 @@ curl -fsS -X POST -H 'Content-Type: application/json' \
 
 The administrator restore-to-staging endpoint extracts only a verified backup's
 files into a new isolated, no-index route. It deliberately does not restore
-database dumps yet. Full, files-only in-place, database-only, and off-site
-restore should be treated as operator workflows until transactional database
-creation, collision checks, recovery journaling, and promotion semantics are
-available.
+database dumps. Administrator-only files-only in-place and database-only
+restore are available through their explicit APIs; database schema rollback is
+manual and off-site browsing/restore, database-aware staging, and promotion
+semantics remain unavailable.
 
 Git deployments retain replaced public trees as
 `/var/www/sites/<site>/.stepanel-previous-*`; they are not governed by backup

@@ -47,7 +47,8 @@ Administrators can queue a files-only restore with `POST
 `confirm=RESTORE_FILES` value. The archive and signature are verified before a
 recovery-journaled replacement; databases are deliberately preserved. Full
 database restore and restore-to-staging database cloning remain separate
-planned workflows.
+planned workflows; database-only restore is available below for existing
+managed databases.
 
 Administrators can queue a database-only restore with `POST
 /api/backups/restore-database`, supplying `backup`, `site`, `database`, and
