@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"golang.org/x/crypto/bcrypt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -66,6 +68,62 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "source site does not exist", 422)
 		return
 	}
+	marker := filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex")
+	previousMarker, markerErr := os.ReadFile(marker)
+	if markerErr != nil && !errors.Is(markerErr, os.ErrNotExist) {
+		http.Error(w, "could not inspect staging indexing protection", 503)
+		return
+	}
+	markerExisted := markerErr == nil
+	var previousEnvironment map[string]environmentValue
+	previousEnvironmentExists := false
+	if input.Environment && a.Environments != nil {
+		a.Environments.mu.RLock()
+		if values, exists := a.Environments.values[input.Site]; exists {
+			previousEnvironmentExists = true
+			previousEnvironment = cloneEnvironmentValues(values)
+		}
+		a.Environments.mu.RUnlock()
+	}
+	routeExtension := ".conf"
+	if a.Config.WebServer == "caddy" {
+		routeExtension = ".caddy"
+	}
+	routeName := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + routeExtension
+	routeApplied := false
+	stateRollback := func() {
+		if routeApplied {
+			if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "delete", routeName); err != nil {
+				log.Printf("staging route cleanup failed for %s: %v", input.Site, err)
+			}
+		}
+		if input.Environment && a.Environments != nil {
+			a.Environments.mu.Lock()
+			if previousEnvironmentExists {
+				a.Environments.values[input.Site] = previousEnvironment
+			} else {
+				delete(a.Environments.values, input.Site)
+			}
+			err := a.Environments.persistLocked()
+			a.Environments.mu.Unlock()
+			if err != nil {
+				log.Printf("staging environment rollback failed for %s: %v", input.Site, err)
+			}
+		}
+		if markerExisted {
+			if err := writeAtomic(marker, previousMarker, 0600); err != nil {
+				log.Printf("staging marker rollback failed for %s: %v", input.Site, err)
+			}
+		} else if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("staging marker cleanup failed for %s: %v", input.Site, err)
+		}
+	}
+	stateCommitted := false
+	defer func() {
+		if !stateCommitted {
+			stateRollback()
+		}
+	}()
 	if err := siteHelper(a.Config, "prepare", input.Site); err != nil {
 		http.Error(w, "could not prepare staging site", 502)
 		return
@@ -89,7 +147,6 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		input.AuthPassword = ""
 	}
 	if noIndex {
-		marker := filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex")
 		if err := writeAtomic(marker, []byte("managed staging noindex\n"), 0600); err != nil {
 			http.Error(w, "could not apply staging indexing protection", 503)
 			return
@@ -147,11 +204,13 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not activate staging route", 502)
 		return
 	}
+	routeApplied = true
 	if err := txn.Commit(); err != nil {
 		http.Error(w, "could not commit staging transaction", 503)
 		return
 	}
 	ok = true
+	stateCommitted = true
 	result := StagingResult{Source: input.Source, Site: input.Site, Domain: input.Domain, FilesCopied: input.Files, EnvironmentCopied: input.Environment, SecretsCopied: false, CreatedAt: time.Now().UTC()}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "staging.created", input.Site, input.Source+" -> "+input.Domain)
 	writeJSON(w, 202, result)

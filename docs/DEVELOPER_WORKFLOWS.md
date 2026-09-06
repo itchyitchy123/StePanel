@@ -175,13 +175,15 @@ default through the managed webserver route; send `"no_index":false` only for
 an explicitly reviewed exception. Set `basic_auth:true`, `auth_user`, and an
 initial `auth_password` to protect the route with Basic Auth; only a bcrypt
 hash is persisted by the Apache/Caddy helper and the password is discarded
-after the request. Database cloning and outbound-email blocking remain
-planned integrations.
+after the request. Live database cloning/promotion and outbound-email blocking
+remain planned integrations.
 
 `POST /api/backups/restore-to-staging` restores a fully verified backup's
-regular site files into a new isolated site and validated route. It deliberately
-refuses existing destinations and never restores database dumps; use it to
-inspect a recovery point before deciding on a production change.
+regular site files into a new isolated site and validated route. It can also
+restore one selected verified database dump into a newly provisioned managed
+staging database when the target database credentials are supplied. It
+deliberately refuses existing destinations and cleans up a newly created target
+database if the import or route transaction fails.
 
 ## Access, logs, and workers
 

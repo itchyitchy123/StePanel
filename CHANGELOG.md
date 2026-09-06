@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Staging creation now rolls back no-index markers, environment state, and
+  newly activated routes when a later staging transaction step fails, avoiding
+  orphaned policy and configuration state.
+
 - Fixed disposable installation smoke coverage to exercise the production
   off-site-backup requirement with a local synthetic target instead of
   contradicting the installer contract.
