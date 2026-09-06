@@ -240,6 +240,9 @@ func main() {
 	if reconciled, failed := app.reconcileSiteAccess(reconcileCtx); len(failed) > 0 {
 		log.Printf("SSH access reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
 	}
+	if reconciled, failed := app.reconcileWorkers(reconcileCtx); len(failed) > 0 {
+		log.Printf("worker reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
+	}
 	if reconciled, failed := app.reconcileTasks(reconcileCtx); len(failed) > 0 {
 		log.Printf("scheduled-task reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
 	}

@@ -163,7 +163,9 @@ Workers are managed with `GET /api/workers/{site}`, `PUT
 types are `laravel`, `horizon`, `node`, `celery`, and `rq`; the helper maps
 these to fixed commands and creates hardened systemd units with bounded memory,
 task count, restart-on-failure, and site ownership. Arbitrary worker command
-text is not accepted. Worker logs are available through the site log API when
+text is not accepted. Desired worker changes are persisted before helper
+application; failures remain pending and are retried during startup
+reconciliation. Worker logs are available through the site log API when
 the host captures unit output into the site log directory.
 
 ## Site logs

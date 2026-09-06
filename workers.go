@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -19,6 +20,9 @@ type Worker struct {
 	MemoryMB  int    `json:"memory_mb"`
 	Retries   int    `json:"retries"`
 	Root      string `json:"root"`
+	State     string `json:"state,omitempty"`
+	LastError string `json:"last_error,omitempty"`
+	Deleted   bool   `json:"deleted,omitempty"`
 }
 type WorkerStore struct {
 	mu     sync.RWMutex
@@ -39,6 +43,12 @@ func OpenWorkerStore(path string) (*WorkerStore, error) {
 	}
 	if e = json.Unmarshal(d, &s.values); e != nil {
 		return nil, e
+	}
+	for key, worker := range s.values {
+		if worker.State == "" {
+			worker.State = "applied"
+		}
+		s.values[key] = worker
 	}
 	return s, nil
 }
@@ -79,7 +89,7 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 		a.Workers.mu.RLock()
 		list := []Worker{}
 		for _, v := range a.Workers.values {
-			if v.Site == site {
+			if v.Site == site && !v.Deleted {
 				list = append(list, v)
 			}
 		}
@@ -110,15 +120,34 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", 403)
 			return
 		}
+		key := site + "/" + name
 		a.Workers.mu.Lock()
-		delete(a.Workers.values, site+"/"+name)
+		worker := a.Workers.values[key]
+		worker.Site, worker.Name = site, name
+		worker.State, worker.LastError, worker.Deleted = "pending", "", true
+		a.Workers.values[key] = worker
 		e := a.Workers.persistLocked()
 		a.Workers.mu.Unlock()
 		if e != nil {
 			http.Error(w, "worker state could not be saved", 503)
 			return
 		}
-		_ = runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "worker-delete", site, name)
+		if e := a.applyWorker(r.Context(), worker); e != nil {
+			a.recordWorkerError(key, e)
+			http.Error(w, "worker removal is pending reconciliation", http.StatusBadGateway)
+			return
+		}
+		a.Workers.mu.Lock()
+		delete(a.Workers.values, key)
+		e = a.Workers.persistLocked()
+		if e != nil {
+			a.Workers.values[key] = worker
+		}
+		a.Workers.mu.Unlock()
+		if e != nil {
+			http.Error(w, "worker removed but state cleanup is pending", 503)
+			return
+		}
 		w.WriteHeader(204)
 		return
 	}
@@ -133,6 +162,7 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 	}
 	input.Site = site
 	input.Name = name
+	input.State, input.LastError, input.Deleted = "pending", "", false
 	if !validWorkerName(name) || !workerTypes[input.Type] || input.Processes < 1 || input.Processes > 64 || input.MemoryMB < 64 || input.MemoryMB > 65536 || input.Retries < 0 || input.Retries > 20 {
 		http.Error(w, "invalid worker definition", 422)
 		return
@@ -140,10 +170,6 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 	input.Root = filepath.Join(a.Config.WebRoot, "sites", site, "public")
 	if e := ensureInside(a.Config.WebRoot, input.Root); e != nil {
 		http.Error(w, "invalid worker root", 422)
-		return
-	}
-	if e := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "worker-apply", site, name, input.Type, input.Root, strconv.Itoa(input.Processes), strconv.Itoa(input.MemoryMB), strconv.Itoa(input.Retries)); e != nil {
-		http.Error(w, "worker helper failed", 502)
 		return
 	}
 	a.Workers.mu.Lock()
@@ -154,6 +180,81 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "worker state could not be saved", 503)
 		return
 	}
+	if e := a.applyWorker(r.Context(), input); e != nil {
+		a.recordWorkerError(site+"/"+name, e)
+		http.Error(w, "worker is pending reconciliation", 502)
+		return
+	}
+	input.State, input.LastError = "applied", ""
+	a.Workers.mu.Lock()
+	a.Workers.values[site+"/"+name] = input
+	e = a.Workers.persistLocked()
+	a.Workers.mu.Unlock()
+	if e != nil {
+		a.recordWorkerError(site+"/"+name, e)
+		http.Error(w, "worker applied but state update is pending", 503)
+		return
+	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "worker.updated", site, name)
 	writeJSON(w, 202, input)
+}
+
+func (a *App) applyWorker(ctx context.Context, worker Worker) error {
+	if worker.Deleted {
+		return runHelperCommand(ctx, a.Config, a.Config.AppCtl, "worker-delete", worker.Site, worker.Name)
+	}
+	return runHelperCommand(ctx, a.Config, a.Config.AppCtl, "worker-apply", worker.Site, worker.Name, worker.Type, worker.Root, strconv.Itoa(worker.Processes), strconv.Itoa(worker.MemoryMB), strconv.Itoa(worker.Retries))
+}
+
+func (a *App) recordWorkerError(key string, applyErr error) {
+	a.Workers.mu.Lock()
+	defer a.Workers.mu.Unlock()
+	if worker, ok := a.Workers.values[key]; ok {
+		worker.State = "pending"
+		worker.LastError = applyErr.Error()
+		a.Workers.values[key] = worker
+		_ = a.Workers.persistLocked()
+	}
+}
+
+func (a *App) reconcileWorkers(ctx context.Context) (reconciled []string, failed map[string]string) {
+	failed = map[string]string{}
+	if a.Workers == nil {
+		return nil, failed
+	}
+	a.Workers.mu.RLock()
+	pending := make([]Worker, 0)
+	for _, worker := range a.Workers.values {
+		if worker.State == "pending" || worker.Deleted {
+			pending = append(pending, worker)
+		}
+	}
+	a.Workers.mu.RUnlock()
+	for _, worker := range pending {
+		key := worker.Site + "/" + worker.Name
+		if err := a.applyWorker(ctx, worker); err != nil {
+			failed[key] = err.Error()
+			a.recordWorkerError(key, err)
+			continue
+		}
+		a.Workers.mu.Lock()
+		if worker.Deleted {
+			delete(a.Workers.values, key)
+		} else {
+			worker.State, worker.LastError = "applied", ""
+			a.Workers.values[key] = worker
+		}
+		err := a.Workers.persistLocked()
+		if err != nil {
+			worker.State, worker.LastError = "pending", "state persistence failed"
+			a.Workers.values[key] = worker
+		}
+		a.Workers.mu.Unlock()
+		if err != nil {
+			failed[key] = "state persistence failed"
+			continue
+		}
+		reconciled = append(reconciled, key)
+	}
+	return reconciled, failed
 }
