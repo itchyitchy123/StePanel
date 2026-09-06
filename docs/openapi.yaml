@@ -372,6 +372,11 @@ paths:
     post:
       summary: Execute a validated build definition in the rootless Podman runner
       responses: {'202': {description: Build completed with artifact output}}
+  /api/deployments:
+    get:
+      summary: List durable sandbox-build and atomic-release activation records
+      parameters: [{name: site, in: query, required: false, schema: {type: string}}]
+      responses: {'200': {description: Site-scoped deployment records}}
   /api/staging:
     post:
       summary: Create a recovery-journaled staging site from safe file copies

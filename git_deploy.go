@@ -209,6 +209,7 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := gitDeployResult{Site: input.Site, Repository: input.Repository, Ref: input.Ref, Commit: commit, Previous: previous}
+	a.recordDeployment(input.Site, "activation", "completed", "atomic Git release activated", result, "")
 	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.git-deployed", input.Site, input.Repository+"@"+commit); err != nil {
 		log.Printf("Git release activated but audit persistence is unavailable: %v", err)
 	}

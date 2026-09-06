@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Durable, site-scoped deployment records for sandboxed build completion and
+  atomic Git activation, with commit/artifact/previous-release provenance and
+  an authenticated deployment-history API.
+
 - Per-site root-owned ED25519 Git deploy keys and restricted private SSH
   repository cloning. The panel returns only public keys and continues to
   reject passwords, tokens, arbitrary SSH users, and hosts outside the exact

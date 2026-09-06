@@ -32,6 +32,10 @@ commands. The rootless Podman runner mounts source read-only and artifact output
 writable, drops capabilities, uses a read-only container filesystem and a
 separate network namespace. It does not activate a release: review the artifact
 and use the existing atomic deployment workflow for activation/rollback.
+`GET /api/deployments?site={site}` provides durable, site-scoped build and
+activation records (commit, artifact path, preserved release, stage, outcome,
+and timestamp). This is the release-object foundation; fully automated
+build-to-activation and database migration orchestration remains Preview work.
 
 ## Git deploy keys (Shipped)
 

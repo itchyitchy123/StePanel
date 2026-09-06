@@ -70,5 +70,6 @@ func (a *App) runnerBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "runner.build", input.Site, input.Image)
+	a.recordDeployment(input.Site, "build", "completed", input.Image, gitDeployResult{}, filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-artifact"))
 	writeJSON(w, 202, map[string]any{"site": input.Site, "image": input.Image, "commands": len(input.Commands), "artifact": filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-artifact")})
 }
