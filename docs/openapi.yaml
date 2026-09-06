@@ -435,6 +435,11 @@ paths:
       summary: Queue an administrator-only verified files-only site restore
       description: Verifies the archive and optional manifest signature, then atomically replaces site files through the recovery journal. Databases are preserved.
       responses: {'202': {description: Restore job queued}}
+  /api/backups/restore-database:
+    post:
+      summary: Queue an administrator-only verified database restore
+      description: Creates a verified safety backup, then imports the selected dump into an existing managed database registered to the site. Schema rollback remains manual.
+      responses: {'202': {description: Database restore job queued}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation

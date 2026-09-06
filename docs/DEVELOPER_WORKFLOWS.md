@@ -49,6 +49,13 @@ recovery-journaled replacement; databases are deliberately preserved. Full
 database restore and restore-to-staging database cloning remain separate
 planned workflows.
 
+Administrators can queue a database-only restore with `POST
+/api/backups/restore-database`, supplying `backup`, `site`, `database`, and
+`confirm=RESTORE_DATABASE`. The selected database must be registered to the
+site and present in the verified backup. StePanel creates a new verified
+pre-restore safety backup before importing the dump. Database schema rollback
+is manual; application rollback does not reverse schema migrations.
+
 Administrators can use `GET /api/security/center` for a consolidated,
 read-only host posture view: existing authentication/privileged-helper checks,
 service states, free disk/inodes, and backup schedule failures. It deliberately

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,9 +21,13 @@ type BackupRestoreResult struct {
 	Site              string    `json:"site"`
 	Backup            string    `json:"backup"`
 	Mode              string    `json:"mode"`
+	Database          string    `json:"database,omitempty"`
 	FilesRestored     bool      `json:"files_restored"`
+	DatabaseRestored  bool      `json:"database_restored"`
 	DatabasePreserved bool      `json:"database_preserved"`
+	SafetyBackup      string    `json:"safety_backup,omitempty"`
 	Consistency       string    `json:"consistency"`
+	SchemaRollback    string    `json:"schema_rollback"`
 	CompletedAt       time.Time `json:"completed_at"`
 }
 
@@ -270,4 +275,122 @@ func (a *App) backupRestoreFilesHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "files-only"})
+}
+
+func backupContainsDatabase(manifest BackupManifest, database string) bool {
+	for _, name := range manifest.Databases {
+		if name == database {
+			return true
+		}
+	}
+	return false
+}
+
+func restoreManagedDatabase(cfg Config, backupName, site, database string) (BackupRestoreResult, error) {
+	backup := filepath.Join(cfg.BackupRoot, filepath.Base(backupName))
+	if filepath.Dir(backup) != filepath.Clean(cfg.BackupRoot) {
+		return BackupRestoreResult{}, errors.New("invalid backup path")
+	}
+	manifest, err := VerifySiteBackup(backup, cfg.BackupSigningKey)
+	if err != nil {
+		return BackupRestoreResult{}, fmt.Errorf("verify backup: %w", err)
+	}
+	if !backupContainsDatabase(manifest, database) {
+		return BackupRestoreResult{}, errors.New("backup does not contain the selected database")
+	}
+	if cfg.DBCtl == "" {
+		return BackupRestoreResult{}, errors.New("managed database helper is not configured")
+	}
+	if err := os.MkdirAll(cfg.ImportRoot, 0700); err != nil {
+		return BackupRestoreResult{}, fmt.Errorf("create restore staging root: %w", err)
+	}
+	stage, err := os.MkdirTemp(cfg.ImportRoot, "backup-database-restore-")
+	if err != nil {
+		return BackupRestoreResult{}, err
+	}
+	defer os.RemoveAll(stage)
+	if err := extractArchive(filepath.Join(backup, manifest.Archive), stage); err != nil {
+		return BackupRestoreResult{}, fmt.Errorf("extract verified backup: %w", err)
+	}
+	dump := filepath.Join(stage, "databases", database+".sql")
+	if err := ensureInside(stage, dump); err != nil {
+		return BackupRestoreResult{}, err
+	}
+	info, err := os.Stat(dump)
+	if err != nil || !info.Mode().IsRegular() {
+		return BackupRestoreResult{}, errors.New("selected database dump is unavailable")
+	}
+	input, err := os.Open(dump)
+	if err != nil {
+		return BackupRestoreResult{}, err
+	}
+	defer input.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore-dump", database, site)
+	cmd.Stdin = input
+	output, err := runBoundedCommand(ctx, cmd)
+	if err != nil {
+		return BackupRestoreResult{}, fmt.Errorf("restore database %s: %w: %s", database, err, strings.TrimSpace(string(output)))
+	}
+	return BackupRestoreResult{Site: site, Backup: filepath.Base(backup), Mode: "database-only", Database: database, DatabaseRestored: true, DatabasePreserved: false, Consistency: manifest.Consistency, SchemaRollback: "manual: restore the safety backup or apply a forward migration", CompletedAt: time.Now().UTC()}, nil
+}
+
+func (a *App) backupRestoreDatabaseHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) || !a.Auth.IsAdministrator(r) {
+		http.Error(w, "administrator CSRF request required", http.StatusForbidden)
+		return
+	}
+	var input struct {
+		Backup   string `json:"backup"`
+		Site     string `json:"site"`
+		Database string `json:"database"`
+		Confirm  string `json:"confirm"`
+	}
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	input.Site = safeUser(input.Site)
+	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	if input.Site == "" || input.Backup == "" || input.Backup == "." || !validManagedDatabaseIdentifier(input.Database, 64) || input.Confirm != "RESTORE_DATABASE" {
+		http.Error(w, "site, backup, database, and confirm=RESTORE_DATABASE are required", http.StatusUnprocessableEntity)
+		return
+	}
+	if a.Jobs == nil || a.Config.DBCtl == "" {
+		http.Error(w, "managed database restore is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	manifest, err := VerifySiteBackup(filepath.Join(a.Config.BackupRoot, input.Backup), a.Config.BackupSigningKey)
+	if err != nil || manifest.Site != input.Site || !backupContainsDatabase(manifest, input.Database) {
+		http.Error(w, "verified backup does not contain the selected site database", http.StatusUnprocessableEntity)
+		return
+	}
+	jobID, err := newJobID("backup-db-restore")
+	if err != nil {
+		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		return
+	}
+	if err := a.Jobs.SubmitBackupRestore(jobID, input.Site, func() (BackupRestoreResult, error) {
+		safety, safetyErr := CreateSiteBackup(a.Config, input.Site, true)
+		if safetyErr != nil {
+			return BackupRestoreResult{}, fmt.Errorf("create pre-restore safety backup: %w", safetyErr)
+		}
+		result, restoreErr := restoreManagedDatabase(a.Config, input.Backup, input.Site, input.Database)
+		if restoreErr != nil {
+			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-database.failed", input.Site, restoreErr.Error())
+			return result, restoreErr
+		}
+		result.SafetyBackup = safety.Path
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-database.completed", input.Site, input.Database+" safety_backup="+safety.Path)
+		return result, nil
+	}); err != nil {
+		if errors.Is(err, ErrJobBusy) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+		} else {
+			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "database-only", "schema_rollback": "manual"})
 }

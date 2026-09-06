@@ -120,9 +120,10 @@ Latest stable release: `v0.6.0`
   backup records `crash-consistent / logical backup` classification and can be
   authenticated with an external `STEPANEL_BACKUP_SIGNING_KEY`. Administrator
   files-only restore and restore-to-staging are available for verified files;
-  database restore, off-site browsing/restore, and full customer self-service
-  restore remain deliberately guarded until a transactional database restore
-  workflow exists.
+  database-only restore is available for existing managed databases with a
+  verified pre-restore safety backup. Off-site browsing/restore and full
+  customer self-service restore remain deliberately guarded. Schema rollback
+  remains manual.
 - The customer workspace currently authorizes assigned site viewing, verified
   backup creation, domain routing, and job history only. It is not yet a full
   tenant self-service portal.

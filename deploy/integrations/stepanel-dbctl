@@ -12,7 +12,7 @@ fi
 [[ $engine == mysql || $engine == mariadb || $engine == postgresql ]] || { echo 'invalid database helper engine' >&2; exit 1; }
 install -d -m 0700 -o root -g root "$registry"
 case "$action" in
-  reconcile|provision|rotate|drop-managed|restore|restore-wordpress|cleanup-wordpress|drop)
+  reconcile|provision|rotate|drop-managed|restore|restore-dump|restore-wordpress|cleanup-wordpress|drop)
     exec 9>"$registry/.operations.lock"
     flock -x 9
     ;;
@@ -157,6 +157,21 @@ fi
 
 database=${2:-}; valid_database "$database" || { echo 'invalid database name' >&2; exit 1; }
 record="$registry/$database"
+
+if [[ $action == restore-dump ]]; then
+  (( $# == 3 )) || { echo 'usage: stepanel-dbctl restore-dump DATABASE SITE' >&2; exit 64; }
+  site=$3; valid_site "$site" || { echo 'invalid site' >&2; exit 1; }
+  [[ -f $record ]] || { echo 'database is not registered as managed' >&2; exit 1; }
+  value=$(<"$record")
+  [[ $value == panel:"$site":* || $value == wordpress:"$site":* ]] || { echo 'database is not registered to this site' >&2; exit 1; }
+  database_exists "$database" || { echo 'database does not exist' >&2; exit 1; }
+  if [[ $engine == postgresql ]]; then
+    runuser -u postgres -- psql --no-psqlrc --no-password --set ON_ERROR_STOP=1 --dbname "$database"
+  else
+    "$client" --no-defaults --protocol=socket --batch --binary-mode "$database"
+  fi
+  exit $?
+fi
 
 case "$action" in
   provision)
