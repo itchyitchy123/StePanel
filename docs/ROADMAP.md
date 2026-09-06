@@ -22,8 +22,9 @@
   lifecycle and customer authorization remain future work.
 - Constrained shared-hosting customer accounts, assigned-site plan limits, and
   customer-scoped site/backup/job visibility (available in `Unreleased`);
-  panel-session suspension is shipped, while hosting-workload lifecycle and
-  enforceable customer resource quotas remain future work.
+  panel-session suspension and built-in application resource ceilings are
+  shipped, while hosting-workload lifecycle and complete customer resource
+  quotas remain future work.
 
 ## 0.3 — Recovery and scale
 

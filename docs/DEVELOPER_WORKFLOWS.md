@@ -34,7 +34,9 @@ unit, while the site slice remains the parent boundary for all managed work.
 When `disk_mb` and `inodes` are supplied, the site helper applies Linux user
 quotas with `setquota`; the request fails closed unless the site filesystem is
 already mounted with user-quota support. These are per-site user quotas, not a
-portable filesystem-quota setup or a plan-level entitlement system.
+portable filesystem-quota setup. Built-in hosting plans provide CPU, memory,
+process, and PHP-worker envelopes; disk/inode plan entitlements remain
+unavailable because they depend on host filesystem configuration.
 Removing both values queues an explicit quota-clear operation and retries it
 through reconciliation if the host mutation is interrupted.
 

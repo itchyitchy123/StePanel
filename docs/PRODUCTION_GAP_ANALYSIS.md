@@ -38,7 +38,9 @@ platform.
   plan, and restricts customer site, backup, and job visibility to assignments.
 - Administrators can enforce preview CPU, memory, task, and PHP-FPM worker
   profiles for managed application processes, inspect live cgroup/site usage,
-  and reconcile inactive desired profiles. These are not customer quotas.
+  and reconcile inactive desired profiles. Built-in plans now seed these
+  application ceilings, but they are not yet a complete customer quota
+  system covering bandwidth, databases, Redis, or all host workloads.
 - Administrators can inspect a consolidated read-only Security Center and
   restore verified site files into an isolated, protected, no-index staging
   route, or queue administrator-only files-only/database-only restores with

@@ -37,6 +37,66 @@ type ResourceStore struct {
 	values map[string]ResourceProfile
 }
 
+func resourceProfileForPlan(site string, plan HostingPlan) ResourceProfile {
+	high := plan.MemoryMB * 90 / 100
+	if high < 64 {
+		high = 64
+	}
+	return ResourceProfile{Site: site, CPUPercent: plan.CPUPercent, CPUWeight: 100, MemoryHighMB: high, MemoryMB: plan.MemoryMB, IOWeight: 100, TasksMax: plan.TasksMax, PHPWorkers: plan.PHPWorkers, State: "pending", FilesystemQuotaState: "none"}
+}
+
+// ensurePlanResources persists desired resource profiles for newly assigned
+// sites without overwriting an administrator's existing site-specific policy.
+// Host application is deliberately separate so a helper failure leaves a
+// durable pending profile for reconciliation.
+func (a *App) ensurePlanResources(account HostingAccount) ([]string, error) {
+	if a.Resources == nil {
+		return nil, nil
+	}
+	plan, ok := hostingPlans[account.Plan]
+	if !ok {
+		return nil, errors.New("account plan is not available")
+	}
+	profiles := make([]ResourceProfile, 0, len(account.Sites))
+	a.Resources.mu.Lock()
+	for _, site := range account.Sites {
+		if _, exists := a.Resources.values[site]; exists {
+			continue
+		}
+		profile := resourceProfileForPlan(site, plan)
+		a.Resources.values[site] = profile
+		profiles = append(profiles, profile)
+	}
+	err := a.Resources.persistLocked()
+	if err != nil {
+		for _, profile := range profiles {
+			delete(a.Resources.values, profile.Site)
+		}
+	}
+	a.Resources.mu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("persist plan resource profiles: %w", err)
+	}
+	pending := make([]string, 0, len(profiles))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	for _, profile := range profiles {
+		if err := a.applyResourceProfile(ctx, profile, false); err != nil {
+			pending = append(pending, profile.Site)
+			continue
+		}
+		profile.State = "applied"
+		a.Resources.mu.Lock()
+		a.Resources.values[profile.Site] = profile
+		err = a.Resources.persistLocked()
+		a.Resources.mu.Unlock()
+		if err != nil {
+			pending = append(pending, profile.Site)
+		}
+	}
+	return pending, nil
+}
+
 func OpenResourceStore(path string) (*ResourceStore, error) {
 	s := &ResourceStore{path: path, values: map[string]ResourceProfile{}}
 	d, e := os.ReadFile(path)

@@ -64,6 +64,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   filesystems fail closed rather than reporting unenforced limits.
 - Removing a filesystem quota profile now clears the previously applied Linux
   user quota through persisted pending state and startup/manual reconciliation.
+- Built-in hosting plans now include explicit CPU, memory, process, and PHP
+  worker ceilings. Account creation persists those profiles before host
+  application, preserves existing site-specific profiles, and leaves failed
+  applications pending reconciliation.
 - Added an administrator-only asynchronous files-only backup restore. It
   verifies the archive and optional signature before extraction, uses the site
   recovery journal for atomic replacement, preserves databases, and reports

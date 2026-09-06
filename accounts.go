@@ -22,18 +22,22 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// HostingPlan intentionally limits the first shared-hosting release to site
-// assignment. Resource accounting and billing are separate provider concerns;
-// advertising limits that are not enforced by the host would be misleading.
+// HostingPlan contains the assignment and host-enforced application envelope
+// for the built-in plans. Filesystem, bandwidth, database, and Redis limits
+// remain separate provider concerns and are not advertised here.
 type HostingPlan struct {
-	Name      string `json:"name"`
-	SiteLimit int    `json:"site_limit"`
+	Name       string `json:"name"`
+	SiteLimit  int    `json:"site_limit"`
+	CPUPercent int    `json:"cpu_percent"`
+	MemoryMB   int    `json:"memory_mb"`
+	TasksMax   int    `json:"tasks_max"`
+	PHPWorkers int    `json:"php_workers"`
 }
 
 var hostingPlans = map[string]HostingPlan{
-	"starter":      {Name: "starter", SiteLimit: 1},
-	"professional": {Name: "professional", SiteLimit: 5},
-	"agency":       {Name: "agency", SiteLimit: 25},
+	"starter":      {Name: "starter", SiteLimit: 1, CPUPercent: 100, MemoryMB: 512, TasksMax: 128, PHPWorkers: 8},
+	"professional": {Name: "professional", SiteLimit: 5, CPUPercent: 200, MemoryMB: 1024, TasksMax: 256, PHPWorkers: 16},
+	"agency":       {Name: "agency", SiteLimit: 25, CPUPercent: 400, MemoryMB: 2048, TasksMax: 512, PHPWorkers: 32},
 }
 
 type HostingAccount struct {
@@ -651,8 +655,20 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		pendingResources, resourceErr := a.ensurePlanResources(account)
+		if resourceErr != nil {
+			if removeErr := a.Accounts.RemoveLogin(account.Username); removeErr != nil {
+				resourceErr = fmt.Errorf("%w; account rollback failed: %v", resourceErr, removeErr)
+			}
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "hosting.account.resource-profile-failed", account.Username, resourceErr.Error())
+			http.Error(w, "account creation rolled back because plan resource profiles could not be persisted", http.StatusServiceUnavailable)
+			return
+		}
 		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "hosting.account.created", account.Username, account.Plan); err != nil {
 			log.Printf("account created but audit persistence is unavailable: %v", err)
+		}
+		if len(pendingResources) > 0 {
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "hosting.account.resource-profiles-pending", account.Username, strings.Join(pendingResources, ","))
 		}
 		writeJSON(w, http.StatusCreated, account)
 	default:

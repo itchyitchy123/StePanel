@@ -33,3 +33,20 @@ func TestOpenResourceStoreRejectsInvalidPersistedProfile(t *testing.T) {
 		t.Fatalf("expected invalid profile error, got %v", err)
 	}
 }
+
+func TestEnsurePlanResourcesPersistsEnforcedEnvelopeAsPendingOnHelperFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "resources.json")
+	store, err := OpenResourceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &App{Resources: store}
+	pending, err := app.ensurePlanResources(HostingAccount{Plan: "starter", Sites: []string{"demo"}})
+	if err != nil || len(pending) != 1 || pending[0] != "demo" {
+		t.Fatalf("pending=%v err=%v", pending, err)
+	}
+	profile, ok := store.values["demo"]
+	if !ok || profile.State != "pending" || profile.MemoryMB != 512 || profile.CPUPercent != 100 || profile.TasksMax != 128 || profile.PHPWorkers != 8 {
+		t.Fatalf("plan profile = %#v", profile)
+	}
+}
