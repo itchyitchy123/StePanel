@@ -113,8 +113,7 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.Tasks.mu.Lock()
-		delete(a.Tasks.values, key)
-		err = a.Tasks.persistLocked()
+		err = a.finalizeTaskDeletionLocked(key, task)
 		a.Tasks.mu.Unlock()
 		if err != nil {
 			http.Error(w, "scheduled task removed but state cleanup is pending", 503)
@@ -170,6 +169,19 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "task.updated", site, name)
 	writeJSON(w, 202, input)
+}
+
+// finalizeTaskDeletionLocked removes a task only when the resulting desired
+// state is durable. Callers must hold Tasks.mu. Restoring the map entry on a
+// pre-commit write failure keeps the running process aligned with the state
+// that will be loaded on the next startup.
+func (a *App) finalizeTaskDeletionLocked(key string, task ScheduledTask) error {
+	delete(a.Tasks.values, key)
+	if err := a.Tasks.persistLocked(); err != nil {
+		a.Tasks.values[key] = task
+		return err
+	}
+	return nil
 }
 
 func (a *App) applyTask(ctx context.Context, task ScheduledTask) error {
