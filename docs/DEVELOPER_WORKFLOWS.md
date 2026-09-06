@@ -14,7 +14,9 @@ values are never returned after write. Updates render a root-owned systemd
 environment file and restart managed Node, Python, and worker services. Use
 `GET`/`PUT /api/sites/php/{site}` to inspect installed FPM versions and apply a
 validated site profile for memory, execution, uploads, input limits, OPcache,
-errors, and version-specific socket selection.
+errors, and version-specific socket selection. PHP changes are persisted as
+desired state before FPM application; helper failures remain `pending` and are
+retried during startup reconciliation.
 
 ## Resource profiles (Preview/Beta)
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,8 @@ type PHPProfile struct {
 	OPcache           bool   `json:"opcache"`
 	DisplayErrors     bool   `json:"display_errors"`
 	ErrorReporting    string `json:"error_reporting"`
+	State             string `json:"state,omitempty"`
+	LastError         string `json:"last_error,omitempty"`
 }
 type PHPProfileStore struct {
 	mu     sync.RWMutex
@@ -45,17 +48,32 @@ func OpenPHPProfileStore(path string) (*PHPProfileStore, error) {
 	if e = json.Unmarshal(d, &s.values); e != nil {
 		return nil, e
 	}
+	for site, profile := range s.values {
+		if profile.State == "" {
+			profile.State = "applied"
+		}
+		s.values[site] = profile
+	}
 	return s, nil
 }
 func (s *PHPProfileStore) save(site string, p PHPProfile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous, existed := s.values[site]
 	s.values[site] = p
 	d, e := json.MarshalIndent(s.values, "", "  ")
 	if e != nil {
 		return e
 	}
-	return writeAtomic(s.path, append(d, '\n'), 0600)
+	if err := writeAtomic(s.path, append(d, '\n'), 0600); err != nil {
+		if existed {
+			s.values[site] = previous
+		} else {
+			delete(s.values, site)
+		}
+		return err
+	}
+	return nil
 }
 func (s *PHPProfileStore) get(site string) (PHPProfile, bool) {
 	s.mu.RLock()
@@ -103,15 +121,57 @@ func (a *App) phpRuntime(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid PHP profile", 422)
 		return
 	}
-	if e := runHelperCommand(r.Context(), a.Config, a.Config.SiteCtl, "runtime", site, p.Version, p.MemoryLimit, itoa(p.MaxExecutionTime), p.UploadMaxFilesize, p.PostMaxSize, itoa(p.MaxInputVars), boolString(p.OPcache), boolString(p.DisplayErrors), p.ErrorReporting); e != nil {
-		http.Error(w, "PHP runtime helper rejected the profile", 502)
+	p.State, p.LastError = "pending", ""
+	if e := a.PHP.save(site, p); e != nil {
+		http.Error(w, "could not persist desired PHP profile", 503)
 		return
 	}
+	if e := a.applyPHPProfile(r.Context(), p); e != nil {
+		p.State, p.LastError = "pending", e.Error()
+		_ = a.PHP.save(site, p)
+		http.Error(w, "PHP runtime profile is pending reconciliation", 502)
+		return
+	}
+	p.State, p.LastError = "applied", ""
 	if e := a.PHP.save(site, p); e != nil {
-		http.Error(w, "PHP profile applied but state could not be saved", 503)
+		http.Error(w, "PHP profile applied but state update is pending", 503)
 		return
 	}
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.php.updated", site, p.Version)
 	writeJSON(w, 202, p)
+}
+
+func (a *App) applyPHPProfile(ctx context.Context, p PHPProfile) error {
+	return runHelperCommand(ctx, a.Config, a.Config.SiteCtl, "runtime", p.Site, p.Version, p.MemoryLimit, itoa(p.MaxExecutionTime), p.UploadMaxFilesize, p.PostMaxSize, itoa(p.MaxInputVars), boolString(p.OPcache), boolString(p.DisplayErrors), p.ErrorReporting)
+}
+
+func (a *App) reconcilePHPProfiles(ctx context.Context) (reconciled []string, failed map[string]string) {
+	failed = map[string]string{}
+	if a.PHP == nil {
+		return nil, failed
+	}
+	a.PHP.mu.RLock()
+	pending := make([]PHPProfile, 0)
+	for _, profile := range a.PHP.values {
+		if profile.State == "pending" {
+			pending = append(pending, profile)
+		}
+	}
+	a.PHP.mu.RUnlock()
+	for _, profile := range pending {
+		if err := a.applyPHPProfile(ctx, profile); err != nil {
+			profile.LastError = err.Error()
+			_ = a.PHP.save(profile.Site, profile)
+			failed[profile.Site] = err.Error()
+			continue
+		}
+		profile.State, profile.LastError = "applied", ""
+		if err := a.PHP.save(profile.Site, profile); err != nil {
+			failed[profile.Site] = err.Error()
+			continue
+		}
+		reconciled = append(reconciled, profile.Site)
+	}
+	return reconciled, failed
 }
 func itoa(v int) string { return fmt.Sprintf("%d", v) }
