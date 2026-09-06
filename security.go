@@ -13,6 +13,35 @@ type SecurityCheck struct {
 	Detail   string `json:"detail"`
 }
 
+type WAFCapability struct {
+	WebServer string `json:"webserver"`
+	Provider  string `json:"provider"`
+	Status    string `json:"status"`
+	Detail    string `json:"detail"`
+}
+
+func (a *App) WAFCapability() WAFCapability {
+	webserver := a.Config.WebServer
+	if webserver == "" {
+		webserver = "caddy"
+	}
+	return wafCapability(webserver, ServiceStatus())
+}
+
+func wafCapability(webserver string, services map[string]string) WAFCapability {
+	switch webserver {
+	case "apache":
+		if services["modsecurity"] == "enabled" {
+			return WAFCapability{WebServer: webserver, Provider: "ModSecurity + OWASP CRS", Status: "available", Detail: "Apache reports the ModSecurity module as enabled; review DetectionOnly audit events before blocking."}
+		}
+		return WAFCapability{WebServer: webserver, Provider: "ModSecurity + OWASP CRS", Status: "available-not-enabled", Detail: "The Apache integration is supported but ModSecurity is not currently detected as enabled."}
+	case "openlitespeed":
+		return WAFCapability{WebServer: webserver, Provider: "external", Status: "unavailable", Detail: "Native StePanel WAF integration is not available for OpenLiteSpeed; place a supported WAF/security proxy in front."}
+	default:
+		return WAFCapability{WebServer: "caddy", Provider: "external", Status: "unavailable", Detail: "Native StePanel ModSecurity integration is Apache-only; use a vetted Caddy WAF plugin or external security proxy."}
+	}
+}
+
 func (a *App) SecurityChecks() []SecurityCheck {
 	checks := make([]SecurityCheck, 0, 6)
 	if a.Auth.Enabled {
@@ -36,14 +65,13 @@ func (a *App) SecurityChecks() []SecurityCheck {
 	checks = append(checks, directoryCheck("Web root availability", a.Config.WebRoot))
 
 	services := ServiceStatus()
-	webserver := a.Config.WebServer
-	if webserver == "" {
-		webserver = "caddy"
-	}
-	if services["modsecurity"] == "enabled" {
-		checks = append(checks, SecurityCheck{Name: "ModSecurity", Status: "pass", Severity: "low", Detail: webserver + " reports the security module as enabled."})
+	waf := a.WAFCapability()
+	if waf.Status == "available" {
+		checks = append(checks, SecurityCheck{Name: "Web Application Firewall", Status: "pass", Severity: "low", Detail: waf.Detail})
+	} else if waf.Status == "available-not-enabled" {
+		checks = append(checks, SecurityCheck{Name: "Web Application Firewall", Status: "warning", Severity: "medium", Detail: waf.Detail})
 	} else {
-		checks = append(checks, SecurityCheck{Name: "ModSecurity", Status: "warning", Severity: "medium", Detail: "ModSecurity was not detected as enabled."})
+		checks = append(checks, SecurityCheck{Name: "Web Application Firewall", Status: "warning", Severity: "medium", Detail: waf.Detail})
 	}
 	if services["fail2ban"] == "installed" || services["fail2ban"] == "active" {
 		checks = append(checks, SecurityCheck{Name: "Fail2Ban", Status: "pass", Severity: "low", Detail: "The Fail2Ban executable is available."})

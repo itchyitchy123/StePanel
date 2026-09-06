@@ -43,6 +43,19 @@ func TestDatabaseAdminSecurityCheckRequiresVerifiedPolicy(t *testing.T) {
 	}
 }
 
+func TestWAFCapabilityIsWebserverSpecific(t *testing.T) {
+	for _, test := range []struct{ webserver, status, provider string }{
+		{"caddy", "unavailable", "external"},
+		{"openlitespeed", "unavailable", "external"},
+		{"apache", "available-not-enabled", "ModSecurity + OWASP CRS"},
+	} {
+		capability := wafCapability(test.webserver, map[string]string{})
+		if capability.Status != test.status || capability.Provider != test.provider {
+			t.Fatalf("%s capability = %#v", test.webserver, capability)
+		}
+	}
+}
+
 func TestApacheAccessPolicyIgnoresComments(t *testing.T) {
 	hasIP, open := apacheAccessPolicy("# Require all granted\nRequire ip 127.0.0.1 ::1\n")
 	if !hasIP || open {

@@ -44,6 +44,12 @@ test rolls back the managed ModSecurity configuration. The panel reports an
 enabled ModSecurity Apache module in health data; per-site rule and audit
 management remains a product milestone.
 
+This integration is webserver-specific. With the default Caddy webserver the
+Security Center reports `provider: external` and `status: unavailable` for
+native StePanel WAF support; ModSecurity is not silently treated as applying
+to Caddy. Operators must use a separately reviewed Caddy WAF integration or a
+security proxy layer. OpenLiteSpeed has the same external-WAF boundary.
+
 ## Fail2ban hardening
 
 Enable it during installation only after declaring the trusted management

@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Added explicit webserver-specific WAF capability reporting. Apache reports
+  ModSecurity/CRS availability, while Caddy and OpenLiteSpeed clearly report
+  native WAF support as unavailable and require an external security layer.
+
 - Automated Git rollback-release retention with count, age, and per-site byte
   limits; the current release and immediate rollback target are preserved,
   cleanup is deployment-serialized, and release storage metrics are exposed.

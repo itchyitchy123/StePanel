@@ -56,7 +56,9 @@ Linode snapshots can be listed and safely deleted through
 `/api/cloud/snapshots`; deletion is asynchronous and audited.
 
 ModSecurity with optional OWASP CRS is available through the installer in
-safe `DetectionOnly` mode. See [integrations](docs/INTEGRATIONS.md).
+safe `DetectionOnly` mode for Apache only. Caddy (the default) and
+OpenLiteSpeed report native WAF support as unavailable and require a vetted
+external WAF/security proxy. See [integrations](docs/INTEGRATIONS.md).
 For Apache migrations to the default Caddy stack, see the
 [`.htaccess` migration guide](docs/HTACCESS_MIGRATION.md).
 

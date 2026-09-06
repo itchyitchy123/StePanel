@@ -54,5 +54,5 @@ func (a *App) securityCenter(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, 200, HostSecurityCenter{Checks: a.SecurityChecks(), Services: ServiceStatus(), Disk: d, Backups: b, GeneratedAt: time.Now().UTC()})
+	writeJSON(w, 200, map[string]any{"checks": a.SecurityChecks(), "services": ServiceStatus(), "waf": a.WAFCapability(), "disk": d, "backups": b, "generated_at": time.Now().UTC()})
 }
