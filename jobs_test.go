@@ -45,7 +45,11 @@ func TestJobsPersistCompletedWork(t *testing.T) {
 }
 
 func TestJobsIdempotentRestoreReturnsExistingJob(t *testing.T) {
-	jobs := NewJobs()
+	path := filepath.Join(t.TempDir(), "jobs.json")
+	jobs, err := OpenJobs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var calls atomic.Int32
@@ -72,6 +76,17 @@ func TestJobsIdempotentRestoreReturnsExistingJob(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("restore work calls = %d, want 1", got)
+	}
+	reopened, err := OpenJobs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryID, existing, err := reopened.SubmitIdempotent("restore-3", "site", "deploy-123", func() (ImportResult, error) {
+		t.Fatal("persisted idempotency key launched duplicate work")
+		return ImportResult{}, nil
+	})
+	if err != nil || !existing || retryID != first {
+		t.Fatalf("post-restart retry = id %q existing %v err %v; want original job", retryID, existing, err)
 	}
 }
 
