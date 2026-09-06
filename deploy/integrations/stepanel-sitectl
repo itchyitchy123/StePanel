@@ -2,12 +2,12 @@
 set -Eeuo pipefail
 
 if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
-(( $# == 2 || $# == 11 )) || { echo 'usage: stepanel-sitectl prepare|seal SITE | runtime SITE VERSION MEMORY EXEC UPLOAD POST INPUT OPCACHE DISPLAY ERROR' >&2; exit 64; }
+(( $# == 2 || $# == 3 || $# == 11 )) || { echo 'usage: stepanel-sitectl prepare|seal SITE | resources SITE PHP_WORKERS | runtime SITE VERSION MEMORY EXEC UPLOAD POST INPUT OPCACHE DISPLAY ERROR' >&2; exit 64; }
 
 action=$1
 site=$2
 [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
-[[ $action == prepare || $action == seal || $action == runtime ]] || { echo 'invalid action' >&2; exit 64; }
+[[ $action == prepare || $action == seal || $action == runtime || $action == resources ]] || { echo 'invalid action' >&2; exit 64; }
 
 if getent group www-data >/dev/null; then
   web_group=www-data
@@ -53,9 +53,17 @@ if [[ $action == runtime ]]; then
   printf 'php_version=%q\nmemory_limit=%q\nmax_execution_time=%q\nupload_max_filesize=%q\npost_max_size=%q\nmax_input_vars=%q\nopcache_enabled=%q\ndisplay_errors=%q\nerror_reporting=%q\n' "$php_version" "$memory_limit" "$max_execution_time" "$upload_max_filesize" "$post_max_size" "$max_input_vars" "$opcache_enabled" "$display_errors" "$error_reporting" > "$tmp"
   chown root:root "$tmp"; chmod 0600 "$tmp"; mv -f "$tmp" "$profile"
   action=seal
+elif [[ $action == resources ]]; then
+  workers=$3
+  [[ $workers =~ ^[0-9]+$ ]] && (( workers >= 1 && workers <= 512 )) || { echo 'invalid PHP worker limit' >&2; exit 1; }
+  tmp=$(mktemp "$php_state/.resources.XXXXXX")
+  printf 'php_max_children=%q\n' "$workers" > "$tmp"; chown root:root "$tmp"; chmod 0600 "$tmp"; mv -f "$tmp" "$php_state/resources.env"
+  action=seal
 elif [[ -f $profile && ! -L $profile ]]; then
   source "$profile"
 fi
+php_max_children=5
+[[ ! -f $php_state/resources.env || -L $php_state/resources.env ]] || source "$php_state/resources.env"
 
 command -v setfacl >/dev/null 2>&1 || { echo 'setfacl is required for site isolation' >&2; exit 1; }
 setfacl -R -m u:stepanel:rwX "$site_root"
@@ -124,7 +132,7 @@ listen.owner = $site_user
 listen.group = $web_group
 listen.mode = 0660
 pm = ondemand
-pm.max_children = 5
+pm.max_children = $php_max_children
 pm.process_idle_timeout = 10s
 pm.max_requests = 500
 chdir = /

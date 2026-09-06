@@ -14,6 +14,20 @@ environment file and restart managed Node, Python, and worker services. Use
 validated site profile for memory, execution, uploads, input limits, OPcache,
 errors, and version-specific socket selection.
 
+## Resource profiles (Preview/Beta)
+
+Administrators can `GET`/`PUT /api/sites/resources/{site}` to apply an
+enforceable profile for managed Node/Python application and worker processes:
+CPU quota, aggregate memory maximum, task/PID maximum, and isolated PHP-FPM
+`pm.max_children`. The helper renders a root-owned per-site systemd slice and
+attaches managed application/worker units to it. The desired profile is saved
+as `pending` before host application and becomes `applied` only after both the
+systemd slice and FPM pool validate successfully.
+
+This does **not** yet impose disk/inode/project quotas, network/bandwidth or
+block-I/O limits, database limits, or Redis ACL/memory enforcement. Those need
+host/provider-specific controls before they can be presented as tenant limits.
+
 ## Composer and Node
 
 `GET /api/composer/{site}` reports Composer, `composer.json`, `composer.lock`,

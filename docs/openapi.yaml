@@ -358,6 +358,15 @@ paths:
       summary: Apply a validated per-site PHP-FPM runtime profile
       parameters: [{name: site, in: path, required: true, schema: {type: string}}]
       responses: {'202': {description: FPM profile validated and applied}}
+  /api/sites/resources/{site}:
+    get:
+      summary: Inspect a per-site resource profile and its enforcement scope
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Desired/applied resource profile}}
+    put:
+      summary: Apply CPU, memory, task and PHP-FPM worker ceilings for a site
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'202': {description: Systemd slice and FPM profile applied}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation

@@ -45,6 +45,7 @@ After=network-online.target
 [Service]
 User=$site_user
 Group=$site_user
+Slice=stepanel-site-$site.slice
 WorkingDirectory=$root
 Environment=PORT=$port NODE_ENV=production HOME=/var/www/sites/$site
 EnvironmentFile=-/etc/stepanel/environment/$site.env
@@ -104,6 +105,7 @@ After=network-online.target
 [Service]
 User=$site_user
 Group=$site_user
+Slice=stepanel-site-$site.slice
 WorkingDirectory=$root
 ExecStart=$exec_start
 Restart=on-failure
@@ -138,6 +140,7 @@ After=network-online.target
 [Service]
 User=$site_user
 Group=$site_user
+Slice=stepanel-site-$site.slice
 WorkingDirectory=$root
 ExecStart=$venv/bin/gunicorn --workers $workers --bind 127.0.0.1:$port $entry
 Restart=on-failure
@@ -177,6 +180,21 @@ EOF
     [[ $development == 1 ]] || args+=(--no-dev)
     [[ $optimize == 1 ]] && args+=(--optimize-autoloader)
     runuser -u "$site_user" -- env HOME="$root" COMPOSER_HOME="$root/.composer" PATH="/usr/local/bin:/usr/bin:/bin" composer "${args[@]}" ;;
+  resource-apply)
+    (( $# == 5 )) || { echo 'usage: stepanel-appctl resource-apply SITE CPU_PERCENT MEMORY_MB TASKS_MAX' >&2; exit 64; }
+    cpu=$3; memory=$4; tasks=$5
+    [[ $cpu =~ ^[0-9]+$ && $memory =~ ^[0-9]+$ && $tasks =~ ^[0-9]+$ ]] || { echo 'invalid resource limits' >&2; exit 1; }
+    (( cpu >= 25 && cpu <= 6400 && memory >= 64 && memory <= 1048576 && tasks >= 16 && tasks <= 100000 )) || { echo 'resource limits out of range' >&2; exit 1; }
+    slice="/etc/systemd/system/stepanel-site-$site.slice"
+    cat > "$slice" <<EOF
+[Unit]
+Description=StePanel resource boundary for $site
+[Slice]
+CPUQuota=${cpu}%
+MemoryMax=${memory}M
+TasksMax=$tasks
+EOF
+    chmod 0644 "$slice"; chown root:root "$slice"; systemctl daemon-reload; systemctl start "stepanel-site-$site.slice" ;;
   task-apply)
     (( $# == 8 )) || { echo 'usage: stepanel-appctl task-apply SITE NAME RUNTIME ON_CALENDAR ENABLED TIMEOUT COMMAND_B64' >&2; exit 64; }
     name=$3; runtime=$4; on_calendar=$5; enabled=$6; timeout=$7; command_b64=$8

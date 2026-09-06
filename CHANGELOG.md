@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Preview per-site resource profiles with persisted desired state, systemd
+  CPU/memory/task enforcement for managed application and worker services, and
+  validated PHP-FPM worker ceilings.
+
 - Immediate customer panel-session revocation on suspension, actor-bound
   session records, and explicit terminology distinguishing customer login
   removal from future hosting-workload termination.
