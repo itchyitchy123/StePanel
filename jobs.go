@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,6 +17,19 @@ import (
 var ErrJobBusy = errors.New("too many long-running jobs or target is already active")
 
 const maxJobStateBytes = 16 << 20
+
+func validJobOperationKey(value string) bool {
+	if len(value) < 1 || len(value) > 128 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._:-", r) {
+			continue
+		}
+		return false
+	}
+	return true
+}
 
 func newJobID(kind string) (string, error) {
 	random, err := randomSecret()
@@ -26,19 +40,20 @@ func newJobID(kind string) (string, error) {
 }
 
 type Job struct {
-	ID          string               `json:"id"`
-	Kind        string               `json:"kind"`
-	State       string               `json:"state"`
-	User        string               `json:"user"`
-	Result      *ImportResult        `json:"result,omitempty"`
-	WPress      *WPressResult        `json:"wpress,omitempty"`
-	Certificate *CertificateResult   `json:"certificate,omitempty"`
-	Backup      *BackupResult        `json:"backup,omitempty"`
-	Restore     *BackupRestoreResult `json:"restore,omitempty"`
-	Cloud       *CloudActionResult   `json:"cloud,omitempty"`
-	Error       string               `json:"error,omitempty"`
-	StartedAt   time.Time            `json:"started_at"`
-	FinishedAt  *time.Time           `json:"finished_at,omitempty"`
+	ID           string               `json:"id"`
+	Kind         string               `json:"kind"`
+	OperationKey string               `json:"operation_key,omitempty"`
+	State        string               `json:"state"`
+	User         string               `json:"user"`
+	Result       *ImportResult        `json:"result,omitempty"`
+	WPress       *WPressResult        `json:"wpress,omitempty"`
+	Certificate  *CertificateResult   `json:"certificate,omitempty"`
+	Backup       *BackupResult        `json:"backup,omitempty"`
+	Restore      *BackupRestoreResult `json:"restore,omitempty"`
+	Cloud        *CloudActionResult   `json:"cloud,omitempty"`
+	Error        string               `json:"error,omitempty"`
+	StartedAt    time.Time            `json:"started_at"`
+	FinishedAt   *time.Time           `json:"finished_at,omitempty"`
 }
 
 func (j *Jobs) SubmitCloud(id, target string, work func() (CloudActionResult, error)) error {
@@ -317,17 +332,34 @@ func (j *Jobs) List(limit int) []Job {
 }
 
 func (j *Jobs) Submit(id, user string, work func() (ImportResult, error)) error {
+	_, _, err := j.submitImport(id, user, "", work)
+	return err
+}
+
+// SubmitIdempotent queues a cpmove restore with a caller-supplied operation
+// key. Reusing the same key for the same account returns the original job ID
+// and does not execute the restore a second time. The key is persisted with
+// the job so this remains true after a control-plane restart.
+func (j *Jobs) SubmitIdempotent(id, user, operationKey string, work func() (ImportResult, error)) (jobID string, existing bool, err error) {
+	return j.submitImport(id, user, operationKey, work)
+}
+
+func (j *Jobs) submitImport(id, user, operationKey string, work func() (ImportResult, error)) (jobID string, existing bool, err error) {
 	j.admission.RLock()
 	defer j.admission.RUnlock()
-	if !j.reserve(user) {
-		return ErrJobBusy
+	existingID, reserved := j.reserveOperation(user, "cpmove.restore", operationKey)
+	if existingID != "" {
+		return existingID, true, nil
+	}
+	if !reserved {
+		return "", false, ErrJobBusy
 	}
 	j.wg.Add(1)
-	item := &Job{ID: id, Kind: "cpmove.restore", State: "running", User: user, StartedAt: time.Now().UTC()}
+	item := &Job{ID: id, Kind: "cpmove.restore", OperationKey: operationKey, State: "running", User: user, StartedAt: time.Now().UTC()}
 	if err := j.add(item); err != nil {
 		j.wg.Done()
 		j.release(user)
-		return fmt.Errorf("persist queued job: %w", err)
+		return "", false, fmt.Errorf("persist queued job: %w", err)
 	}
 	go func() {
 		defer j.wg.Done()
@@ -346,7 +378,7 @@ func (j *Jobs) Submit(id, user string, work func() (ImportResult, error)) error 
 		j.mu.Unlock()
 		j.complete(item)
 	}()
-	return nil
+	return id, false, nil
 }
 
 func (j *Jobs) SubmitBackup(id, site string, work func() (BackupResult, error)) error {
@@ -418,19 +450,35 @@ func (j *Jobs) SubmitBackupRestore(id, site string, work func() (BackupRestoreRe
 }
 
 func (j *Jobs) reserve(target string) bool {
+	_, reserved := j.reserveOperation(target, "", "")
+	return reserved
+}
+
+// reserveOperation combines admission and idempotency lookup while holding
+// the job lock after acquiring a slot. This closes the race where two retrying
+// requests could both observe no matching operation before either persisted.
+func (j *Jobs) reserveOperation(target, kind, operationKey string) (existingID string, reserved bool) {
 	select {
 	case j.slots <- struct{}{}:
 	default:
-		return false
+		return "", false
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	if operationKey != "" {
+		for _, item := range j.items {
+			if item != nil && item.Kind == kind && item.User == target && item.OperationKey == operationKey {
+				<-j.slots
+				return item.ID, false
+			}
+		}
+	}
 	if j.activeTargets[target] {
 		<-j.slots
-		return false
+		return "", false
 	}
 	j.activeTargets[target] = true
-	return true
+	return "", true
 }
 
 func (j *Jobs) release(target string) {

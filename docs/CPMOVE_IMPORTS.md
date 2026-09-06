@@ -2,6 +2,12 @@
 
 StePanel accepts gzip-compressed tar archives produced by cPanel, commonly named `cpmove-<account>.tar.gz`. The import form requires an account username and the literal confirmation `IMPORT`.
 
+For retry-safe automation, send an `Idempotency-Key` header (1–128
+characters; letters, numbers, `.`, `_`, `:`, and `-`). Reusing the same key
+for the same account returns the original durable restore job instead of
+starting a second restore, including after a panel restart. Use a new key for
+a distinct archive or an intentional retry after reviewing the prior job.
+
 ## Recommended procedure
 
 1. Take a filesystem and database snapshot of the destination.

@@ -676,6 +676,12 @@ paths:
   /api/cpmove/import:
     post:
       summary: Queue a cPanel restore
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$'}
+          description: Reuse to return the existing restore job for safe client retries
       requestBody:
         required: true
         content:

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -40,6 +41,50 @@ func TestJobsPersistCompletedWork(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf("job state mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestJobsIdempotentRestoreReturnsExistingJob(t *testing.T) {
+	jobs := NewJobs()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	work := func() (ImportResult, error) {
+		calls.Add(1)
+		close(started)
+		<-release
+		return ImportResult{User: "site"}, nil
+	}
+	first, existing, err := jobs.SubmitIdempotent("restore-1", "site", "deploy-123", work)
+	if err != nil || existing || first != "restore-1" {
+		t.Fatalf("first submit = id %q existing %v err %v", first, existing, err)
+	}
+	<-started
+	second, existing, err := jobs.SubmitIdempotent("restore-2", "site", "deploy-123", work)
+	if err != nil || !existing || second != first {
+		t.Fatalf("retry submit = id %q existing %v err %v; want original job", second, existing, err)
+	}
+	close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := jobs.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("restore work calls = %d, want 1", got)
+	}
+}
+
+func TestValidJobOperationKey(t *testing.T) {
+	for _, value := range []string{"retry-1", "github.delivery:abc_123", "a"} {
+		if !validJobOperationKey(value) {
+			t.Errorf("valid operation key %q was rejected", value)
+		}
+	}
+	for _, value := range []string{"", "with space", "with/slash", strings.Repeat("a", 129)} {
+		if validJobOperationKey(value) {
+			t.Errorf("invalid operation key %q was accepted", value)
+		}
 	}
 }
 

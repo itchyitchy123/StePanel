@@ -16,6 +16,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Added retry-safe cPanel restore jobs with persisted `Idempotency-Key`
+  correlation, so client retries return the original job instead of launching
+  a second destructive restore. Resource and scheduled-task state now also
+  roll back in memory when desired-state persistence fails before commit.
+
 - Extended per-site mutation serialization to environment, resource-profile,
   scheduled-task, and worker updates/reconciliation, preventing concurrent
   helper calls from racing over systemd, PHP, and site-level state.

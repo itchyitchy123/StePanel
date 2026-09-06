@@ -598,6 +598,11 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "a valid account username is required", 400)
 		return
 	}
+	operationKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if operationKey != "" && !validJobOperationKey(operationKey) {
+		http.Error(w, "invalid Idempotency-Key", http.StatusUnprocessableEntity)
+		return
+	}
 	temp, err := os.CreateTemp(a.Config.ImportRoot, "upload-*.tar.gz")
 	if err != nil {
 		http.Error(w, "could not stage upload", 500)
@@ -627,8 +632,8 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not create restore job", http.StatusInternalServerError)
 		return
 	}
-	a.Metrics.RestoreStarted()
-	if err := a.Jobs.Submit(jobID, user, func() (ImportResult, error) {
+	queuedID, existing, err := a.Jobs.SubmitIdempotent(jobID, user, operationKey, func() (ImportResult, error) {
+		a.Metrics.RestoreStarted()
 		releaseUnlock := a.siteOperations.acquire(user)
 		defer releaseUnlock()
 		var restoreErr error
@@ -651,9 +656,9 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		return result, restoreErr
-	}); err != nil {
+	})
+	if err != nil {
 		_ = os.Remove(tempPath)
-		a.Metrics.RestoreFinished(err)
 		if errors.Is(err, ErrJobBusy) {
 			http.Error(w, err.Error(), http.StatusTooManyRequests)
 		} else {
@@ -661,7 +666,10 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": filepath.Join("/api/jobs", jobID)})
+	if existing {
+		_ = os.Remove(tempPath)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": queuedID, "status_url": filepath.Join("/api/jobs", queuedID)})
 }
 func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
