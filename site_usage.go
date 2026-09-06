@@ -2,20 +2,14 @@ package main
 
 import (
 	"errors"
-	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
+
+	usagecalc "github.com/itchyitchy123/StePanel/internal/usage"
 )
 
-type SiteUsage struct {
-	Site        string `json:"site"`
-	Bytes       int64  `json:"bytes"`
-	Files       int    `json:"files"`
-	Directories int    `json:"directories"`
-	Complete    bool   `json:"complete"`
-}
+type SiteUsage = usagecalc.SiteUsage
 
 // siteUsage is deliberately bounded. It reports actual regular-file usage but
 // never follows symlinks and refuses to turn a dashboard request into an
@@ -31,47 +25,10 @@ func (a *App) siteUsage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid site root", 422)
 		return
 	}
-	usage, err := measureSiteUsage(root, a.Config.MaxEntries)
-	if err != nil && !errors.Is(err, errUsageLimit) {
+	usage, err := usagecalc.Measure(root, a.Config.MaxEntries)
+	if err != nil && !errors.Is(err, usagecalc.ErrLimit) {
 		http.Error(w, "could not measure site usage", 500)
 		return
 	}
 	writeJSON(w, 200, usage)
-}
-
-var errUsageLimit = errors.New("usage entry limit reached")
-
-func measureSiteUsage(root string, limit int) (SiteUsage, error) {
-	u := SiteUsage{Site: filepath.Base(root), Complete: true}
-	if limit <= 0 {
-		limit = 1000000
-	}
-	entries := 0
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		entries++
-		if entries > limit {
-			u.Complete = false
-			return errUsageLimit
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return nil
-		}
-		if info.IsDir() {
-			u.Directories++
-			return nil
-		}
-		if info.Mode().IsRegular() {
-			u.Files++
-			u.Bytes += info.Size()
-		}
-		return nil
-	})
-	return u, err
 }

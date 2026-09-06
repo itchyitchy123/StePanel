@@ -22,6 +22,10 @@ The local server uses `data/imports` and `data/www` by default, so development d
 - Run `make check` and `bash -n install.sh` before opening a pull request.
 - Update the README, relevant guide, and `CHANGELOG.md` when behavior changes.
 - Keep commits focused and avoid bundling unrelated formatting changes.
+- Keep package-local unit tests beside the package they exercise. Root-package
+  tests intentionally remain beside the root handlers while those handlers
+  still use unexported control-plane types; extracted domains belong with their
+  implementation under `internal/<domain>/`.
 - Use your attributable developer identity for commits; do not create project
   history as `root`.
 - Open a pull request for substantial changes, even when you are the sole

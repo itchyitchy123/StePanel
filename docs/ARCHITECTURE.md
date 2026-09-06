@@ -71,9 +71,11 @@ remaining boundaries should be extracted in this order:
 5. `internal/operations` for cloud, SSH, service, and privileged-helper
    adapters.
 
-The current extracted seams are `internal/deployment` for deployment history
-and `internal/session` for durable, revocable session entries. Both retain
-atomic file persistence, bounded state, and package-level contract tests.
+The current extracted seams are `internal/deployment` for deployment history,
+`internal/session` for durable, revocable session entries,
+`internal/operations` for site mutation locks, and `internal/usage` for bounded
+filesystem accounting. These packages retain atomic persistence or pure
+contract behavior with package-level tests.
 
 The HTTP layer should remain an assembly point that supplies interfaces for
 these packages. Each extraction should preserve the existing tests and add a

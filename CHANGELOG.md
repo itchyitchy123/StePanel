@@ -16,6 +16,10 @@ isolation, recovery, and operational consistency.
   documentation links. Detailed configuration and migration procedures now
   live in their dedicated operator guides.
 
+- Extracted bounded site filesystem accounting into the tested
+  `internal/usage` package. Root HTTP code now supplies only authorization,
+  path policy, and response handling.
+
 - Extracted site-operation serialization into the tested
   `internal/operations` package and routed all site mutation callers through
   its explicit API, reducing root-package coupling without a disruptive
