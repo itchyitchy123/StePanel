@@ -12,11 +12,17 @@ StePanel is an open-source server management panel written in Go. It installs Ca
 
 It is designed for people who want a small, understandable hosting control plane instead of a large opaque platform.
 
-![StePanel dashboard preview](docs/assets/dashboard-preview.png)
+![StePanel operator workspace preview](docs/assets/operator-workspace-preview.png)
 
-The preview uses deterministic, representative data. It shows the current
-dashboard structure; host-specific service state and capability values are
-read from the configured server at runtime.
+The operator workspace is the strongest overview of StePanel's current value:
+resource posture, security checks, deployment state, restore-to-staging, and
+managed site operations in one view. It uses deterministic representative data;
+it is a product illustration rather than a capture from a live host.
+
+![StePanel developer workspace preview](docs/assets/developer-workspace-preview.png)
+
+The developer workspace shows the application workflow around PHP runtime,
+encrypted environment metadata, builds, staging, logs, and workers.
 
 ## Why StePanel?
 
@@ -60,8 +66,8 @@ Root-owned platform helpers ── Caddy/Apache, PHP-FPM, databases, systemd
 Web applications, databases, verified backups, recoverable releases
 ```
 
-See the [product preview](docs/SCREENSHOTS.md) for the complete dashboard and
-developer-workspace illustrations. A live lab screenshot is intentionally not
+See the [complete product preview](docs/SCREENSHOTS.md) for the dashboard and
+all workspace illustrations. A live lab screenshot is intentionally not
 included until it can be captured from a disposable tagged installation with
 synthetic data.
 
@@ -155,6 +161,7 @@ Start with the [installation guide](docs/INSTALLATION.md), [feature catalog](doc
 The deeper references cover [backups and recovery](docs/CASE_STUDY.md),
 [security](docs/THREAT_MODEL.md), [integrations](docs/INTEGRATIONS.md),
 [release engineering](docs/RELEASING.md), the [incident lab](docs/INCIDENT_LAB.md),
+[measured recovery evidence](docs/lab-results/2026-09-06-recovery-drills.md),
 [observability](observability/README.md), and [contributing](CONTRIBUTING.md).
 See the [ADR index](docs/adr/README.md), [changelog](CHANGELOG.md), and
 [release artifacts](https://github.com/itchyitchy123/StePanel/releases) for

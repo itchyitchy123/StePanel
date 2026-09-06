@@ -21,9 +21,11 @@ small steps. New boundaries will be introduced in this order:
 4. backups and migration workflows;
 5. resource enforcement and reconciliation.
 
-The first completed extractions are `internal/session` and
-`internal/deployment`; the remaining authentication, job, platform, backup,
-and resource seams are intentionally still coupled to the HTTP assembly layer.
+The first completed extractions are `internal/session`, `internal/deployment`,
+`internal/operations`, `internal/usage`, and the platform-neutral
+`internal/state` atomic writer. The remaining authentication, job, platform,
+backup, and resource seams are intentionally still coupled to the HTTP assembly
+layer.
 
 Each extraction must retain the existing integration tests, add package-level
 contract tests, and leave HTTP routing as an assembly concern. No package is

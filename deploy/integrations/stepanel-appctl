@@ -69,7 +69,6 @@ UMask=0027
 LimitNOFILE=65536
 TasksMax=256
 ReadWritePaths=$root
-EnvironmentFile=-/etc/stepanel/environment/$site.env
 
 [Install]
 WantedBy=multi-user.target
@@ -290,7 +289,17 @@ EOF
       [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || { rm -f "$staged"; echo 'invalid environment entry' >&2; exit 1; }
       printf '%s\n' "$line" >> "$staged"
     done
-    chown root:root "$staged"; chmod 0600 "$staged"; mv -f "$staged" "$target"
+    chown root:root "$staged"; chmod 0600 "$staged"
+    # Reconciliation is intentionally idempotent: avoid rewriting the
+    # environment file and restarting every managed service when the desired
+    # content is already present. Never compare through a symlink.
+    if [[ -f $target && ! -L $target ]] && cmp -s "$staged" "$target"; then
+      rm -f "$staged"
+      chmod 0600 "$target"
+      chown root:root "$target"
+      exit 0
+    fi
+    mv -f "$staged" "$target"
     systemctl try-restart "stepanel-app-$site.service" "stepanel-app-$site-python.service" 2>/dev/null || true
     mapfile -t worker_units < <(systemctl list-unit-files --type=service --no-legend "stepanel-worker-$site-*.service" 2>/dev/null | awk '{print $1}')
     if (( ${#worker_units[@]} > 0 )); then

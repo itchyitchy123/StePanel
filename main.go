@@ -242,29 +242,24 @@ func main() {
 		log.Fatalf("open backup schedules: %v", err)
 	}
 	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, Tasks: tasks, Deployments: deployments, Resources: resources, RecoveryError: errors.Join(recoveryFailures...)}
-	reconcileCtx, cancelReconcile := context.WithTimeout(context.Background(), helperCommandTimeout)
-	if reconciled, failed := app.reconcileSiteAccess(reconcileCtx); len(failed) > 0 {
-		log.Printf("SSH access reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
+	// Reconcile domains independently. A single shared deadline allowed a slow
+	// host/helper operation in an early domain to starve every later domain.
+	// Each domain remains bounded, and failures are retained in its own report.
+	reconcile := func(name string, fn func(context.Context) ([]string, map[string]string)) {
+		reconcileCtx, cancelReconcile := context.WithTimeout(context.Background(), helperCommandTimeout)
+		defer cancelReconcile()
+		reconciled, failed := fn(reconcileCtx)
+		if len(failed) > 0 {
+			log.Printf("%s reconciliation incomplete: reconciled=%d failed=%d", name, len(reconciled), len(failed))
+		}
 	}
-	if reconciled, failed := app.reconcileWorkers(reconcileCtx); len(failed) > 0 {
-		log.Printf("worker reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
-	}
-	if reconciled, failed := app.reconcilePHPProfiles(reconcileCtx); len(failed) > 0 {
-		log.Printf("PHP profile reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
-	}
-	if reconciled, failed := app.reconcilePythonApps(reconcileCtx); len(failed) > 0 {
-		log.Printf("Python application reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
-	}
-	if reconciled, failed := app.reconcileTasks(reconcileCtx); len(failed) > 0 {
-		log.Printf("scheduled-task reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
-	}
-	if reconciled, failed := app.reconcileResourceProfiles(reconcileCtx); len(failed) > 0 {
-		log.Printf("resource-profile reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
-	}
-	if reconciled, failed := app.reconcileEnvironments(reconcileCtx); len(failed) > 0 {
-		log.Printf("environment reconciliation incomplete: reconciled=%d failed=%d", len(reconciled), len(failed))
-	}
-	cancelReconcile()
+	reconcile("SSH access", app.reconcileSiteAccess)
+	reconcile("workers", app.reconcileWorkers)
+	reconcile("PHP profile", app.reconcilePHPProfiles)
+	reconcile("Python application", app.reconcilePythonApps)
+	reconcile("scheduled task", app.reconcileTasks)
+	reconcile("resource profile", app.reconcileResourceProfiles)
+	reconcile("environment", app.reconcileEnvironments)
 	if err := pruneAllGitReleases(cfg); err != nil {
 		log.Printf("Git release retention during startup: %v", err)
 	}

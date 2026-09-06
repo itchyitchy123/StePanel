@@ -7,10 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
+
+	statefile "github.com/itchyitchy123/StePanel/internal/state"
 )
 
 type Record struct {
@@ -60,7 +61,7 @@ func (s *Store) Add(record Record) error {
 	if err != nil {
 		return err
 	}
-	if err := writeAtomic(s.path, append(data, '\n'), 0600); err != nil {
+	if err := statefile.WriteAtomic(s.path, append(data, '\n'), 0600); err != nil {
 		s.values = previous
 		return err
 	}
@@ -78,32 +79,4 @@ func (s *Store) List(site string) []Record {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out
-}
-
-func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".deployment-state-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
 }

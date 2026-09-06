@@ -1,6 +1,6 @@
 # StePanel incident lab
 
-This is the operational proof plan for the future **SteMigrate** product.
+This is the operational proof plan for StePanel's migration and recovery paths.
 Each scenario can be reproduced on an isolated disposable VM with a synthetic
 backup. Never test restore failure modes against customer data.
 
@@ -41,3 +41,28 @@ check.
 5. Verify HTTP, PHP, database connectivity, permissions, and scheduled jobs.
 6. Write a short postmortem with detection, timeline, root cause, and one
    prevention item.
+
+## Evidence template
+
+Completed drills should add a dated record under `docs/lab-results/` using this
+format. Do not claim a scenario passed until the result includes the command,
+observed state, and recovery evidence.
+
+```text
+Scenario:                    DB unavailable during restore
+Environment:                 disposable OS/image and StePanel revision
+Failure injection:           exact command or controlled fault
+Expected result:             failed job, intact source, recovery guidance
+Observed result:              concise outcome and relevant log identifiers
+Recovery verification:       readiness, audit, database, and filesystem checks
+Bug found:                   yes/no; issue or fixing commit if applicable
+```
+
+The repository intentionally does not include fabricated pass/fail results.
+Capture real disposable-lab evidence before using the results as release or
+portfolio claims.
+
+Repository-level recovery test evidence is recorded in
+[`docs/lab-results/2026-09-06-recovery-unit-drills.md`](lab-results/2026-09-06-recovery-unit-drills.md).
+The repeatable capture command is
+[`deploy/lab/run-recovery-drills.sh`](../deploy/lab/run-recovery-drills.sh).

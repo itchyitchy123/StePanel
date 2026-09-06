@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // ErrLimit indicates that the configured entry bound was reached. The result
@@ -29,6 +30,7 @@ func Measure(root string, limit int) (SiteUsage, error) {
 		limit = 1000000
 	}
 	entries := 0
+	seen := make(map[[2]uint64]struct{})
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -50,6 +52,15 @@ func Measure(root string, limit int) (SiteUsage, error) {
 			return nil
 		}
 		if info.Mode().IsRegular() {
+			// A hard-linked file occupies storage only once. Avoid inflating
+			// operator-facing usage when releases or site data share inodes.
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Nlink > 1 {
+				key := [2]uint64{uint64(stat.Dev), uint64(stat.Ino)}
+				if _, alreadyCounted := seen[key]; alreadyCounted {
+					return nil
+				}
+				seen[key] = struct{}{}
+			}
 			result.Files++
 			result.Bytes += info.Size()
 		}

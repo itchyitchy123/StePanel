@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	statefile "github.com/itchyitchy123/StePanel/internal/state"
 	"io"
 	"os"
 	"os/exec"
@@ -145,41 +146,7 @@ func sameFileInfo(a, b os.FileInfo) bool {
 }
 
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	root := filepath.Dir(path)
-	if err := os.MkdirAll(root, 0750); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(root, ".stepanel-write-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err = tmp.Chmod(mode); err == nil {
-		_, err = tmp.Write(data)
-	}
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return err
-	}
-	dir, err := os.Open(root)
-	if err != nil {
-		return err
-	}
-	syncErr := dir.Sync()
-	closeErr := dir.Close()
-	if syncErr != nil {
-		return syncErr
-	}
-	return closeErr
+	return statefile.WriteAtomic(path, data, mode)
 }
 
 func rejectSymlinkParents(path, root string) error {

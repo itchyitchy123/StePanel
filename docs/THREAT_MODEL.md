@@ -39,9 +39,12 @@
 - Host site workloads use deterministic per-site Unix identities and unique
   primary groups. The selected webserver receives group access without making site users
   members of its shared group, and the control plane uses explicit ACLs.
-- Git deployment accepts only allowlisted HTTPS hosts, disables credential
-  prompts/helpers, rejects symlinks and special files, strips repository
-  metadata, and does not execute repository-provided build scripts.
+- Git deployment accepts only allowlisted providers and repository forms. Public
+  HTTPS clones disable credential prompts/helpers; private SSH clones use
+  per-site deploy keys, a root-controlled known-hosts file, and
+  `StrictHostKeyChecking=yes`. Both paths reject symlinks and special files,
+  strip repository metadata, and do not execute repository-provided build
+  scripts in the control plane.
 
 ## Residual risks
 
@@ -56,7 +59,10 @@
   modify both an archive and its manifest can replace both.
 - An allowlisted Git provider and repository contents remain trusted inputs.
   Compromise of either can publish malicious application code even though the
-  deployment path prevents control-plane command execution.
+  deployment path prevents control-plane command execution. Rootless build
+  runners reduce control-plane exposure but may access the network when a build
+  requires dependency downloads; build inputs and resulting artifacts remain
+  untrusted application code.
 
 ## Operator requirements
 

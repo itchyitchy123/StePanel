@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	jobadmission "github.com/itchyitchy123/StePanel/internal/jobs"
 )
 
 var ErrJobBusy = errors.New("too many long-running jobs or target is already active")
@@ -97,7 +99,7 @@ type jobStore struct {
 type Jobs struct {
 	mu            sync.RWMutex
 	items         map[string]*Job
-	slots         chan struct{}
+	admissionGate *jobadmission.Admission
 	activeDomains map[string]bool
 	activeTargets map[string]bool
 	wg            sync.WaitGroup
@@ -127,7 +129,7 @@ func newJobs(path string, limits ...int) *Jobs {
 	}
 	return &Jobs{
 		items:         make(map[string]*Job),
-		slots:         make(chan struct{}, limit),
+		admissionGate: jobadmission.NewAdmission(limit),
 		activeDomains: make(map[string]bool),
 		activeTargets: make(map[string]bool),
 		path:          path,
@@ -458,9 +460,7 @@ func (j *Jobs) reserve(target string) bool {
 // the job lock after acquiring a slot. This closes the race where two retrying
 // requests could both observe no matching operation before either persisted.
 func (j *Jobs) reserveOperation(target, kind, operationKey string) (existingID string, reserved bool) {
-	select {
-	case j.slots <- struct{}{}:
-	default:
+	if !j.admissionGate.Acquire() {
 		return "", false
 	}
 	j.mu.Lock()
@@ -468,13 +468,13 @@ func (j *Jobs) reserveOperation(target, kind, operationKey string) (existingID s
 	if operationKey != "" {
 		for _, item := range j.items {
 			if item != nil && item.Kind == kind && item.User == target && item.OperationKey == operationKey {
-				<-j.slots
+				j.admissionGate.Release()
 				return item.ID, false
 			}
 		}
 	}
 	if j.activeTargets[target] {
-		<-j.slots
+		j.admissionGate.Release()
 		return "", false
 	}
 	j.activeTargets[target] = true
@@ -485,21 +485,19 @@ func (j *Jobs) release(target string) {
 	j.mu.Lock()
 	delete(j.activeTargets, target)
 	j.mu.Unlock()
-	<-j.slots
+	j.admissionGate.Release()
 }
 
 func (j *Jobs) SubmitCertificate(id, domain string, work func() (CertificateResult, error)) error {
 	j.admission.RLock()
 	defer j.admission.RUnlock()
-	select {
-	case j.slots <- struct{}{}:
-	default:
+	if !j.admissionGate.Acquire() {
 		return ErrJobBusy
 	}
 	j.mu.Lock()
 	if j.activeDomains[domain] {
 		j.mu.Unlock()
-		<-j.slots
+		j.admissionGate.Release()
 		return ErrJobBusy
 	}
 	j.activeDomains[domain] = true
@@ -511,12 +509,12 @@ func (j *Jobs) SubmitCertificate(id, domain string, work func() (CertificateResu
 		j.mu.Lock()
 		delete(j.activeDomains, domain)
 		j.mu.Unlock()
-		<-j.slots
+		j.admissionGate.Release()
 		return fmt.Errorf("persist queued job: %w", err)
 	}
 	go func() {
 		defer j.wg.Done()
-		defer func() { j.mu.Lock(); delete(j.activeDomains, domain); j.mu.Unlock(); <-j.slots }()
+		defer func() { j.mu.Lock(); delete(j.activeDomains, domain); j.mu.Unlock(); j.admissionGate.Release() }()
 		result, err := work()
 		now := time.Now().UTC()
 		j.mu.Lock()

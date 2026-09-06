@@ -59,8 +59,9 @@ the HTTP handlers, shared configuration, test fixtures, and embedded dashboard
 are still tightly coupled. A mechanical directory move would obscure those
 dependencies without improving the runtime boundary.
 
-The structural refactor is now underway. Durable deployment history and
-revocable session state have been extracted behind internal package seams. The
+The structural refactor is now underway. Durable deployment history, revocable
+session state, bounded filesystem accounting, and asynchronous job admission
+have been extracted behind internal package seams. The
 remaining boundaries should be extracted in this order:
 
 1. `internal/auth` for CSRF, MFA, and rate limiting.
@@ -73,9 +74,10 @@ remaining boundaries should be extracted in this order:
 
 The current extracted seams are `internal/deployment` for deployment history,
 `internal/session` for durable, revocable session entries,
-`internal/operations` for site mutation locks, and `internal/usage` for bounded
-filesystem accounting. These packages retain atomic persistence or pure
-contract behavior with package-level tests.
+`internal/operations` for site mutation locks, `internal/usage` for bounded
+filesystem accounting, `internal/state` for atomic state writes, and
+`internal/jobs` for bounded asynchronous admission. These packages retain
+atomic persistence or pure concurrency behavior with package-level tests.
 
 The HTTP layer should remain an assembly point that supplies interfaces for
 these packages. Each extraction should preserve the existing tests and add a

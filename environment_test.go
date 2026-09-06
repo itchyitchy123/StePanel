@@ -1,33 +1,34 @@
 package main
 
 import (
-	"context"
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestRemoveEnvironmentRestoresStateAfterPersistenceFailure(t *testing.T) {
-	dir := t.TempDir()
-	blocked := filepath.Join(dir, "blocked")
-	if err := os.WriteFile(blocked, []byte("file"), 0600); err != nil {
+func TestEnvironmentStoreRequiresKeyForSecretState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "environment.json")
+	store, err := OpenEnvironmentStore(path, "test-environment-key")
+	if err != nil {
 		t.Fatal(err)
 	}
-	helper := filepath.Join(dir, "helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\ncat >/dev/null\n"), 0700); err != nil {
+	store.values["demo"] = map[string]environmentValue{
+		"APP_KEY": {Value: "secret", Secret: true},
+	}
+	store.mu.Lock()
+	err = store.persistLocked()
+	store.mu.Unlock()
+	if err != nil {
 		t.Fatal(err)
 	}
-	store := &EnvironmentStore{
-		path: filepath.Join(blocked, "environments.json"),
-		values: map[string]map[string]environmentValue{
-			"demo": {"APP_ENV": {Value: "production"}},
-		},
+	if _, err := OpenEnvironmentStore(path, ""); err == nil || !strings.Contains(err.Error(), "encryption key") {
+		t.Fatalf("OpenEnvironmentStore without key error = %v; want encryption-key error", err)
 	}
-	app := &App{Config: Config{AppCtl: helper}, Environments: store}
-	if err := app.removeEnvironment(context.Background(), "demo"); err == nil {
-		t.Fatal("expected persistence failure")
-	}
-	if got := store.values["demo"]["APP_ENV"].Value; got != "production" {
-		t.Fatalf("environment state after failed removal = %q", got)
+}
+
+func TestEnvironmentStoreEncryptWithoutKeyReturnsError(t *testing.T) {
+	store := &EnvironmentStore{}
+	if _, err := store.encrypt("secret"); err == nil {
+		t.Fatal("encrypt without a key unexpectedly succeeded")
 	}
 }

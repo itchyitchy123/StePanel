@@ -24,3 +24,19 @@ func TestMeasureBoundsAndSkipsSymlinks(t *testing.T) {
 		t.Fatalf("bounded usage=%#v err=%v", result, err)
 	}
 }
+
+func TestMeasureCountsHardLinksOnce(t *testing.T) {
+	root := t.TempDir()
+	original := filepath.Join(root, "original.txt")
+	linked := filepath.Join(root, "linked.txt")
+	if err := os.WriteFile(original, []byte("1234"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(original, linked); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Measure(root, 10)
+	if err != nil || result.Bytes != 4 || result.Files != 1 {
+		t.Fatalf("usage=%#v err=%v; want one physical file", result, err)
+	}
+}

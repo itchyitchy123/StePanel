@@ -4,6 +4,11 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo 'install smoke must run as root' >&2; exit 1; }
 cd /work
 
+if [[ ! -f /sys/fs/cgroup/cgroup.controllers && ! -d /sys/fs/cgroup/systemd ]]; then
+  echo 'install smoke requires a systemd-compatible cgroup hierarchy; use a KVM/Cloud VM or CI runner' >&2
+  exit 77
+fi
+
 export STEPANEL_ENV=production
 export STEPANEL_LISTEN=127.0.0.1:8090
 export STEPANEL_TLS_TERMINATED=1

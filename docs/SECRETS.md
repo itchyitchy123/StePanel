@@ -11,7 +11,8 @@ site archives or support bundles.
 
 ## Environment encryption
 
-Set `STEPANEL_ENVIRONMENT_KEY` to a stable 32-byte AES key encoded as base64.
+Set `STEPANEL_ENVIRONMENT_KEY` to a stable, high-entropy secret. StePanel
+derives a 32-byte AES-256 key from that value with SHA-256;
 `STEPANEL_ENVIRONMENT_STATE` contains encrypted per-site values. Back up both
 the state file and the key together. A missing or changed key makes existing
 secret values unrecoverable; it does not silently fall back to plaintext.

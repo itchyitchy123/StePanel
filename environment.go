@@ -66,11 +66,11 @@ type EnvironmentStore struct {
 }
 
 func OpenEnvironmentStore(path, secret string) (*EnvironmentStore, error) {
-	if strings.TrimSpace(secret) == "" {
-		return &EnvironmentStore{path: path, values: map[string]map[string]environmentValue{}}, nil
+	store := &EnvironmentStore{path: path, values: map[string]map[string]environmentValue{}}
+	if strings.TrimSpace(secret) != "" {
+		h := sha256.Sum256([]byte(secret))
+		store.key = h[:]
 	}
-	h := sha256.Sum256([]byte(secret))
-	store := &EnvironmentStore{path: path, key: h[:], values: map[string]map[string]environmentValue{}}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return store, nil
@@ -84,6 +84,9 @@ func OpenEnvironmentStore(path, secret string) (*EnvironmentStore, error) {
 	for site, vars := range store.values {
 		for name, value := range vars {
 			if value.Secret {
+				if len(store.key) == 0 {
+					return nil, errors.New("environment encryption key is required to read secret values")
+				}
 				plain, err := store.decrypt(value.Value)
 				if err != nil {
 					return nil, fmt.Errorf("decrypt %s/%s: %w", site, name, err)
@@ -97,8 +100,17 @@ func OpenEnvironmentStore(path, secret string) (*EnvironmentStore, error) {
 }
 
 func (s *EnvironmentStore) encrypt(value string) (string, error) {
-	block, _ := aes.NewCipher(s.key)
-	gcm, _ := cipher.NewGCM(block)
+	if len(s.key) == 0 {
+		return "", errors.New("environment encryption key is not configured")
+	}
+	block, err := aes.NewCipher(s.key)
+	if err != nil {
+		return "", fmt.Errorf("initialize environment encryption: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("initialize environment encryption mode: %w", err)
+	}
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
@@ -107,8 +119,17 @@ func (s *EnvironmentStore) encrypt(value string) (string, error) {
 	return base64.RawStdEncoding.EncodeToString(sealed), nil
 }
 func (s *EnvironmentStore) decrypt(value string) (string, error) {
-	block, _ := aes.NewCipher(s.key)
-	gcm, _ := cipher.NewGCM(block)
+	if len(s.key) == 0 {
+		return "", errors.New("environment encryption key is not configured")
+	}
+	block, err := aes.NewCipher(s.key)
+	if err != nil {
+		return "", fmt.Errorf("initialize environment encryption: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("initialize environment encryption mode: %w", err)
+	}
 	raw, err := base64.RawStdEncoding.DecodeString(value)
 	if err != nil || len(raw) < gcm.NonceSize() {
 		return "", errors.New("invalid encrypted value")
@@ -151,14 +172,15 @@ func cloneEnvironmentValues(values map[string]environmentValue) map[string]envir
 
 func (a *App) removeEnvironment(ctx context.Context, site string) error {
 	a.Environments.mu.RLock()
-	previous, existed := a.Environments.values[site]
-	previous = cloneEnvironmentValues(previous)
+	_, existed := a.Environments.values[site]
 	a.Environments.mu.RUnlock()
-	if err := a.applyEnvironment(ctx, site, map[string]environmentValue{}); err != nil {
-		return fmt.Errorf("remove environment from host: %w", err)
-	}
+	empty := map[string]environmentValue{}
+	// Persist the empty desired state before changing the host. If the process
+	// stops after this point, startup reconciliation will still remove the host
+	// environment instead of restoring stale values from an older snapshot.
 	a.Environments.mu.Lock()
-	delete(a.Environments.values, site)
+	previous := cloneEnvironmentValues(a.Environments.values[site])
+	a.Environments.values[site] = empty
 	err := a.Environments.persistLocked()
 	if err != nil {
 		if existed {
@@ -168,15 +190,23 @@ func (a *App) removeEnvironment(ctx context.Context, site string) error {
 		}
 	}
 	a.Environments.mu.Unlock()
-	if err == nil {
-		return nil
+	if err != nil {
+		return fmt.Errorf("environment desired state save failed: %w", err)
 	}
-	// The durable state still describes the old environment when the deletion
-	// write fails. Restore the host side to match it.
-	if restoreErr := a.applyEnvironment(ctx, site, previous); restoreErr != nil {
-		return fmt.Errorf("environment state save failed: %w; host restore failed: %v", err, restoreErr)
+	if err := a.applyEnvironment(ctx, site, empty); err != nil {
+		return fmt.Errorf("remove environment from host: %w", err)
 	}
-	return fmt.Errorf("environment state save failed: %w", err)
+	a.Environments.mu.Lock()
+	delete(a.Environments.values, site)
+	if err := a.Environments.persistLocked(); err != nil {
+		// The durable empty map is already the desired state. Retain it in
+		// memory so a later reconciliation can safely repeat the cleanup.
+		a.Environments.values[site] = empty
+		a.Environments.mu.Unlock()
+		return fmt.Errorf("environment metadata cleanup pending: %w", err)
+	}
+	a.Environments.mu.Unlock()
+	return nil
 }
 
 func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
@@ -255,10 +285,10 @@ func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
 		releaseUnlock := a.siteOperations.Acquire(site)
 		defer releaseUnlock()
 		if err := a.removeEnvironment(r.Context(), site); err != nil {
-			if strings.Contains(err.Error(), "host restore failed") {
-				http.Error(w, "environment state and host restore both failed", 503)
-			} else if strings.Contains(err.Error(), "state save failed") {
+			if strings.Contains(err.Error(), "desired state save failed") {
 				http.Error(w, "environment state could not be saved", 503)
+			} else if strings.Contains(err.Error(), "metadata cleanup pending") {
+				http.Error(w, "environment removed but metadata cleanup is pending", 503)
 			} else {
 				http.Error(w, "environment could not be removed from site services", 502)
 			}

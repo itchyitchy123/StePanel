@@ -7,13 +7,13 @@ They are deterministic product illustrations, not captures from a live host;
 values are representative and the real dashboard renders service, site,
 database, capability, job state, and user role from the configured server.
 
-## Dashboard
+## Operator workspace
 
-![StePanel dashboard preview](assets/dashboard-preview.png)
+![StePanel operator workspace preview](assets/operator-workspace-preview.png)
 
-The preview is rendered at 2× resolution for crisp display on GitHub and
-retina screens. The editable [SVG source](assets/dashboard-preview.svg) remains
-available for presentations and product materials.
+This is the primary product overview: resource posture, Security Center,
+deployment status, restore-to-staging, and site workspace operations. Values are
+synthetic and do not represent a live host.
 
 ## Developer workspace
 
@@ -26,14 +26,14 @@ runner, staging, logs, workers, deploy keys, and scheduled tasks. Each card
 maps to authenticated API and helper behavior documented in
 [Developer workflows](DEVELOPER_WORKFLOWS.md).
 
-## Operator workspace
+## Dashboard
 
-![StePanel operator workspace preview](assets/operator-workspace-preview.png)
+![StePanel dashboard preview](assets/dashboard-preview.png)
 
-This updated illustrative mockup connects enforced application resource
-profiles and live counters, read-only host security posture, deployment stages
-with retained rollback releases, and verified files-only restore to a protected
-no-index staging route. Values are synthetic and do not represent a live host.
+This overview remains available as the general infrastructure dashboard. The
+preview is rendered at 2× resolution for crisp display on GitHub and retina
+screens. The editable [SVG source](assets/dashboard-preview.svg) remains
+available for presentations and product materials.
 
 ## What the preview covers
 
