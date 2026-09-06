@@ -95,7 +95,7 @@ func (a *App) siteRedis(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 422)
 			return
 		}
-		releaseUnlock := a.siteOperations.acquire(site)
+		releaseUnlock := a.siteOperations.Acquire(site)
 		defer releaseUnlock()
 		a.Redis.mu.Lock()
 		a.Redis.values[site] = input
@@ -112,7 +112,7 @@ func (a *App) siteRedis(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", 403)
 			return
 		}
-		releaseUnlock := a.siteOperations.acquire(site)
+		releaseUnlock := a.siteOperations.Acquire(site)
 		defer releaseUnlock()
 		a.Redis.mu.Lock()
 		delete(a.Redis.values, site)

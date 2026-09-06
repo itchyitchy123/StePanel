@@ -144,7 +144,7 @@ func (a *App) reconcileSiteAccess(ctx context.Context) (reconciled []string, fai
 	}
 	a.Access.mu.RUnlock()
 	for _, access := range pending {
-		releaseUnlock := a.siteOperations.acquire(access.Site)
+		releaseUnlock := a.siteOperations.Acquire(access.Site)
 		if _, err := a.applyAndSaveSiteAccess(ctx, access); err != nil {
 			failed[access.Site] = err.Error()
 			releaseUnlock()
@@ -192,7 +192,7 @@ func (a *App) siteAccess(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid JSON", 400)
 			return
 		}
-		releaseUnlock := a.siteOperations.acquire(site)
+		releaseUnlock := a.siteOperations.Acquire(site)
 		defer releaseUnlock()
 		if input.SFTPEnabled != nil {
 			access.SFTPEnabled = *input.SFTPEnabled
@@ -236,7 +236,7 @@ func (a *App) siteAccess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		key.Label = input.Label
-		releaseUnlock := a.siteOperations.acquire(site)
+		releaseUnlock := a.siteOperations.Acquire(site)
 		defer releaseUnlock()
 		for _, existing := range access.Keys {
 			if existing.Label == key.Label || existing.Fingerprint == key.Fingerprint {
@@ -280,7 +280,7 @@ func (a *App) siteAccessKey(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid CSRF token", 403)
 		return
 	}
-	releaseUnlock := a.siteOperations.acquire(site)
+	releaseUnlock := a.siteOperations.Acquire(site)
 	defer releaseUnlock()
 	a.Access.mu.Lock()
 	access, ok := a.Access.values[site]

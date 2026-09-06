@@ -85,8 +85,8 @@ This is an active engineering boundary, not a claim that the extraction is
 complete. New code should avoid adding unrelated state or platform commands to
 `main.go`; feature work should first introduce a narrow interface or domain
 file, then move that seam into `internal/` once its dependencies are stable.
-The first package extraction is intentionally deferred until the interface can
-be tested independently of the HTTP server and embedded dashboard.
+The next package extractions are intentionally gated on interfaces that can be
+tested independently of the HTTP server and embedded dashboard.
 
 ```text
 Browser

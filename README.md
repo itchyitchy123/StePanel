@@ -189,7 +189,7 @@ checkbox and should be backed up first.
 - [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
 - [WordPress WPress migration guide](docs/WPRESS_IMPORTS.md)
 - [Architecture and safety model](docs/ARCHITECTURE.md)
-- [Architecture decision records](docs/ENGINEERING_DECISIONS.md)
+- [Architecture decision records](docs/adr/README.md)
 - [Feature catalog](docs/FEATURES.md)
 - [Shared-hosting beta](docs/SHARED_HOSTING.md)
 - [Threat model](docs/THREAT_MODEL.md)

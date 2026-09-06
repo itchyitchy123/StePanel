@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Extracted site-operation serialization into the tested
+  `internal/operations` package and routed all site mutation callers through
+  its explicit API, reducing root-package coupling without a disruptive
+  application rewrite.
+
 - Repositioned the project as a Caddy-first Linux hosting control plane and
   replaced interview-oriented engineering material with architecture decision
   records.

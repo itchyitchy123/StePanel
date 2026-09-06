@@ -44,7 +44,7 @@ func (a *App) nodeTooling(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site document root does not exist", 422)
 		return
 	}
-	releaseUnlock := a.siteOperations.acquire(input.Site)
+	releaseUnlock := a.siteOperations.Acquire(input.Site)
 	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "node-tool", input.Site, input.Action, input.PackageManager, root); err != nil {
 		http.Error(w, "Node tooling action failed", 502)

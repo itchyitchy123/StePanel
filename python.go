@@ -64,7 +64,7 @@ func (a *App) pythonDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site document root does not exist", 422)
 		return
 	}
-	releaseUnlock := a.siteOperations.acquire(app.Site)
+	releaseUnlock := a.siteOperations.Acquire(app.Site)
 	defer releaseUnlock()
 	app.State, app.LastError = "pending", ""
 	if err := savePythonApp(a.Config.AppRoot, app); err != nil {
@@ -112,7 +112,7 @@ func (a *App) reconcilePythonApps(ctx context.Context) (reconciled []string, fai
 		if json.Unmarshal(data, &app) != nil || safeUser(app.Site) == "" || app.State != "pending" {
 			continue
 		}
-		releaseUnlock := a.siteOperations.acquire(app.Site)
+		releaseUnlock := a.siteOperations.Acquire(app.Site)
 		if err := a.applyPythonApp(ctx, app); err != nil {
 			app.LastError = err.Error()
 			_ = savePythonApp(a.Config.AppRoot, app)
@@ -146,7 +146,7 @@ func (a *App) pythonAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site is not assigned to this account", 403)
 		return
 	}
-	releaseUnlock := a.siteOperations.acquire(parts[0])
+	releaseUnlock := a.siteOperations.Acquire(parts[0])
 	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, parts[1], parts[0]+"-python"); err != nil {
 		http.Error(w, "Python action failed", 502)

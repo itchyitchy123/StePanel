@@ -63,7 +63,7 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site is not assigned to this account", 403)
 		return
 	}
-	releaseUnlock := a.siteOperations.acquire(input.Site)
+	releaseUnlock := a.siteOperations.Acquire(input.Site)
 	defer releaseUnlock()
 	input.SourceDatabase = strings.ToLower(strings.TrimSpace(input.SourceDatabase))
 	input.TargetDatabase = strings.ToLower(strings.TrimSpace(input.TargetDatabase))

@@ -121,7 +121,7 @@ func (a *App) phpRuntime(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid PHP profile", 422)
 		return
 	}
-	releaseUnlock := a.siteOperations.acquire(site)
+	releaseUnlock := a.siteOperations.Acquire(site)
 	defer releaseUnlock()
 	p.State, p.LastError = "pending", ""
 	if e := a.PHP.save(site, p); e != nil {
@@ -161,7 +161,7 @@ func (a *App) reconcilePHPProfiles(ctx context.Context) (reconciled []string, fa
 	}
 	a.PHP.mu.RUnlock()
 	for _, profile := range pending {
-		releaseUnlock := a.siteOperations.acquire(profile.Site)
+		releaseUnlock := a.siteOperations.Acquire(profile.Site)
 		if err := a.applyPHPProfile(ctx, profile); err != nil {
 			profile.LastError = err.Error()
 			_ = a.PHP.save(profile.Site, profile)

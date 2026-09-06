@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/itchyitchy123/StePanel/internal/operations"
 	"html/template"
 	"io"
 	"io/fs"
@@ -41,7 +42,7 @@ type App struct {
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
 	gitActivationMu          sync.Mutex
-	siteOperations           siteOperationLocks
+	siteOperations           operations.Locks
 	appLifecycleMu           sync.Mutex
 }
 
@@ -637,7 +638,7 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	queuedID, existing, err := a.Jobs.SubmitIdempotent(jobID, user, operationKey, func() (ImportResult, error) {
 		a.Metrics.RestoreStarted()
-		releaseUnlock := a.siteOperations.acquire(user)
+		releaseUnlock := a.siteOperations.Acquire(user)
 		defer releaseUnlock()
 		var restoreErr error
 		defer func() { a.Metrics.RestoreFinished(restoreErr) }()

@@ -205,7 +205,7 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := siteVHostConfigName(a.Config.WebServer, input.Site, input.Domain)
-	releaseUnlock := a.siteOperations.acquireMany(input.Site, "vhost:"+name)
+	releaseUnlock := a.siteOperations.AcquireMany(input.Site, "vhost:"+name)
 	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain); err != nil {
 		http.Error(w, "site helper rejected the route or webserver reload failed", http.StatusServiceUnavailable)
@@ -242,7 +242,7 @@ func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {
 	}
 	// Route deletion receives the generated filename rather than a separately
 	// parsed site identifier. Serialize by route identity at this boundary.
-	releaseUnlock := a.siteOperations.acquire("vhost:" + name)
+	releaseUnlock := a.siteOperations.Acquire("vhost:" + name)
 	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "delete", name); err != nil {
 		http.Error(w, "site route was not removed because validation or webserver reload failed", http.StatusServiceUnavailable)

@@ -37,7 +37,7 @@ func (a *App) runnerBuild(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site is not assigned to this account", 403)
 		return
 	}
-	releaseUnlock := a.siteOperations.acquire(input.Site)
+	releaseUnlock := a.siteOperations.Acquire(input.Site)
 	defer releaseUnlock()
 	for _, line := range input.Commands {
 		if len(line) == 0 || len(line) > 1024 || strings.ContainsAny(line, "\x00\r\n") {

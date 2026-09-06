@@ -184,7 +184,7 @@ func (a *App) reconcileAccountResourcePlan(previous, account HostingAccount) ([]
 	if len(changed) == 0 {
 		return nil, a.applyAccountResourceEnvelope(account.Username, plan)
 	}
-	unlock := a.siteOperations.acquireMany(account.Sites...)
+	unlock := a.siteOperations.AcquireMany(account.Sites...)
 	defer unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -381,7 +381,7 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid resource profile", 422)
 		return
 	}
-	releaseUnlock := a.siteOperations.acquire(site)
+	releaseUnlock := a.siteOperations.Acquire(site)
 	defer releaseUnlock()
 	a.Resources.mu.Lock()
 	a.Resources.values[site] = p
@@ -492,7 +492,7 @@ func (a *App) reconcileResourceProfiles(ctx context.Context) (reconciled []strin
 		}
 	}
 	for _, p := range pending {
-		releaseUnlock := a.siteOperations.acquire(p.Site)
+		releaseUnlock := a.siteOperations.Acquire(p.Site)
 		err := a.applyResourceProfile(ctx, p, p.FilesystemQuotaState == "clear-pending")
 		if err != nil {
 			failed[p.Site] = "apply failed"
