@@ -376,6 +376,20 @@ paths:
     post:
       summary: Create a recovery-journaled staging site from safe file copies
       responses: {'202': {description: Staging site created}}
+  /api/tasks/{site}:
+    get:
+      summary: List bounded systemd-timer scheduled tasks for a site
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Scheduled task definitions}}
+  /api/tasks/{site}/{name}:
+    put:
+      summary: Create or replace a site-identity scheduled task
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}, {name: name, in: path, required: true, schema: {type: string}}]
+      responses: {'202': {description: Systemd service and timer applied}}
+    delete:
+      summary: Remove a scheduled task service and timer
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}, {name: name, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Scheduled task removed}}
   /api/sites/logs/{site}:
     get:
       summary: Read bounded, filtered site logs from allowlisted sources
@@ -388,8 +402,8 @@ paths:
       responses: {'200': {description: Worker definitions}}
   /api/sites/git-deploy:
     post:
-      summary: Checkout and atomically activate an HTTPS Git release
-      description: The repository hostname must be present in STEPANEL_GIT_ALLOWED_HOSTS. Symlinks and non-regular files are rejected, Git metadata is removed, and repository build scripts are not executed. Use a separately sandboxed build runner for source builds.
+      summary: Checkout and atomically activate a Git release
+      description: The repository hostname must be present in STEPANEL_GIT_ALLOWED_HOSTS. Public HTTPS URLs and private git@host:path.git URLs authenticated by a per-site deploy key are accepted. Symlinks and non-regular files are rejected, Git metadata is removed, and repository build scripts are not executed. Use a separately sandboxed build runner for source builds.
       requestBody:
         required: true
         content:
@@ -399,12 +413,25 @@ paths:
               required: [site, repository]
               properties:
                 site: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}
-                repository: {type: string, format: uri, pattern: '^https://.*\\.git$'}
+                repository: {type: string, description: 'https://host/path.git or git@host:path.git'}
                 ref: {type: string, default: main}
       responses:
         '202': {description: Release activated and previous site release preserved}
         '422': {description: Invalid site, repository, or ref}
         '502': {description: Git checkout or commit identification failed}
+  /api/sites/git-key/{site}:
+    get:
+      summary: Inspect whether a site deploy key is configured and return its public key
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Deploy-key metadata; no private key material is ever returned}}
+    post:
+      summary: Generate a root-owned ED25519 deploy key and return only its public half
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'201': {description: Public deploy key generated}}
+    delete:
+      summary: Retire a site deploy key
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Deploy key retired}}
   /api/sites/git-webhook:
     post:
       summary: Deploy a signed Git webhook payload

@@ -35,6 +35,7 @@ type App struct {
 	Workers                  *WorkerStore
 	Composer                 *ComposerStore
 	PHP                      *PHPProfileStore
+	Tasks                    *TaskStore
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
 	gitActivationMu          sync.Mutex
@@ -150,6 +151,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("open PHP profile state: %v", err)
 	}
+	tasks, err := OpenTaskStore(filepath.Join(filepath.Dir(cfg.JobState), "scheduled-tasks.json"))
+	if err != nil {
+		log.Fatalf("open scheduled task state: %v", err)
+	}
 	if cfg.DBCtl != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "reconcile"))
@@ -211,7 +216,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open backup schedules: %v", err)
 	}
-	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, RecoveryError: errors.Join(recoveryFailures...)}
+	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, Tasks: tasks, RecoveryError: errors.Join(recoveryFailures...)}
 	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
 		log.Printf("initialize audit chain: %v", err)
 	}
@@ -294,6 +299,7 @@ func main() {
 		app.siteAccess(w, r)
 	})), http.MethodGet, http.MethodPatch, http.MethodPost, http.MethodDelete))
 	mux.Handle("/api/workers/", allowMethods(app.Auth.Require(http.HandlerFunc(app.workers)), http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete))
+	mux.Handle("/api/tasks/", allowMethods(app.Auth.Require(http.HandlerFunc(app.tasks)), http.MethodGet, http.MethodPut, http.MethodDelete))
 	mux.Handle("/api/python/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.pythonDeploy)), http.MethodPost))
 	mux.Handle("/api/python/", allowMethods(app.Auth.Require(http.HandlerFunc(app.pythonAction)), http.MethodPost))
 	mux.Handle("/api/composer/", allowMethods(app.Auth.Require(http.HandlerFunc(app.composer)), http.MethodGet, http.MethodHead, http.MethodPost))
@@ -308,6 +314,7 @@ func main() {
 	mux.Handle("/api/apps", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/git-deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.gitDeploy)), http.MethodPost))
+	mux.Handle("/api/sites/git-key/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteGitKey)), http.MethodGet, http.MethodHead, http.MethodPost, http.MethodDelete))
 	mux.Handle("/api/sites/git-webhook", allowMethods(http.HandlerFunc(app.gitWebhook), http.MethodPost))
 	mux.Handle("/api/sites/git-rollback", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.gitRollback)), http.MethodPost))
 	mux.Handle("/api/caddy/htaccess", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.htaccessMigration)), http.MethodPost))

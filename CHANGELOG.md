@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Per-site root-owned ED25519 Git deploy keys and restricted private SSH
+  repository cloning. The panel returns only public keys and continues to
+  reject passwords, tokens, arbitrary SSH users, and hosts outside the exact
+  allowlist.
+- Persisted per-site scheduled-task definitions backed by hardened systemd
+  services/timers, site identity execution, timeouts, environment-file
+  injection, audit events, and no writable host crontab.
+
 - Rootless Podman build-runner boundary for validated site build definitions.
   Build commands execute in a capability-dropped, read-only container with only
   source and artifact mounts; the control plane retains release activation.

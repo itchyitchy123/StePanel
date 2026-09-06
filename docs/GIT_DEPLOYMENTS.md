@@ -1,9 +1,10 @@
 # Git site deployments
 
-StePanel can deploy a pre-built public site tree from an HTTPS Git repository.
-The operation is intended for static sites and repositories whose committed
-contents are already deployable. StePanel does not execute repository scripts,
-package managers, hooks, or build commands inside the control-plane process.
+StePanel can deploy a pre-built site tree from an HTTPS public repository or a
+private SSH repository authenticated by a per-site deploy key. The operation is
+intended for repositories whose committed contents are already deployable.
+StePanel does not execute repository scripts, package managers, hooks, or build
+commands inside the control-plane process.
 
 ## Prerequisites
 
@@ -12,8 +13,25 @@ package managers, hooks, or build commands inside the control-plane process.
 - Add every permitted repository hostname to
   `STEPANEL_GIT_ALLOWED_HOSTS`. The default is
   `github.com,gitlab.com,bitbucket.org`.
-- Use a repository URL without embedded credentials, query parameters, or a
-  nonstandard port. Private-repository credentials are not accepted.
+- Use a public HTTPS URL without embedded credentials, query parameters, or a
+  nonstandard port, or a private `git@host:owner/repository.git` URL.
+
+## Private repositories (Shipped)
+
+Create a site-scoped deploy key first:
+
+```sh
+curl -X POST https://panel.example.test/api/sites/git-key/example \
+  -H 'X-CSRF-Token: <session token>'
+```
+
+Copy the returned public key into the repository provider's read-only deploy-key
+screen, then use `git@github.com:acme/site.git` in the deployment request. The
+private key is generated and retained under root ownership by
+`stepanel-gitctl`; it is never returned through the API, stored in panel state,
+or exposed to build containers. StePanel accepts only the `git` SSH user and
+the existing exact repository-host allowlist. Retire a key with `DELETE` on the
+same endpoint before replacing repository access.
 
 ## Deploy
 
@@ -57,8 +75,9 @@ tamper-evident audit events.
 - Git deployment changes site files only. It does not migrate databases,
   change runtime configuration, restart Node, or issue certificates.
 - The repository host allowlist is exact; subdomains are not implicitly trusted.
-- Use a dedicated sandboxed CI/build runner for Composer, npm, framework builds,
-  tests, artifact signing, and secret injection. Deploy only reviewed output.
+- Use the dedicated sandboxed runner for Composer, npm, framework builds,
+  tests, artifact signing, and secret injection. Its artifact output is not
+  activated automatically yet; a first-class release pipeline is Preview work.
 - Preserved releases consume site storage and currently require operator-managed
   retention. Monitor disk usage and retain backups independently.
 - Database changes require a separate migration and rollback plan.

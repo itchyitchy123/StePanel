@@ -21,8 +21,9 @@ available for presentations and product materials.
 This is an illustrative product mockup for the new developer workflows, not a
 capture from a live host. It shows the intended workspace organization for PHP
 runtime profiles, encrypted environment metadata, Composer, the Podman build
-runner, staging, logs, and workers. Each card maps to authenticated API and
-helper behavior documented in [Developer workflows](DEVELOPER_WORKFLOWS.md).
+runner, staging, logs, workers, deploy keys, and scheduled tasks. Each card
+maps to authenticated API and helper behavior documented in
+[Developer workflows](DEVELOPER_WORKFLOWS.md).
 
 ## What the preview covers
 

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $EUID -eq 0 ]] || { echo 'must run as root' >&2; exit 1; }
+action=${1:-}; site=${2:-}
+[[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
+key_root=/etc/stepanel/git-keys
+key="$key_root/$site"
+case "$action" in
+  generate)
+    (( $# == 2 )) || exit 64
+    install -d -m 0700 -o root -g root "$key_root"
+    [[ ! -e $key && ! -e $key.pub ]] || { echo 'deploy key already exists' >&2; exit 1; }
+    ssh-keygen -q -t ed25519 -N '' -f "$key" -C "stepanel-$site-deploy" >/dev/null
+    chown root:root "$key" "$key.pub"; chmod 0600 "$key"; chmod 0644 "$key.pub"
+    cat "$key.pub"
+    ;;
+  public)
+    (( $# == 2 && -f $key.pub && ! -L $key.pub )) || { echo 'deploy key is not configured' >&2; exit 1; }
+    cat "$key.pub"
+    ;;
+  delete)
+    (( $# == 2 )) || exit 64
+    rm -f -- "$key" "$key.pub"
+    ;;
+  clone)
+    (( $# == 5 )) || { echo 'usage: stepanel-gitctl clone SITE REPOSITORY REF DESTINATION' >&2; exit 64; }
+    repository=$3; ref=$4; destination=$5
+    [[ -f $key && ! -L $key && $repository =~ ^git@[A-Za-z0-9.-]+:[A-Za-z0-9._/-]+\.git$ && $ref =~ ^[A-Za-z0-9][A-Za-z0-9._/@+-]{0,127}$ && $destination == "/var/www/sites/$site/.stepanel-release-"* ]] || { echo 'invalid private clone request' >&2; exit 1; }
+    [[ ! -e $destination && -d "/var/www/sites/$site" ]] || { echo 'invalid clone destination' >&2; exit 1; }
+    git -c credential.helper= -c core.hooksPath=/dev/null -c core.sshCommand="ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -F /dev/null" \
+      clone --depth 1 --branch "$ref" --single-branch --no-tags "$repository" "$destination"
+    chown -R --no-dereference "$(stat -c '%u:%g' "/var/www/sites/$site")" "$destination"
+    ;;
+  *) echo 'usage: stepanel-gitctl generate|public|delete|clone SITE ...' >&2; exit 64 ;;
+esac

@@ -225,6 +225,7 @@ checkbox and should be backed up first.
 | `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
 | `POST` | `/api/sites/git-deploy` | Checkout a validated HTTPS Git ref into an atomic site release |
+| `GET` / `POST` / `DELETE` | `/api/sites/git-key/<site>` | Inspect, create, or retire a root-owned per-site Git deploy key; only the public key is returned |
 | `POST` | `/api/sites/git-webhook` | Deploy a signed Git payload when `STEPANEL_GIT_WEBHOOK_SECRET` is configured |
 | `GET` | `/api/sites/redis/<site>` | Inspect a site Redis/Valkey allocation and service status |
 | `PUT` | `/api/sites/redis/<site>` | Assign a site logical Redis database/namespace and limits |
@@ -236,6 +237,8 @@ checkbox and should be backed up first.
 | `GET` | `/api/workers/<site>` | List managed site workers |
 | `PUT` | `/api/workers/<site>/<name>` | Create or update a fixed-type worker service |
 | `DELETE` | `/api/workers/<site>/<name>` | Stop and remove a worker service |
+| `GET` | `/api/tasks/<site>` | List site-identity systemd timer definitions |
+| `PUT` / `DELETE` | `/api/tasks/<site>/<name>` | Create/update or remove a bounded scheduled task |
 | `GET` | `/api/sites/logs/<site>` | Read a bounded, filtered site log (`source` query required) |
 | `GET` | `/api/wordpress/status/<site>` | Check WordPress and WP-CLI availability |
 | `POST` | `/api/wordpress/<site>` | Run a supported audited WordPress operation |
@@ -272,7 +275,13 @@ checkbox and should be backed up first.
 | `STEPANEL_APP_ROOT` | Private managed Node application-manifest directory |
 | `STEPANEL_NVM_DIR` | NVM installation root used for managed Node versions |
 | `STEPANEL_MALWARE_ROOT` | Private recoverable malware-quarantine directory |
-| `STEPANEL_GIT_ALLOWED_HOSTS` | Comma-separated exact hostnames allowed for HTTPS Git deployments; defaults to GitHub, GitLab, and Bitbucket |
+| `STEPANEL_GIT_ALLOWED_HOSTS` | Comma-separated exact hostnames allowed for public HTTPS or private SSH Git deployments; defaults to GitHub, GitLab, and Bitbucket |
+| `STEPANEL_GIT_WEBHOOK_SECRET` | Shared secret for HMAC-signed Git deployment webhooks |
+| `STEPANEL_GITCTL` | Absolute root-owned deploy-key/private-clone helper path |
+| `STEPANEL_RUNNERCTL` | Absolute rootless Podman build-runner helper path |
+| `STEPANEL_ENVIRONMENT_KEY` | Stable secret enabling AES-GCM encrypted site environment storage |
+| `STEPANEL_ENVIRONMENT_STATE` | Private environment state path; defaults beside job state |
+| `STEPANEL_REDIS_STATE` | Private Redis/Valkey allocation state path; defaults beside job state |
 | `STEPANEL_AUDIT_LOG` | JSONL audit log path |
 | `STEPANEL_JOB_STATE` | Durable restore and certificate job state file |
 | `STEPANEL_SESSION_STATE` | Durable revocable administrator session state file |

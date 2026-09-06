@@ -44,7 +44,7 @@ longer-term hosting-panel roadmap.
   assigned-site limits, and authorization that scopes customer site workspace,
   backup, and job access to their assignments. Provider operations remain
   administrator-only.
-- Constrained Git releases and one-click rollback at `/api/sites/git-deploy` and `/api/sites/git-rollback`, with HTTPS-only repositories, an exact hostname allowlist, shallow ref checkout, commit identification, symlink rejection, Git-metadata removal, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
+- Constrained Git releases and one-click rollback at `/api/sites/git-deploy` and `/api/sites/git-rollback`, with public HTTPS sources or per-site deploy-key-authenticated `git@host:path.git` sources, an exact hostname allowlist, shallow ref checkout, commit identification, symlink rejection, Git-metadata removal, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
 - Developer runtime APIs for encrypted site environments, version-selected
   PHP-FPM profiles, Composer inspection/install, Node package tooling, Python
   Gunicorn services, WordPress WP-CLI maintenance/update actions, fixed-command
@@ -56,6 +56,10 @@ longer-term hosting-panel roadmap.
   non-secret environment cloning.
 - Site SSH public-key fingerprint/policy lifecycle and audited account
   suspension, unsuspension, and termination.
+- Per-site deploy-key generation/retirement where private key material remains
+  root-owned and is never returned by the panel API.
+- Scheduled site tasks backed by hardened systemd services and timers instead
+  of a writable host crontab.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
 - Independently verified site and registered-database backups.
@@ -96,10 +100,10 @@ must be implemented before offering untrusted customer access:
   reseller roles, API tokens, OIDC/WebAuthn, and approval/audit workflows.
 - Durable relational state and a distributed job/agent model for multiple
   servers, retries, cancellation, idempotency, and event delivery.
-- Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, cron, SSH, quota,
+- Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, quota,
   resource-plan, and billing lifecycle management.
-- Customer-facing file manager, private-repository deploy-key/provider
-  integrations, database-aware staging, notifications, and self-service
+- Customer-facing file manager, Git-provider App/OAuth integrations,
+  database-aware staging, notifications, and self-service
   backup/restore.
 
 These are product and architecture work items, not safe one-file patches. The

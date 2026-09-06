@@ -60,14 +60,16 @@ credentials and mutual authentication.
 
 Implement complete, transactional lifecycle operations for domains/DNS/ACME
 certificates, sites, PHP runtimes, databases/users, mailboxes/forwarding,
-FTP/SFTP, cron, SSH keys, quotas, service plans, and billing entitlements.
+FTP/SFTP, quotas, service plans, and billing entitlements. The shipped SSH
+key policy, deploy keys, and timer-backed task definitions still need full
+tenant enforcement and operator lifecycle controls.
 Deletion must be a documented cascade with retention and recovery semantics;
 removing only a vhost is not account deletion.
 
 ### Customer experience
 
-Add a customer portal, file manager, Git-provider deploy keys and provider
-integrations, database-aware staging, backup
+Add a customer portal, file manager, Git-provider App/OAuth integrations,
+database-aware staging, backup
 browsing/restore, notifications, API/webhooks, and clear operation progress.
 All customer-visible operations should be
 idempotent and explain what changed.

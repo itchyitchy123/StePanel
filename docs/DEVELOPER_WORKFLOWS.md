@@ -25,7 +25,7 @@ plugins; use the build runner for repository-controlled build behavior.
 actions as the site user. Node application start/restart remains managed by the
 application lifecycle helper.
 
-## Sandboxed builds
+## Sandboxed builds (Shipped)
 
 `POST /api/runner/build` accepts a site, OCI image, and up to 16 bounded build
 commands. The rootless Podman runner mounts source read-only and artifact output
@@ -33,12 +33,29 @@ writable, drops capabilities, uses a read-only container filesystem and a
 separate network namespace. It does not activate a release: review the artifact
 and use the existing atomic deployment workflow for activation/rollback.
 
-## Staging
+## Git deploy keys (Shipped)
+
+`POST /api/sites/git-key/{site}` creates a read-only per-site ED25519 deploy
+key and returns its public half. Add that public key to GitHub, GitLab, or
+Bitbucket, then deploy an allowlisted `git@host:owner/repository.git` source.
+The private half never enters Go state, the API response, or a build container;
+root-owned `stepanel-gitctl` uses it only for a non-interactive clone.
+
+## Scheduled tasks (Shipped)
+
+`GET`/`PUT`/`DELETE /api/tasks/{site}/{name}` manages a bounded site-identity
+systemd service and timer. Use a systemd `OnCalendar` expression (for example,
+`*-*-* *:*:00` for each minute), select PHP/Node/Python/shell, provide a
+timeout, and inspect service output through the `cron` log source. This is
+deliberately not a writable server crontab.
+
+## Staging (Preview/Beta)
 
 `POST /api/staging` creates a recovery-journaled staging site and route from
 safe regular-file copies. It may copy non-secret environment variables, but
-never production secrets. Database cloning, Basic Auth, and no-index headers
-remain explicit future integrations so staging cannot silently expose data.
+never production secrets. Database cloning, Basic Auth, no-index headers, and
+outbound-email blocking remain planned integrations so staging cannot silently
+expose data.
 
 ## Access, logs, and workers
 
@@ -49,7 +66,7 @@ counts, and download support. Worker definitions create fixed-command systemd
 units for Laravel queues/Horizon, Node, Celery, or RQ with restart and resource
 limits.
 
-## WordPress and Redis
+## WordPress and Redis (Preview/Beta)
 
 WordPress operations use a closed WP-CLI action set for updates, maintenance
 mode, and due cron execution. Redis/Valkey allocations persist logical database,
