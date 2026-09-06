@@ -25,6 +25,8 @@ isolated PHP-FPM `pm.max_children`. The helper renders a root-owned per-site sys
 attaches managed application/worker units to it. The desired profile is saved
 as `pending` before host application and becomes `applied` only after both the
 systemd slice and FPM pool validate successfully.
+Scheduled-task units are also assigned to this slice, so CPU, memory, I/O, and
+task ceilings apply consistently to cron-like work when a site profile exists.
 
 `GET /api/sites/resources/{site}` also reports observed systemd-slice state.
 Administrators can call `POST /api/reconcile/resources` to re-apply pending or

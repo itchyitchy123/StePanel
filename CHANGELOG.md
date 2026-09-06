@@ -13,6 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Lens integration guidance to its current evidence-aware observe/review flow.
 - Attached scheduled-task systemd services to their site resource slice so
   cron workloads receive the same cgroup boundary as managed applications.
+- Added explicit task-unit ordering after the site slice and exposed scheduled
+  tasks in the resource-enforcement contract.
 
 - Added AES-GCM encryption for customer TOTP secrets with dedicated
   `STEPANEL_ACCOUNT_KEY`, one-time MFA regeneration, and session revocation.

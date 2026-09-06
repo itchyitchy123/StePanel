@@ -94,7 +94,7 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		if ok {
 			observed = a.resourceObserved(r.Context(), site)
 		}
-		writeJSON(w, 200, map[string]any{"configured": ok, "profile": p, "observed": observed, "enforcement": "systemd slice for managed apps/workers; isolated PHP-FPM max_children"})
+		writeJSON(w, 200, map[string]any{"configured": ok, "profile": p, "observed": observed, "enforcement": "systemd slice for managed apps/workers/scheduled tasks; isolated PHP-FPM max_children"})
 		return
 	}
 	if r.Method != http.MethodPut || !a.Auth.CSRF(r) || !a.Auth.IsAdministrator(r) {

@@ -215,6 +215,7 @@ EOF
     cat > "/etc/systemd/system/$unit" <<EOF
 [Unit]
 Description=StePanel scheduled task $site/$name
+After=stepanel-site-$site.slice
 [Service]
 Type=oneshot
 User=$site_user
