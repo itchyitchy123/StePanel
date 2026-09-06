@@ -24,7 +24,10 @@ delete the old backup until recovery has been tested.
 up with `STEPANEL_ACCOUNT_STATE`; losing the key means affected MFA seeds must
 be regenerated. `POST /api/accounts/{username}/mfa` regenerates one seed,
 revokes that customer's sessions, and returns the replacement once for secure
-delivery. Recovery codes are not currently implemented.
+delivery. `POST /api/accounts/{username}/recovery-codes` generates ten
+one-time recovery codes, persists only bcrypt hashes, revokes existing sessions,
+and returns the codes once for secure delivery. Generating a new set invalidates
+the previous set.
 
 `STEPANEL_AUDIT_KEY` protects the HMAC-linked audit chain. Do not rotate it in
 place: existing events would no longer verify. Preserve the old key with the

@@ -271,6 +271,13 @@ paths:
         - {name: username, in: path, required: true, schema: {type: string}}
       responses:
         '200': {description: Replacement TOTP secret returned once}
+  /api/accounts/{username}/recovery-codes:
+    post:
+      summary: Generate one-time customer MFA recovery codes and revoke sessions (administrator only)
+      parameters:
+        - {name: username, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Recovery codes returned once; only bcrypt hashes are persisted}
   /api/security/scan:
     post:
       summary: Scan a managed site for suspicious PHP

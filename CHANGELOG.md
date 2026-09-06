@@ -11,6 +11,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added AES-GCM encryption for customer TOTP secrets with dedicated
   `STEPANEL_ACCOUNT_KEY`, one-time MFA regeneration, and session revocation.
 
+- Added one-time bcrypt-hashed customer MFA recovery codes with an
+  administrator-only generation endpoint and session revocation.
+
 - Clarified account deletion as customer-login removal rather than hosting
   termination, and made scheduled-task scripts root-owned under the control
   plane's task directory. Fixed validation to accept the standard Base64

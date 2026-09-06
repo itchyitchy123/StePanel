@@ -56,6 +56,9 @@ next account write. The production default is beside the session state as
 can regenerate a customer's MFA secret with `POST
 /api/accounts/{username}/mfa`; the new seed is returned once, existing sessions
 are revoked, and the seed must be delivered through a secure channel.
+Administrators can generate one-time recovery codes with `POST
+/api/accounts/{username}/recovery-codes`; only bcrypt hashes are stored and the
+codes are returned once.
 
 ## Site environment variables
 

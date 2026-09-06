@@ -61,7 +61,7 @@ func TestAccountStoreEncryptsTOTPAndSupportsRegeneration(t *testing.T) {
 		t.Fatal("encrypted TOTP secret did not decrypt")
 	}
 	account, replacement, err := reopened.ResetTOTP("customer")
-	if err != nil || replacement == testTOTPSecret || account.TOTPSecret != replacement {
+	if err != nil || replacement == testTOTPSecret || account.TOTPSecret != "" {
 		t.Fatalf("MFA regeneration = %#v, %q, %v", account, replacement, err)
 	}
 	if _, err := decodeTOTPSecret(replacement); err != nil {
@@ -80,6 +80,39 @@ func TestEncryptedAccountStateRequiresKey(t *testing.T) {
 	}
 	if _, err := OpenAccountStore(path); err == nil || !strings.Contains(err.Error(), "STEPANEL_ACCOUNT_KEY") {
 		t.Fatalf("opening encrypted account state without key = %v", err)
+	}
+}
+
+func TestRecoveryCodesAreOneTimeAndOnlyHashesPersist(t *testing.T) {
+	store, err := OpenAccountStore(filepath.Join(t.TempDir(), "accounts.json"), "account-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err != nil {
+		t.Fatal(err)
+	}
+	account, codes, err := store.GenerateRecoveryCodes("customer")
+	if err != nil || len(codes) != 10 {
+		t.Fatalf("GenerateRecoveryCodes = %d codes, %v", len(codes), err)
+	}
+	if len(account.RecoveryCodeHashes) != 0 {
+		t.Fatal("recovery-code hashes were returned to the caller")
+	}
+	if listed := store.List(); len(listed) != 1 || len(listed[0].RecoveryCodeHashes) != 0 {
+		t.Fatal("recovery-code hashes were exposed by account listing")
+	}
+	data, err := os.ReadFile(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), codes[0]) {
+		t.Fatal("plaintext recovery code was persisted")
+	}
+	if ok, err := store.ConsumeRecoveryCode("customer", codes[0]); err != nil || !ok {
+		t.Fatalf("first recovery-code use = %v, %v", ok, err)
+	}
+	if ok, err := store.ConsumeRecoveryCode("customer", codes[0]); err != nil || ok {
+		t.Fatalf("replayed recovery code = %v, %v", ok, err)
 	}
 }
 

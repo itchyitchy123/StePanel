@@ -36,14 +36,15 @@ var hostingPlans = map[string]HostingPlan{
 }
 
 type HostingAccount struct {
-	Username      string    `json:"username"`
-	PasswordHash  string    `json:"password_hash"`
-	TOTPSecret    string    `json:"totp_secret"`
-	TOTPEncrypted bool      `json:"totp_encrypted,omitempty"`
-	Plan          string    `json:"plan"`
-	Sites         []string  `json:"sites"`
-	Suspended     bool      `json:"suspended"`
-	CreatedAt     time.Time `json:"created_at"`
+	Username           string    `json:"username"`
+	PasswordHash       string    `json:"password_hash"`
+	TOTPSecret         string    `json:"totp_secret"`
+	TOTPEncrypted      bool      `json:"totp_encrypted,omitempty"`
+	RecoveryCodeHashes []string  `json:"recovery_code_hashes,omitempty"`
+	Plan               string    `json:"plan"`
+	Sites              []string  `json:"sites"`
+	Suspended          bool      `json:"suspended"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 // AccountStore holds customer identities and site assignments. Administrator
@@ -177,6 +178,7 @@ func (s *AccountStore) SetSuspended(username string, suspended bool) (HostingAcc
 	}
 	account.PasswordHash = ""
 	account.TOTPSecret = ""
+	account.RecoveryCodeHashes = nil
 	return account, nil
 }
 
@@ -204,6 +206,7 @@ func (s *AccountStore) List() []HostingAccount {
 	for _, account := range s.accounts {
 		account.PasswordHash = ""
 		account.TOTPSecret = ""
+		account.RecoveryCodeHashes = nil
 		accounts = append(accounts, account)
 	}
 	sort.Slice(accounts, func(i, j int) bool { return accounts[i].Username < accounts[j].Username })
@@ -244,6 +247,7 @@ func (s *AccountStore) Create(username, password, totpSecret, plan string, sites
 	}
 	account.PasswordHash = ""
 	account.TOTPSecret = ""
+	account.RecoveryCodeHashes = nil
 	return account, nil
 }
 
@@ -268,8 +272,68 @@ func (s *AccountStore) ResetTOTP(username string) (HostingAccount, string, error
 		return HostingAccount{}, "", err
 	}
 	response := account
-	response.PasswordHash, response.TOTPSecret, response.TOTPEncrypted = "", secret, false
+	response.PasswordHash, response.TOTPSecret, response.TOTPEncrypted, response.RecoveryCodeHashes = "", "", false, nil
 	return response, secret, nil
+}
+
+func (s *AccountStore) GenerateRecoveryCodes(username string) (HostingAccount, []string, error) {
+	codes := make([]string, 10)
+	hashes := make([]string, len(codes))
+	for i := range codes {
+		buf := make([]byte, 8)
+		if _, err := io.ReadFull(rand.Reader, buf); err != nil {
+			return HostingAccount{}, nil, err
+		}
+		codes[i] = fmt.Sprintf("%x", buf)
+		hash, err := hashPassword(codes[i])
+		if err != nil {
+			return HostingAccount{}, nil, err
+		}
+		hashes[i] = hash
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return HostingAccount{}, nil, errors.New("account not found")
+	}
+	previous := account.RecoveryCodeHashes
+	account.RecoveryCodeHashes = hashes
+	s.accounts[username] = account
+	if err := s.persistLocked(); err != nil {
+		account.RecoveryCodeHashes = previous
+		s.accounts[username] = account
+		return HostingAccount{}, nil, err
+	}
+	account.PasswordHash, account.TOTPSecret, account.RecoveryCodeHashes = "", "", nil
+	return account, codes, nil
+}
+
+func (s *AccountStore) ConsumeRecoveryCode(username, code string) (bool, error) {
+	if len(code) < 8 || len(code) > 128 {
+		return false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return false, nil
+	}
+	for i, hash := range account.RecoveryCodeHashes {
+		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(code)) != nil {
+			continue
+		}
+		previous := append([]string(nil), account.RecoveryCodeHashes...)
+		account.RecoveryCodeHashes = append(account.RecoveryCodeHashes[:i], account.RecoveryCodeHashes[i+1:]...)
+		s.accounts[username] = account
+		if err := s.persistLocked(); err != nil {
+			account.RecoveryCodeHashes = previous
+			s.accounts[username] = account
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func encryptAccountTOTP(key []byte, value string) (string, error) {
@@ -356,6 +420,32 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.mfa-reset", username, "TOTP regenerated and sessions revoked")
 		writeJSON(w, http.StatusOK, map[string]any{"account": account, "totp_secret": secret})
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasSuffix(strings.Trim(r.URL.Path, "/"), "/recovery-codes") {
+		if !a.Auth.CSRF(r) {
+			http.Error(w, "invalid request", http.StatusForbidden)
+			return
+		}
+		path := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/accounts/"), "/recovery-codes")
+		username := safeUser(strings.Trim(path, "/"))
+		if username == "" || strings.Contains(path, "/") {
+			http.Error(w, "invalid account", http.StatusBadRequest)
+			return
+		}
+		account, codes, err := a.Accounts.GenerateRecoveryCodes(username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if a.Auth.sessions != nil {
+			if err := a.Auth.sessions.revokeUser(username); err != nil {
+				http.Error(w, "recovery codes saved but session revocation could not be persisted", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.recovery-codes-generated", username, "one-time recovery codes generated and sessions revoked")
+		writeJSON(w, http.StatusOK, map[string]any{"account": account, "recovery_codes": codes})
 		return
 	}
 	if r.Method == http.MethodPatch || r.Method == http.MethodDelete {

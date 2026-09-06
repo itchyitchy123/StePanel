@@ -277,6 +277,9 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		if credentialsValid {
 			if secret, required := a.totpFor(username); required {
 				credentialsValid = a.consumeTOTPFor(username, secret, r.FormValue("totp"), time.Now())
+				if !credentialsValid && a.Accounts != nil {
+					credentialsValid, _ = a.Accounts.ConsumeRecoveryCode(username, r.FormValue("totp"))
+				}
 			}
 		}
 	}
