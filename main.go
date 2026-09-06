@@ -41,7 +41,7 @@ type App struct {
 	databaseDiagnosticsMu    sync.Mutex
 	databaseDiagnosticsCache DatabaseDiagnostics
 	gitActivationMu          sync.Mutex
-	gitSiteOperations        siteOperationLocks
+	siteOperations           siteOperationLocks
 	appLifecycleMu           sync.Mutex
 }
 

@@ -129,6 +129,8 @@ func (a *App) backupRestoreToStagingPath(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "invalid restore destination", 422)
 		return
 	}
+	releaseUnlock := a.siteOperations.acquire(input.Site)
+	defer releaseUnlock()
 	manifest, e := VerifySiteBackup(backup, a.Config.BackupSigningKey)
 	if e != nil {
 		http.Error(w, "backup verification failed", 422)

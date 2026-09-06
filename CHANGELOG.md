@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Extended per-site mutation serialization to staging creation and local/off-site
+  restore-to-staging, preventing concurrent requests from racing over site,
+  environment, database, route, or release state.
+
 - Added verified off-site backup restore-to-staging with fixed-object downloads,
   source-site authorization, optional selected-database import, and the same
   recovery-journaled cleanup guarantees as local staging restores.

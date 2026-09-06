@@ -2,9 +2,10 @@ package main
 
 import "sync"
 
-// siteOperationLocks serializes operations that share a site-level staging
-// path or release pointer while allowing unrelated sites to proceed in
-// parallel. References keep a lock alive for waiters without leaking entries.
+// siteOperationLocks serializes operations that share a site-level staging,
+// environment, database, route, or release path while allowing unrelated sites
+// to proceed in parallel. References keep a lock alive for waiters without
+// leaking entries.
 type siteOperationLocks struct {
 	mu    sync.Mutex
 	locks map[string]*siteOperationLock
