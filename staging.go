@@ -15,6 +15,7 @@ type StagingRequest struct {
 	Files       bool   `json:"files"`
 	Environment bool   `json:"environment"`
 	Database    bool   `json:"database"`
+	NoIndex     *bool  `json:"no_index,omitempty"`
 }
 type StagingResult struct {
 	Source            string    `json:"source"`
@@ -64,6 +65,14 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 	if err := siteHelper(a.Config, "prepare", input.Site); err != nil {
 		http.Error(w, "could not prepare staging site", 502)
 		return
+	}
+	noIndex := input.NoIndex == nil || *input.NoIndex
+	if noIndex {
+		marker := filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex")
+		if err := writeAtomic(marker, []byte("managed staging noindex\n"), 0600); err != nil {
+			http.Error(w, "could not apply staging indexing protection", 503)
+			return
+		}
 	}
 	txn, err := BeginSiteTransaction(a.Config.RecoveryRoot, dest, "staging.clone", input.Site)
 	if err != nil {

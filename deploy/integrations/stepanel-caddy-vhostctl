@@ -66,6 +66,7 @@ case "$action" in
     (( $# == 3 )) || { echo "usage: stepanel-caddy-vhostctl $action SITE DOMAIN" >&2; exit 64; }
     {
       printf '# Managed by StePanel. Manual changes will be replaced.\n%s {\n\troot * %s\n\tencode zstd gzip\n' "$domain" "$public_root"
+	  if [[ -f "/var/www/sites/$site/.stepanel-staging-noindex" && ! -L "/var/www/sites/$site/.stepanel-staging-noindex" ]]; then printf '\theader X-Robots-Tag "noindex, nofollow"\n'; fi
       if [[ $action == import-htaccess ]]; then
         count=0
         while IFS= read -r line; do

@@ -73,6 +73,10 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not prepare isolated staging site", 502)
 		return
 	}
+	if e = writeAtomic(filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex"), []byte("managed restore staging noindex\n"), 0600); e != nil {
+		http.Error(w, "could not apply restore indexing protection", 503)
+		return
+	}
 	txn, e := BeginSiteTransaction(a.Config.RecoveryRoot, dest, "backup.restore-to-staging", input.Site)
 	if e != nil {
 		http.Error(w, "could not journal restore", 503)

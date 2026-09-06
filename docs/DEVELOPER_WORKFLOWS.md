@@ -102,9 +102,10 @@ deliberately not a writable server crontab.
 
 `POST /api/staging` creates a recovery-journaled staging site and route from
 safe regular-file copies. It may copy non-secret environment variables, but
-never production secrets. Database cloning, Basic Auth, no-index headers, and
-outbound-email blocking remain planned integrations so staging cannot silently
-expose data.
+never production secrets. Staging applies `X-Robots-Tag: noindex, nofollow` by
+default through the managed webserver route; send `"no_index":false` only for
+an explicitly reviewed exception. Database cloning, Basic Auth, and
+outbound-email blocking remain planned integrations.
 
 `POST /api/backups/restore-to-staging` restores a fully verified backup's
 regular site files into a new isolated site and validated route. It deliberately

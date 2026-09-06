@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Default `X-Robots-Tag: noindex, nofollow` protection for new staging routes,
+  enforced by the managed Caddy and Apache vhost helpers.
+
 - Configurable validated Git rollback-release retention, preserving the newest
   rollback target while safely pruning older StePanel-owned release trees.
 
