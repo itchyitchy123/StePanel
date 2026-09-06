@@ -113,7 +113,9 @@ application lifecycle helper.
 `POST /api/runner/build` accepts a site, OCI image, and up to 16 bounded build
 commands. The rootless Podman runner mounts source read-only and artifact output
 writable, drops capabilities, uses a read-only container filesystem and a
-separate network namespace. It does not activate a release: review the artifact
+separate network namespace. CPU, memory, and PID ceilings are taken from the
+site resource profile (with conservative defaults for legacy sites). It does
+not activate a release: review the artifact
 and use the existing atomic deployment workflow for activation/rollback.
 `GET /api/deployments?site={site}` provides durable, site-scoped build and
 activation records (commit, artifact path, preserved release, stage, outcome,

@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Applied each site's CPU, memory, and PID resource profile to rootless Podman
+  build containers, with conservative limits for legacy sites, and tightened
+  runner path validation at the privileged boundary.
+
 - Added `stepanel dr-check`, a secret-safe control-plane disaster-recovery
   inventory covering state files, keys, trust material, site data, external
   dependencies, and regeneration-only assets.

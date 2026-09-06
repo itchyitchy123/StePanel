@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -167,7 +168,25 @@ func (a *App) runPipelineBuild(ctx context.Context, site, image string, commands
 	if err = os.Chmod(script.Name(), 0600); err != nil {
 		return err
 	}
-	return runHelperCommand(ctx, a.Config, a.Config.RunnerCtl, "build", site, image, root, script.Name())
+	cpuPercent, memoryMB, tasksMax := a.pipelineResourceLimits(site)
+	return runHelperCommand(ctx, a.Config, a.Config.RunnerCtl, "build", site, image, root, script.Name(), strconv.Itoa(cpuPercent), strconv.Itoa(memoryMB), strconv.Itoa(tasksMax))
+}
+
+func (a *App) pipelineResourceLimits(site string) (cpuPercent, memoryMB, tasksMax int) {
+	// Keep builds bounded even for sites created before resource profiles were
+	// introduced. A persisted site profile overrides these conservative
+	// defaults and remains the source of truth for the application envelope.
+	cpuPercent, memoryMB, tasksMax = 100, 512, 128
+	if a.Resources == nil {
+		return cpuPercent, memoryMB, tasksMax
+	}
+	a.Resources.mu.RLock()
+	profile, ok := a.Resources.values[site]
+	a.Resources.mu.RUnlock()
+	if ok && validResourceProfile(profile) {
+		return profile.CPUPercent, profile.MemoryMB, profile.TasksMax
+	}
+	return cpuPercent, memoryMB, tasksMax
 }
 func (a *App) activatePipelineRelease(site, siteRoot, publicRoot, release string) (string, error) {
 	a.gitActivationMu.Lock()

@@ -72,8 +72,9 @@ Latest stable release: `v0.6.0`
   Gunicorn services, WordPress WP-CLI maintenance/update actions, fixed-command
   workers, scoped site logs, and Redis/Valkey allocation metadata.
 - Rootless Podman build-runner integration. Builds receive an isolated container
-  with read-only source and a dedicated artifact directory; deployment activation
-  remains the existing atomic release workflow.
+  with read-only source, a dedicated artifact directory, and the site's CPU,
+  memory, and PID resource envelope; deployment activation remains the existing
+  atomic release workflow.
 - Recovery-journaled staging site creation with safe file copies, optional
   non-secret environment cloning, and verified selected-database restore into a
   newly provisioned staging database.
