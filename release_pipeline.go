@@ -1,0 +1,192 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// ReleasePipelineRequest accepts a declarative build which must write the
+// complete deployable tree to /artifact. The source checkout is read-only in
+// the runner, so generated files cannot alter it before validation.
+type ReleasePipelineRequest struct {
+	Site       string   `json:"site"`
+	Repository string   `json:"repository"`
+	Ref        string   `json:"ref"`
+	Image      string   `json:"image"`
+	Commands   []string `json:"commands"`
+	Backup     bool     `json:"backup_before_activate"`
+}
+
+func (a *App) releasePipeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", 403)
+		return
+	}
+	var input ReleasePipelineRequest
+	if err := decodeJSON(w, r, 48<<10, &input); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	input.Site = safeUser(input.Site)
+	input.Repository = strings.TrimSpace(input.Repository)
+	input.Ref = strings.TrimSpace(input.Ref)
+	input.Image = strings.TrimSpace(input.Image)
+	if input.Ref == "" {
+		input.Ref = "main"
+	}
+	if input.Site == "" || !a.canAccessSite(r, input.Site) || !gitRefPattern.MatchString(input.Ref) || !runnerImagePattern.MatchString(input.Image) || len(input.Commands) == 0 || len(input.Commands) > 16 {
+		http.Error(w, "invalid release pipeline", 422)
+		return
+	}
+	for _, line := range input.Commands {
+		if len(line) == 0 || len(line) > 1024 || strings.ContainsAny(line, "\x00\r\n") {
+			http.Error(w, "invalid build command", 422)
+			return
+		}
+	}
+	repository, err := parseGitRepository(input.Repository, a.Config.GitAllowedHosts)
+	if err != nil {
+		http.Error(w, err.Error(), 422)
+		return
+	}
+	siteRoot := filepath.Join(a.Config.WebRoot, "sites", input.Site)
+	publicRoot := filepath.Join(siteRoot, "public")
+	if err := ensureInside(a.Config.WebRoot, publicRoot); err != nil {
+		http.Error(w, err.Error(), 422)
+		return
+	}
+	if info, err := os.Stat(siteRoot); err != nil || !info.IsDir() {
+		http.Error(w, "site root does not exist", 422)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Minute)
+	defer cancel()
+	result := gitDeployResult{Site: input.Site, Repository: input.Repository, Ref: input.Ref}
+	a.recordDeployment(input.Site, "checkout", "running", "pipeline checkout started", result, "")
+	release, commit, err := a.checkoutPipelineRelease(ctx, input.Site, repository, input.Ref, siteRoot)
+	if err != nil {
+		a.recordDeployment(input.Site, "checkout", "failed", err.Error(), result, "")
+		http.Error(w, "Git checkout failed", 502)
+		return
+	}
+	result.Commit = commit
+	defer os.RemoveAll(release)
+	if input.Backup {
+		a.recordDeployment(input.Site, "backup", "running", "pre-activation backup started", result, "")
+		if _, err := CreateSiteBackup(a.Config, input.Site, true); err != nil {
+			a.recordDeployment(input.Site, "backup", "failed", err.Error(), result, "")
+			http.Error(w, "pre-activation backup failed", 502)
+			return
+		}
+		a.recordDeployment(input.Site, "backup", "completed", "verified pre-activation backup", result, "")
+	}
+	if err := a.runPipelineBuild(ctx, input.Site, input.Image, input.Commands, release); err != nil {
+		a.recordDeployment(input.Site, "build", "failed", err.Error(), result, "")
+		http.Error(w, "sandboxed build failed", 502)
+		return
+	}
+	artifact := filepath.Join(siteRoot, ".stepanel-artifact")
+	if err := validateGitRelease(artifact, a.Config.MaxEntries); err != nil {
+		a.recordDeployment(input.Site, "build", "failed", "artifact unsafe: "+err.Error(), result, artifact)
+		http.Error(w, "build artifact is unsafe", 422)
+		return
+	}
+	if err := os.RemoveAll(release); err != nil {
+		http.Error(w, "could not replace source with artifact", 500)
+		return
+	}
+	if err := os.Rename(artifact, release); err != nil {
+		http.Error(w, "could not stage build artifact", 500)
+		return
+	}
+	a.recordDeployment(input.Site, "build", "completed", "validated sandbox artifact", result, release)
+	previous, err := a.activatePipelineRelease(input.Site, siteRoot, publicRoot, release)
+	if err != nil {
+		a.recordDeployment(input.Site, "activation", "failed", err.Error(), result, "")
+		http.Error(w, "atomic activation failed", 503)
+		return
+	}
+	result.Previous = previous
+	a.recordDeployment(input.Site, "activation", "completed", "atomic built release activated", result, "")
+	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.release.pipeline", input.Site, input.Repository+"@"+commit)
+	writeJSON(w, 202, result)
+}
+
+func (a *App) checkoutPipelineRelease(ctx context.Context, site string, repository gitRepository, ref, siteRoot string) (string, string, error) {
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return "", "", err
+	}
+	release := filepath.Join(siteRoot, ".stepanel-release-"+strings.ReplaceAll(newRequestID(), "-", ""))
+	if err = os.Mkdir(release, 0700); err != nil {
+		return "", "", err
+	}
+	var output []byte
+	if repository.Private {
+		output, err = runBoundedCommand(ctx, helperCommandContext(ctx, a.Config, a.Config.GitCtl, "clone", site, repository.URL, ref, release))
+	} else {
+		cmd := exec.CommandContext(ctx, gitPath, "-c", "credential.helper=", "clone", "--depth", "1", "--branch", ref, "--single-branch", "--no-tags", repository.URL, release)
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/false", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+		output, err = runBoundedCommand(ctx, cmd)
+	}
+	if err != nil {
+		os.RemoveAll(release)
+		return "", "", err
+	}
+	commitOutput, err := runBoundedCommand(ctx, exec.CommandContext(ctx, gitPath, "-C", release, "rev-parse", "HEAD"))
+	if err != nil {
+		os.RemoveAll(release)
+		return "", "", err
+	}
+	commit := strings.TrimSpace(string(commitOutput))
+	if !gitCommitPattern.MatchString(commit) || validateGitRelease(release, a.Config.MaxEntries) != nil || os.RemoveAll(filepath.Join(release, ".git")) != nil {
+		os.RemoveAll(release)
+		return "", "", fmt.Errorf("invalid checked-out release: %s", strings.TrimSpace(string(output)))
+	}
+	return release, commit, nil
+}
+
+func (a *App) runPipelineBuild(ctx context.Context, site, image string, commands []string, root string) error {
+	script, err := os.CreateTemp(a.Config.AppRoot, "pipeline-*.sh")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(script.Name())
+	if _, err = script.WriteString("set -eu\n" + strings.Join(commands, "\n") + "\n"); err == nil {
+		err = script.Close()
+	}
+	if err != nil {
+		return err
+	}
+	if err = os.Chmod(script.Name(), 0600); err != nil {
+		return err
+	}
+	return runHelperCommand(ctx, a.Config, a.Config.RunnerCtl, "build", site, image, root, script.Name())
+}
+func (a *App) activatePipelineRelease(site, siteRoot, publicRoot, release string) (string, error) {
+	a.gitActivationMu.Lock()
+	defer a.gitActivationMu.Unlock()
+	previous := ""
+	if _, err := os.Stat(publicRoot); err == nil {
+		previous = filepath.Join(siteRoot, ".stepanel-previous-"+strings.ReplaceAll(newRequestID(), "-", ""))
+		if err := os.Rename(publicRoot, previous); err != nil {
+			return "", err
+		}
+	}
+	if err := os.Rename(release, publicRoot); err != nil {
+		if previous != "" {
+			_ = os.Rename(previous, publicRoot)
+		}
+		return "", err
+	}
+	if err := siteHelper(a.Config, "seal", site); err != nil {
+		return "", rollbackGitActivation(publicRoot, previous)
+	}
+	return previous, nil
+}

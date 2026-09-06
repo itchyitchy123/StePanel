@@ -3,11 +3,12 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo 'must run as root' >&2; exit 1; }
 (( $# == 5 && $1 == build )) || { echo 'usage: stepanel-runnerctl build SITE IMAGE ROOT SCRIPT' >&2; exit 64; }
 site=$2 image=$3 root=$4 script=$5
-[[ $site =~ ^[a-z0-9_-]{1,32}$ && $image =~ ^[a-z0-9][a-z0-9._/-]{0,180}(:[A-Za-z0-9._-]{1,80})?$ && $root == "/var/www/sites/$site/public" ]] || { echo 'invalid build request' >&2; exit 1; }
+[[ $site =~ ^[a-z0-9_-]{1,32}$ && $image =~ ^[a-z0-9][a-z0-9._/-]{0,180}(:[A-Za-z0-9._-]{1,80})?$ && ( $root == "/var/www/sites/$site/public" || $root == "/var/www/sites/$site/.stepanel-release-"* ) ]] || { echo 'invalid build request' >&2; exit 1; }
 [[ -d $root && -f $script && ! -L $script ]] || { echo 'invalid build inputs' >&2; exit 1; }
 command -v podman >/dev/null || { echo 'rootless Podman is required' >&2; exit 1; }
 hash=$(printf '%s' "$site" | sha256sum); hash=${hash%% *}; prefix=${site:0:18}; prefix=${prefix//_/-}; site_user="sp-${prefix}-${hash:0:8}"
 id "$site_user" >/dev/null 2>&1 || { echo 'site user is unavailable' >&2; exit 1; }
 artifact="/var/www/sites/$site/.stepanel-artifact"
+rm -rf -- "$artifact"
 install -d -m 0750 -o "$site_user" -g "$site_user" "$artifact"
 runuser -u "$site_user" -- podman run --rm --network slirp4netns --userns keep-id --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,noexec,nosuid,size=512m -v "$root:/src:ro,Z" -v "$artifact:/artifact:rw,Z" -v "$script:/run/stepanel/build.sh:ro,Z" -w /src "$image" /bin/sh /run/stepanel/build.sh

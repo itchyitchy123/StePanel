@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Preview release-pipeline endpoint that connects constrained Git checkout,
+  optional verified pre-activation backup, rootless artifact build, artifact
+  validation, and atomic activation with preserved file rollback.
+
 - Durable, site-scoped deployment records for sandboxed build completion and
   atomic Git activation, with commit/artifact/previous-release provenance and
   an authenticated deployment-history API.

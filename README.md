@@ -204,6 +204,7 @@ checkbox and should be backed up first.
 | `POST` | `/api/node/tooling` | Run an allowlisted Node package install or production build |
 | `POST` | `/api/runner/build` | Run a validated build definition in the rootless Podman runner |
 | `GET` | `/api/deployments` | List durable build and release activation records; optional `site` filter |
+| `POST` | `/api/deployments/run` | Preview: checkout, optionally back up, sandbox-build, validate, and atomically activate a complete artifact |
 | `GET` | `/api/composer/<site>` | Detect Composer project files and show the latest operation |
 | `POST` | `/api/composer/<site>/install` | Install Composer dependencies under the site identity |
 | `GET` / `PUT` | `/api/sites/php/<site>` | Inspect installed PHP runtimes or apply a validated per-site FPM profile |

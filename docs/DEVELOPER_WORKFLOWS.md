@@ -37,6 +37,22 @@ activation records (commit, artifact path, preserved release, stage, outcome,
 and timestamp). This is the release-object foundation; fully automated
 build-to-activation and database migration orchestration remains Preview work.
 
+## Release pipeline (Preview/Beta)
+
+`POST /api/deployments/run` connects the safe pieces in one authenticated
+operation: it performs an allowlisted Git checkout into a non-live release
+directory, optionally creates a verified files-and-managed-database backup,
+runs the supplied bounded commands in the rootless runner, verifies the build
+artifact, and atomically activates it while preserving the previous release.
+
+Build commands must write the complete deployable release tree to `/artifact`.
+The checked-out source is mounted read-only, so a build cannot modify it in
+place. A failed checkout, backup, build, or artifact validation leaves the live
+release untouched. Application rollback restores the previous files only; it
+does **not** reverse database migrations. Declarative database migration and
+post-activation health-check stages remain planned before this endpoint is
+appropriate for unattended production deployment.
+
 ## Git deploy keys (Shipped)
 
 `POST /api/sites/git-key/{site}` creates a read-only per-site ED25519 deploy

@@ -377,6 +377,25 @@ paths:
       summary: List durable sandbox-build and atomic-release activation records
       parameters: [{name: site, in: query, required: false, schema: {type: string}}]
       responses: {'200': {description: Site-scoped deployment records}}
+  /api/deployments/run:
+    post:
+      summary: Run a preview sandbox-build-to-atomic-activation release pipeline
+      description: Checks out source outside the live document root, optionally creates a verified backup, requires the runner to write a complete /artifact tree, validates it, and atomically activates it. Database migrations and post-activation health checks are intentionally not yet automated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site, repository, image, commands]
+              properties:
+                site: {type: string}
+                repository: {type: string}
+                ref: {type: string, default: main}
+                image: {type: string}
+                commands: {type: array, items: {type: string}, maxItems: 16}
+                backup_before_activate: {type: boolean, default: false}
+      responses: {'202': {description: Built release atomically activated}}
   /api/staging:
     post:
       summary: Create a recovery-journaled staging site from safe file copies
