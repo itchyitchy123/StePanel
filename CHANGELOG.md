@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- Repositioned the project as a Caddy-first Linux hosting control plane and
+  replaced interview-oriented engineering material with architecture decision
+  records.
+- Added a reproducible interrupted-restore case study and clarified that the
+  next milestone is a stability/architecture release.
+
 ### Added
 
 - Extended per-site mutation serialization to environment, resource-profile,
@@ -28,6 +36,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Prevented multiple customer accounts from claiming the same site and made
   account provisioning reject assignments without an existing site root.
+
+- Made account-state loading fail closed when legacy or manually modified
+  state assigns one site to multiple customer identities.
 
 - Extended per-site mutation serialization to staging creation and local/off-site
   restore-to-staging, preventing concurrent requests from racing over site,

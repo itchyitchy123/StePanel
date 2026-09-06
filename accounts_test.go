@@ -40,6 +40,20 @@ func TestAccountStorePersistsOnlyValidatedAssignments(t *testing.T) {
 	}
 }
 
+func TestAccountStoreRejectsDuplicateSiteOwnershipOnLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	data := `[
+  {"username":"one","password_hash":"$2a$10$7EqJtq98hPqEX7fNZaFWoO5Z8k4Q4kXQ9rXv4bQfQv7xFfZpZq7uK","totp_secret":"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ","plan":"starter","sites":["shared"],"created_at":"2026-01-01T00:00:00Z"},
+  {"username":"two","password_hash":"$2a$10$7EqJtq98hPqEX7fNZaFWoO5Z8k4Q4kXQ9rXv4bQfQv7xFfZpZq7uK","totp_secret":"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ","plan":"starter","sites":["shared"],"created_at":"2026-01-01T00:00:00Z"}
+]`
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenAccountStore(path); err == nil || !strings.Contains(err.Error(), "assigned to both") {
+		t.Fatalf("duplicate ownership load error = %v", err)
+	}
+}
+
 func TestAccountStoreEncryptsTOTPAndSupportsRegeneration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "accounts.json")
 	store, err := OpenAccountStore(path, "account-encryption-key")

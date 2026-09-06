@@ -6,7 +6,7 @@
 
 ![CI](https://github.com/itchyitchy123/StePanel/actions/workflows/ci.yml/badge.svg) ![Release](https://img.shields.io/github/v/release/itchyitchy123/StePanel?display_name=tag) ![License](https://img.shields.io/github/license/itchyitchy123/StePanel)
 
-> A modern, safety-first control plane for LAMP hosting and cPanel migrations.
+> A modern, safety-first Linux hosting control plane for cPanel migrations.
 
 StePanel is an open-source server management panel written in Go. It installs Caddy by default, with Apache and OpenLiteSpeed available explicitly, plus PHP and a selectable MySQL, MariaDB, or PostgreSQL version. It provides a focused operations dashboard and imports cPanel `cpmove` backups through an asynchronous, validated workflow.
 
@@ -14,7 +14,7 @@ It is designed for people who want a small, understandable hosting control plane
 
 ## Why StePanel?
 
-- **Migration-focused:** move cPanel accounts into a controlled LAMP environment.
+- **Migration-focused:** move cPanel accounts into a controlled Linux hosting environment.
 - **Safety-first:** validate archives, reject unsafe entries, stage uploads privately, and expose restore status as a job.
 - **Small footprint:** a Go control plane with a limited dependency surface.
 - **Operator-friendly:** clear health endpoints, tamper-evident audit events, systemd deployment, and readable documentation.
@@ -183,7 +183,7 @@ checkbox and should be backed up first.
 - [cpmove migration guide](docs/CPMOVE_IMPORTS.md)
 - [WordPress WPress migration guide](docs/WPRESS_IMPORTS.md)
 - [Architecture and safety model](docs/ARCHITECTURE.md)
-- [Engineering decisions and interview walkthrough](docs/ENGINEERING_DECISIONS.md)
+- [Architecture decision records](docs/ENGINEERING_DECISIONS.md)
 - [Feature catalog](docs/FEATURES.md)
 - [Shared-hosting beta](docs/SHARED_HOSTING.md)
 - [Threat model](docs/THREAT_MODEL.md)
@@ -196,9 +196,9 @@ checkbox and should be backed up first.
 - [Operations runbook](docs/OPERATIONS.md)
 - [Product roadmap](docs/ROADMAP.md)
 - [Launch kit and repository metadata](docs/LAUNCH_KIT.md)
-- [Portfolio direction](docs/PORTFOLIO.md)
 - [Service objectives](docs/SLO.md)
 - [Incident lab and recovery scenarios](docs/INCIDENT_LAB.md)
+- [Operational case study and interrupted-restore drill](docs/CASE_STUDY.md)
 - [Demo walkthrough](docs/DEMO.md)
 - [Observability bundle](observability/README.md)
 - [Deployment examples](deploy/)
@@ -211,100 +211,11 @@ checkbox and should be backed up first.
 - [Changelog](CHANGELOG.md)
 - [Release artifacts](https://github.com/itchyitchy123/StePanel/releases)
 
-## API surface
+## API reference
 
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/health` | Version and service health |
-| `GET` | `/livez` | Process-only liveness probe |
-| `GET` | `/readyz` | Job persistence and managed-filesystem readiness probe |
-| `GET` | `/api/services` | Authenticated live webserver, PHP, database, Fail2Ban, and ModSecurity inventory |
-| `GET` | `/api/database` | Selected database engine, service/client health, and browser-admin readiness |
-| `GET` | `/api/capabilities` | Runtime feature availability, including database restore compatibility |
-| `GET` / `POST` | `/api/accounts` | Administrator-only shared-hosting account inventory and provisioning |
-| `PATCH` / `DELETE` | `/api/accounts/<username>` | Suspend/unsuspend or remove a customer login; workloads are retained |
-| `POST` | `/api/accounts/<username>/mfa` | Regenerate encrypted customer TOTP and revoke that customer's sessions |
-| `POST` | `/api/accounts/<username>/recovery-codes` | Generate one-time hashed recovery codes and revoke that customer's sessions |
-| `POST` | `/api/accounts/<username>/recover` | Administrator credential recovery: temporary password, MFA, recovery codes, and session revocation |
-| `POST` | `/api/account/password` | Customer completes a required password change |
-| `POST` | `/api/account/mfa` | Customer completes required MFA enrollment |
-| `GET` | `/api/cloud` | Authenticated Linode/AWS/OpenStack inventory for servers, DNS, load balancers, and snapshots |
-| `POST` | `/api/cloud/action` | Queue a cloud server start, stop, reboot, or snapshot action |
-| `GET` | `/api/cloud/dns` | List Linode DNS records |
-| `GET` | `/api/dns/capabilities` | Report configured DNS adapter and supported provider contract |
-| `POST` | `/api/cloud/dns` | Queue a validated Linode DNS create or update |
-| `DELETE` | `/api/cloud/dns` | Queue a Linode DNS record deletion |
-| `POST` | `/api/cloud/loadbalancer` | Queue a Linode load-balancer backend add/remove |
-| `GET` | `/api/cloud/snapshots` | List Linode snapshots |
-| `DELETE` | `/api/cloud/snapshots` | Queue Linode snapshot deletion |
-| `GET` | `/api/ssh` | Read-only SSH health inventory for configured aliases |
-| `POST` | `/api/ssh/action` | Queue an allowlisted SSH service restart or reboot |
-| `GET` | `/api/ftp` | Authenticated vsftpd status, chroot posture, and passive-port configuration |
-| `GET` | `/api/security/audit` | Authenticated configuration and security posture checks |
-| `GET` | `/api/audit/events` | Verified, bounded, filtered audit/deployment history |
-| `GET` | `/api/node/versions` | List installed NVM Node versions |
-| `POST` | `/api/node/select` | Select an installed Node version for a managed site |
-| `POST` | `/api/node/tooling` | Run an allowlisted Node package install or production build |
-| `POST` | `/api/runner/build` | Run a validated build definition in the rootless Podman runner |
-| `GET` | `/api/deployments` | List durable build and release activation records; optional `site` filter |
-| `POST` | `/api/deployments/run` | Preview: checkout, optionally back up, sandbox-build, validate, and atomically activate a complete artifact |
-| `POST` | `/api/backups/restore-files` | Queue an administrator-only verified files-only restore |
-| `POST` | `/api/backups/restore-database` | Queue an administrator-only verified managed-database restore |
-| `POST` | `/api/backups/restore-offsite-files` | Queue a verified files-only restore from the configured rclone target |
-| `POST` | `/api/backups/restore-offsite-database` | Queue a verified managed-database restore from the configured rclone target |
-| `POST` | `/api/backups/restore-offsite-to-staging` | Restore a verified off-site backup into a new staging site, optionally importing one selected database dump |
-| `POST` | `/api/reconcile/resources` | Re-apply pending or inactive per-site resource profiles |
-| `POST` | `/api/reconcile/tasks` | Re-apply pending or remove deleted scheduled-task definitions |
-| `GET` | `/api/sites/usage/<site>` | Bounded regular-file, file-count, and directory-count usage for a site |
-| `GET` | `/api/security/center` | Administrator-only host posture, service, disk/inode, and backup summary |
-| `GET` | `/api/composer/<site>` | Detect Composer project files and show the latest operation |
-| `POST` | `/api/composer/<site>/install` | Install Composer dependencies under the site identity |
-| `GET` / `PUT` | `/api/sites/php/<site>` | Inspect installed PHP runtimes or apply a validated per-site FPM profile |
-| `POST` | `/api/staging` | Transactionally create a staging site from files, non-secret environment values, and optionally a managed logical database clone |
-| `POST` | `/api/proxy/deploy` | Generate and reload a validated reverse proxy for the selected webserver |
-| `GET` | `/api/proxy` | List managed reverse proxies |
-| `POST` | `/api/proxy/test` | Test a local/private application backend |
-| `DELETE` | `/api/proxy/<config>` | Remove a managed reverse proxy and reload the selected webserver |
-| `POST` | `/api/caddy/htaccess` | Preview or apply a fail-closed `.htaccess` conversion for a managed Caddy PHP site |
-| `GET` | `/api/sites` | List managed PHP site vhosts |
-| `GET` | `/api/sites/overview` | List site-centric developer workspaces and their managed resources |
-| `GET` | `/api/sites/overview/<site>` | Inspect one site workspace without exposing credentials or environment values |
-| `GET` | `/api/sites/environment/<site>` | List site environment metadata; secret values are masked |
-| `PUT` | `/api/sites/environment/<site>` | Replace site environment variables (requires encrypted environment storage) |
-| `DELETE` | `/api/sites/environment/<site>` | Remove all site environment variables |
-| `POST` | `/api/sites/deploy` | Validate and route a domain to its isolated PHP-FPM pool |
-| `DELETE` | `/api/sites/<config>` | Remove a managed PHP site vhost |
-| `GET` | `/api/backups` | List private verified backup artifacts (`site` filter; `limit` 1–500, default 100) |
-| `POST` | `/api/backups` | Queue a site backup with optional managed database dumps |
-| `POST` | `/api/backups/restore-to-staging` | Restore verified site files, with an optional selected database dump into a new staging database |
-| `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
-| `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
-| `POST` | `/api/sites/git-deploy` | Checkout a validated HTTPS Git ref into an atomic site release |
-| `GET` / `POST` / `DELETE` | `/api/sites/git-key/<site>` | Inspect, create, or retire a root-owned per-site Git deploy key; only the public key is returned |
-| `POST` | `/api/sites/git-webhook` | Deploy a signed Git payload when `STEPANEL_GIT_WEBHOOK_SECRET` is configured |
-| `GET` | `/api/sites/redis/<site>` | Inspect a site Redis/Valkey allocation and service status |
-| `PUT` | `/api/sites/redis/<site>` | Assign a site logical Redis database/namespace and limits |
-| `DELETE` | `/api/sites/redis/<site>` | Remove a site Redis allocation |
-| `GET` | `/api/sites/access/<site>` | Inspect SFTP/shell policy and SSH key fingerprints |
-| `PATCH` | `/api/sites/access/<site>` | Enable or disable SFTP and shell access |
-| `POST` | `/api/sites/access/<site>` | Add a validated SSH public key |
-| `DELETE` | `/api/sites/access/<site>/<label>` | Revoke an SSH public key |
-| `GET` | `/api/workers/<site>` | List managed site workers |
-| `PUT` | `/api/workers/<site>/<name>` | Create or update a fixed-type worker service |
-| `DELETE` | `/api/workers/<site>/<name>` | Stop and remove a worker service |
-| `GET` | `/api/tasks/<site>` | List site-identity systemd timer definitions |
-| `PUT` / `DELETE` | `/api/tasks/<site>/<name>` | Create/update or remove a bounded scheduled task |
-| `GET` | `/api/sites/logs/<site>` | Read a bounded, filtered site log (`source` query required) |
-| `GET` | `/api/wordpress/status/<site>` | Check WordPress and WP-CLI availability |
-| `POST` | `/api/wordpress/<site>` | Run a supported audited WordPress operation |
-| `POST` | `/api/sites/git-rollback` | Atomically restore the latest preserved Git site release |
-| `GET` | `/api/databases/<name>` | Inspect one managed database without exposing credentials |
-| `POST` | `/api/security/scan` | Scan a managed site for suspicious PHP and optionally quarantine findings |
-| `POST` | `/api/cpmove/inspect` | Validate and inspect a backup |
-| `POST` | `/api/cpmove/import` | Start an authorized restore job |
-| `POST` | `/api/backups/verify` | Verify a published backup and its optional signed manifest without restoring |
-| `GET` | `/api/jobs/<id>` | Poll restore status |
-| `GET` | `/metrics` | Prometheus-compatible process metric |
+The landing page keeps the operator workflow concise. See the versioned
+[OpenAPI contract](docs/openapi.yaml) for the complete endpoint, request,
+response, and authorization reference.
 
 ## Configuration
 

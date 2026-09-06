@@ -85,6 +85,7 @@ func OpenAccountStore(path string, accountKey ...string) (*AccountStore, error) 
 	if err := json.Unmarshal(data, &accounts); err != nil {
 		return nil, fmt.Errorf("decode account state: %w", err)
 	}
+	ownedSites := make(map[string]string)
 	for _, account := range accounts {
 		if account.TOTPEncrypted {
 			if len(store.key) == 0 {
@@ -99,6 +100,12 @@ func OpenAccountStore(path string, accountKey ...string) (*AccountStore, error) 
 		}
 		if err := validateHostingAccount(account, false); err != nil {
 			return nil, fmt.Errorf("invalid account state: %w", err)
+		}
+		for _, site := range account.Sites {
+			if existingUsername, exists := ownedSites[site]; exists {
+				return nil, fmt.Errorf("invalid account state: site %q is assigned to both %q and %q", site, existingUsername, account.Username)
+			}
+			ownedSites[site] = account.Username
 		}
 		if _, exists := store.accounts[account.Username]; exists {
 			return nil, fmt.Errorf("duplicate account %q", account.Username)

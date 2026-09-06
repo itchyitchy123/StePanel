@@ -4,7 +4,7 @@ Thanks for helping improve StePanel. The project handles server state and backup
 
 ## Development setup
 
-Requirements: Go 1.22+, Git, and a Unix-like shell.
+Requirements: Go 1.26+, Git, and a Unix-like shell.
 
 ```sh
 git clone git@github.com:itchyitchy123/StePanel.git
@@ -22,6 +22,10 @@ The local server uses `data/imports` and `data/www` by default, so development d
 - Run `make check` and `bash -n install.sh` before opening a pull request.
 - Update the README, relevant guide, and `CHANGELOG.md` when behavior changes.
 - Keep commits focused and avoid bundling unrelated formatting changes.
+- Use your attributable developer identity for commits; do not create project
+  history as `root`.
+- Open a pull request for substantial changes, even when you are the sole
+  maintainer, so design and review history remains visible.
 
 ## Design principles
 
@@ -29,3 +33,4 @@ The local server uses `data/imports` and `data/www` by default, so development d
 2. Make destructive actions explicit and auditable.
 3. Keep the dependency surface small.
 4. Prefer recoverable staging over direct writes to live sites.
+5. Record durable architectural choices as numbered ADRs in `docs/adr/`.

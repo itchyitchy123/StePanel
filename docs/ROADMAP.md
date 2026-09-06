@@ -34,7 +34,11 @@
 - Import progress, cancellation, and retry
 - Docker and distribution integration tests
 
-## 0.7 — Internal package boundaries
+## 0.7 — Stability and internal package boundaries
+
+The next milestone is an architecture/stability release, not a feature-count
+release. It should be supported by failure-injection, concurrency, restore,
+and installation evidence before the version is tagged.
 
 - Extract authentication and durable job seams into `internal` packages while
   preserving the current HTTP/API behavior.
