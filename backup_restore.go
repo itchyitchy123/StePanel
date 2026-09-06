@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,9 +13,13 @@ import (
 )
 
 type RestoreToStagingRequest struct {
-	Backup string `json:"backup"`
-	Site   string `json:"site"`
-	Domain string `json:"domain"`
+	Backup         string `json:"backup"`
+	Site           string `json:"site"`
+	Domain         string `json:"domain"`
+	Database       string `json:"database,omitempty"`
+	TargetDatabase string `json:"target_database,omitempty"`
+	TargetUser     string `json:"target_user,omitempty"`
+	TargetPassword string `json:"target_password,omitempty"`
 }
 
 type BackupRestoreResult struct {
@@ -97,6 +102,16 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "backup verification failed", 422)
 		return
 	}
+	hasDatabase := input.Database != "" || input.TargetDatabase != "" || input.TargetUser != "" || input.TargetPassword != ""
+	if hasDatabase {
+		input.Database = strings.ToLower(strings.TrimSpace(input.Database))
+		input.TargetDatabase = strings.ToLower(strings.TrimSpace(input.TargetDatabase))
+		input.TargetUser = strings.ToLower(strings.TrimSpace(input.TargetUser))
+		if a.Config.DBCtl == "" || !validManagedDatabaseIdentifier(input.Database, databaseNameLimit(a.Config)) || !backupContainsDatabase(manifest, input.Database) || !validManagedDatabaseIdentifier(input.TargetDatabase, databaseNameLimit(a.Config)) || !validManagedDatabaseIdentifier(input.TargetUser, 32) || input.TargetUser[0] < 'a' || input.TargetUser[0] > 'z' || !validDatabasePassword(input.TargetPassword) {
+			http.Error(w, "database, target_database, target_user, target_password, and a verified database dump are required", 422)
+			return
+		}
+	}
 	dest := filepath.Join(a.Config.WebRoot, "sites", input.Site, "public")
 	if e = ensureInside(a.Config.WebRoot, dest); e != nil {
 		http.Error(w, "invalid destination", 422)
@@ -139,9 +154,15 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok := false
+	createdDatabase := false
 	defer func() {
 		if !ok {
 			_ = txn.Rollback()
+			if createdDatabase {
+				if _, cleanupErr := runDatabaseHelper(a.Config, time.Minute, "", "drop-managed", input.TargetDatabase, input.TargetUser); cleanupErr != nil {
+					log.Printf("staging database cleanup failed for %s: %v", input.TargetDatabase, cleanupErr)
+				}
+			}
 		}
 	}()
 	if e = copyTree(source, dest); e != nil {
@@ -151,6 +172,15 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 	if e = siteHelper(a.Config, "seal", input.Site); e != nil {
 		http.Error(w, "could not seal restored site", 502)
 		return
+	}
+	if hasDatabase {
+		var databaseCreated bool
+		databaseCreated, e = restoreDatabaseIntoStaging(a.Config, stage, input)
+		createdDatabase = databaseCreated
+		if e != nil {
+			http.Error(w, "could not restore staging database: "+e.Error(), 502)
+			return
+		}
 	}
 	if e = runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain); e != nil {
 		http.Error(w, "could not activate restored staging route", 502)
@@ -162,7 +192,39 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 	}
 	ok = true
 	_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-to-staging", input.Site, input.Backup)
-	writeJSON(w, 202, map[string]any{"site": input.Site, "domain": input.Domain, "backup": input.Backup, "source_site": manifest.Site, "files_restored": true, "databases_restored": false, "restore_mode": "staging", "consistency": manifest.Consistency, "created_at": time.Now().UTC()})
+	writeJSON(w, 202, map[string]any{"site": input.Site, "domain": input.Domain, "backup": input.Backup, "source_site": manifest.Site, "files_restored": true, "databases_restored": hasDatabase, "database": input.TargetDatabase, "restore_mode": "staging", "consistency": manifest.Consistency, "created_at": time.Now().UTC()})
+}
+
+func restoreDatabaseIntoStaging(cfg Config, stage string, input RestoreToStagingRequest) (bool, error) {
+	dump := filepath.Join(stage, "databases", input.Database+".sql")
+	if err := ensureInside(stage, dump); err != nil {
+		return false, err
+	}
+	info, err := os.Stat(dump)
+	if err != nil || !info.Mode().IsRegular() {
+		return false, errors.New("selected database dump is unavailable")
+	}
+	encoding := "utf8mb4"
+	if cfg.DBEngine == "postgresql" {
+		encoding = "UTF8"
+	}
+	if _, err := runDatabaseHelper(cfg, time.Minute, input.TargetPassword, "provision", input.TargetDatabase, input.TargetUser, input.Site, encoding); err != nil {
+		return false, fmt.Errorf("provision staging database: %w", err)
+	}
+	file, err := os.Open(dump)
+	if err != nil {
+		return true, err
+	}
+	defer file.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	cmd := helperCommandContext(ctx, cfg, cfg.DBCtl, "restore-dump", input.TargetDatabase, input.Site)
+	cmd.Stdin = file
+	output, err := runBoundedCommand(ctx, cmd)
+	if err != nil {
+		return true, fmt.Errorf("import staging database: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return true, nil
 }
 
 // backupRestoreFiles replaces only the managed site files. It deliberately

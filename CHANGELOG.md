@@ -79,6 +79,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   application and retry pending services during startup reconciliation.
 - Environment deletion now compensates a failed state write by restoring the
   previous host environment, preventing host/state divergence.
+- Restore-to-staging can now provision a new managed destination database and
+  import one selected verified backup dump, refusing reuse and cleaning up on
+  failure.
 - Plan-assigned sites now share an aggregate root-owned account cgroup slice in
   addition to their per-site slices, preventing site-count multiplication from
   bypassing the plan's application resource envelope.

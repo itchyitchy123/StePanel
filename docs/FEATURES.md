@@ -74,8 +74,9 @@ Latest stable release: `v0.6.0`
 - Rootless Podman build-runner integration. Builds receive an isolated container
   with read-only source and a dedicated artifact directory; deployment activation
   remains the existing atomic release workflow.
-- Recovery-journaled staging site creation with safe file copies and optional
-  non-secret environment cloning.
+- Recovery-journaled staging site creation with safe file copies, optional
+  non-secret environment cloning, and verified selected-database restore into a
+  newly provisioned staging database.
 - Site SSH public-key fingerprint/policy lifecycle and audited account
   suspension, unsuspension, and login-record removal. Suspension immediately
   revokes panel sessions; neither operation is a hosting-workload suspension

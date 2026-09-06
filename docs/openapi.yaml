@@ -423,7 +423,7 @@ paths:
   /api/backups/restore-to-staging:
     post:
       summary: Restore verified backup files into a new isolated staging site
-      description: Refuses existing destinations and deliberately does not restore database dumps.
+      description: Refuses existing destinations and can optionally provision a new explicitly named managed database and import one selected verified dump. Existing destination databases are refused and a failed import is cleaned up.
       responses: {'202': {description: Files restored and staging route activated}}
   /api/backups/verify:
     post:
