@@ -17,8 +17,9 @@ This is a deliberate first boundary, not a claim of cPanel/Plesk parity.
 - `starter`, `professional`, and `agency` cap assignments at 1, 5, and 25
   sites respectively. These are enforced assignment limits, not resource plans.
 - Administrators can apply preview resource profiles to managed application,
-  worker, and scheduled-task processes, but plans do not yet enforce disk,
-  inode, bandwidth, database, or Redis entitlements.
+  worker, scheduled-task, and optionally filesystem user-quota boundaries, but
+  plans do not yet enforce disk, inode, bandwidth, database, or Redis
+  entitlements.
 - Customer sessions can view only assigned site workspaces and their matching
   backup and job records. They can create a verified backup or add a domain
   route only for an assigned site.

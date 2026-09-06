@@ -42,9 +42,9 @@ inactive desired profiles after a helper failure or host restart; each repair
 is audited.
 
 `GET /api/sites/usage/{site}` reports bounded regular-file bytes, files, and
-directories without following symlinks. It intentionally reports measured
-usage—not an enforced disk/inode quota—until a filesystem quota provider is
-configured.
+directories without following symlinks. It reports measured usage; configured
+resource profiles may additionally enforce disk/inode ceilings through the
+filesystem user-quota provider described above.
 
 Administrators can queue a files-only restore with `POST
 /api/backups/restore-files` using `backup`, `site`, and the explicit
@@ -78,9 +78,10 @@ read-only host posture view: existing authentication/privileged-helper checks,
 service states, free disk/inodes, and backup schedule failures. It deliberately
 does not mutate firewall, package, SSH, or Fail2Ban state.
 
-This does **not** yet impose disk/inode/project quotas, network/bandwidth or
-block-I/O limits, database limits, or Redis ACL/memory enforcement. Those need
-host/provider-specific controls before they can be presented as tenant limits.
+This does **not** yet impose plan-level disk/inode/project entitlements,
+network/bandwidth limits, database limits, or Redis ACL/memory enforcement.
+Those still need host/provider-specific controls before they can be presented
+as shared-hosting tenant limits.
 FPM Lens remains review-first: use its evidence-backed target/max recommendation
 as an administrator input; StePanel does not auto-apply a Lens plan.
 
