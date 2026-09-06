@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -36,6 +37,8 @@ func (a *App) runnerBuild(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site is not assigned to this account", 403)
 		return
 	}
+	releaseUnlock := a.gitSiteOperations.acquire(input.Site)
+	defer releaseUnlock()
 	for _, line := range input.Commands {
 		if len(line) == 0 || len(line) > 1024 || strings.ContainsAny(line, "\x00\r\n") {
 			http.Error(w, "invalid build command", 422)
@@ -65,7 +68,8 @@ func (a *App) runnerBuild(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "secure runner definition", 500)
 		return
 	}
-	if err = runHelperCommand(r.Context(), a.Config, a.Config.RunnerCtl, "build", input.Site, input.Image, root, scriptPath); err != nil {
+	cpuPercent, memoryMB, tasksMax := a.pipelineResourceLimits(input.Site)
+	if err = runHelperCommand(r.Context(), a.Config, a.Config.RunnerCtl, "build", input.Site, input.Image, root, scriptPath, strconv.Itoa(cpuPercent), strconv.Itoa(memoryMB), strconv.Itoa(tasksMax)); err != nil {
 		http.Error(w, "sandboxed build failed", 502)
 		return
 	}
