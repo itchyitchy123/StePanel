@@ -512,6 +512,30 @@ paths:
       summary: Read bounded, filtered site logs from allowlisted sources
       parameters: [{name: site, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Log lines or downloadable text}}
+  /api/sites/access/{site}:
+    get:
+      summary: Inspect site SSH/SFTP policy and public-key fingerprints
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Access policy and application state; private keys are never returned}}
+    patch:
+      summary: Apply site SSH/SFTP shell policy
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Access policy applied}
+        '502': {description: Desired policy persisted and is pending helper reconciliation}
+    post:
+      summary: Add a validated SSH public key and apply the site access policy
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses:
+        '201': {description: SSH key added and access policy applied}
+        '502': {description: Desired key persisted and is pending helper reconciliation}
+  /api/sites/access/{site}/{label}:
+    delete:
+      summary: Revoke a site SSH public key
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}, {name: label, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: SSH key revoked}
+        '502': {description: Desired revocation persisted and is pending helper reconciliation}
   /api/workers/{site}:
     get:
       summary: List managed background workers for a site
