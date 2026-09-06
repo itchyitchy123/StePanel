@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -172,7 +173,18 @@ func (a *App) applyTask(ctx context.Context, task ScheduledTask) error {
 		return runHelperCommand(ctx, a.Config, a.Config.AppCtl, "task-delete", task.Site, task.Name)
 	}
 	encodedCommand := base64.RawStdEncoding.EncodeToString([]byte(task.Command))
-	return runHelperCommand(ctx, a.Config, a.Config.AppCtl, "task-apply", task.Site, task.Name, task.Runtime, task.OnCalendar, stringBool(task.Enabled), itoa(task.TimeoutSec), encodedCommand)
+	// Keep task limits aligned with the site's desired resource profile. The
+	// helper retains a conservative fallback for sites that have no profile.
+	args := []string{"task-apply", task.Site, task.Name, task.Runtime, task.OnCalendar, stringBool(task.Enabled), itoa(task.TimeoutSec), encodedCommand}
+	if a.Resources != nil {
+		a.Resources.mu.RLock()
+		profile, configured := a.Resources.values[task.Site]
+		a.Resources.mu.RUnlock()
+		if configured {
+			args = append(args, strconv.Itoa(profile.CPUPercent), strconv.Itoa(profile.MemoryMB), strconv.Itoa(profile.TasksMax))
+		}
+	}
+	return runHelperCommand(ctx, a.Config, a.Config.AppCtl, args...)
 }
 
 func (a *App) recordTaskError(key string, applyErr error) {

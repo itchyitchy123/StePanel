@@ -27,10 +27,10 @@ as `pending` before host application and becomes `applied` only after both the
 systemd slice and FPM pool validate successfully.
 Scheduled-task units are also assigned to this slice, so CPU, memory, I/O, and
 task ceilings apply consistently to cron-like work when a site profile exists.
-Each task also has a conservative local fallback ceiling of 100% CPU, 1 GiB
-memory, and 256 processes. A configured site profile adds the site-wide cgroup
-boundary; operators should size the site profile with this task fallback in
-mind until task-specific limit propagation is available.
+If no site profile is configured, each task uses a conservative local fallback
+ceiling of 100% CPU, 1 GiB memory, and 256 processes. When a site profile is
+configured, those CPU, memory, and process values are propagated into each task
+unit, while the site slice remains the parent boundary for all managed work.
 
 `GET /api/sites/resources/{site}` also reports observed systemd-slice state.
 Administrators can call `POST /api/reconcile/resources` to re-apply pending or
