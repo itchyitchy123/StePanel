@@ -31,7 +31,10 @@ private key is generated and retained under root ownership by
 `stepanel-gitctl`; it is never returned through the API, stored in panel state,
 or exposed to build containers. StePanel accepts only the `git` SSH user and
 the existing exact repository-host allowlist. Retire a key with `DELETE` on the
-same endpoint before replacing repository access.
+same endpoint before replacing repository access. Before the first private
+clone, install verified provider SSH host keys in root-owned
+`/etc/stepanel/git-known-hosts`; the helper uses strict host-key checking and
+will not trust a host key on first use.
 
 ## Deploy
 

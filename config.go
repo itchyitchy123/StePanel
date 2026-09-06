@@ -335,7 +335,7 @@ func ValidateConfig(c Config) error {
 				problems = append(problems, errors.New("production without application TLS must listen only on loopback"))
 			}
 		}
-		for name, path := range map[string]string{"STEPANEL_APPCTL": c.AppCtl, "STEPANEL_PROXYCTL": c.ProxyCtl, "STEPANEL_SITECTL": c.SiteCtl, "STEPANEL_VHOSTCTL": c.VHostCtl, "STEPANEL_DBCTL": c.DBCtl, "STEPANEL_CERTBOT": c.Certbot, "STEPANEL_SUDO": c.Sudo} {
+		for name, path := range map[string]string{"STEPANEL_APPCTL": c.AppCtl, "STEPANEL_PROXYCTL": c.ProxyCtl, "STEPANEL_SITECTL": c.SiteCtl, "STEPANEL_VHOSTCTL": c.VHostCtl, "STEPANEL_DBCTL": c.DBCtl, "STEPANEL_CERTBOT": c.Certbot, "STEPANEL_RUNNERCTL": c.RunnerCtl, "STEPANEL_GITCTL": c.GitCtl, "STEPANEL_SUDO": c.Sudo} {
 			if path != "" && (!filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n")) {
 				problems = append(problems, fmt.Errorf("%s must be an absolute executable path in production", name))
 			}

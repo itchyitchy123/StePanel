@@ -27,7 +27,9 @@ case "$action" in
     repository=$3; ref=$4; destination=$5
     [[ -f $key && ! -L $key && $repository =~ ^git@[A-Za-z0-9.-]+:[A-Za-z0-9._/-]+\.git$ && $ref =~ ^[A-Za-z0-9][A-Za-z0-9._/@+-]{0,127}$ && $destination == "/var/www/sites/$site/.stepanel-release-"* ]] || { echo 'invalid private clone request' >&2; exit 1; }
     [[ ! -e $destination && -d "/var/www/sites/$site" ]] || { echo 'invalid clone destination' >&2; exit 1; }
-    git -c credential.helper= -c core.hooksPath=/dev/null -c core.sshCommand="ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -F /dev/null" \
+    known_hosts=/etc/stepanel/git-known-hosts
+    [[ -f $known_hosts && ! -L $known_hosts ]] || { echo 'trusted Git SSH host keys are not configured' >&2; exit 1; }
+    git -c credential.helper= -c core.hooksPath=/dev/null -c core.sshCommand="ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts -F /dev/null" \
       clone --depth 1 --branch "$ref" --single-branch --no-tags "$repository" "$destination"
     chown -R --no-dereference "$(stat -c '%u:%g' "/var/www/sites/$site")" "$destination"
     ;;
