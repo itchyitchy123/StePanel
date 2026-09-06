@@ -35,6 +35,8 @@ When `disk_mb` and `inodes` are supplied, the site helper applies Linux user
 quotas with `setquota`; the request fails closed unless the site filesystem is
 already mounted with user-quota support. These are per-site user quotas, not a
 portable filesystem-quota setup or a plan-level entitlement system.
+Removing both values queues an explicit quota-clear operation and retries it
+through reconciliation if the host mutation is interrupted.
 
 `GET /api/sites/resources/{site}` also reports observed systemd-slice state.
 Administrators can call `POST /api/reconcile/resources` to re-apply pending or

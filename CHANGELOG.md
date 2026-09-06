@@ -62,6 +62,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Resource profiles can now apply opt-in per-site disk and inode ceilings via
   `setquota` when user quotas are enabled on the site filesystem; unsupported
   filesystems fail closed rather than reporting unenforced limits.
+- Removing a filesystem quota profile now clears the previously applied Linux
+  user quota through persisted pending state and startup/manual reconciliation.
 - Added an administrator-only asynchronous files-only backup restore. It
   verifies the archive and optional signature before extraction, uses the site
   recovery journal for atomic replacement, preserves databases, and reports

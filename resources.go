@@ -17,18 +17,19 @@ import (
 // a per-site slice. PHP workers are separately applied to the isolated FPM
 // pool. Filesystem, network and database limits require their own providers.
 type ResourceProfile struct {
-	Site         string    `json:"site"`
-	CPUPercent   int       `json:"cpu_percent"`
-	CPUWeight    int       `json:"cpu_weight,omitempty"`
-	MemoryHighMB int       `json:"memory_high_mb,omitempty"`
-	MemoryMB     int       `json:"memory_mb"`
-	IOWeight     int       `json:"io_weight,omitempty"`
-	TasksMax     int       `json:"tasks_max"`
-	PHPWorkers   int       `json:"php_workers"`
-	DiskMB       int       `json:"disk_mb,omitempty"`
-	Inodes       int       `json:"inodes,omitempty"`
-	AppliedAt    time.Time `json:"applied_at,omitempty"`
-	State        string    `json:"state"`
+	Site                 string    `json:"site"`
+	CPUPercent           int       `json:"cpu_percent"`
+	CPUWeight            int       `json:"cpu_weight,omitempty"`
+	MemoryHighMB         int       `json:"memory_high_mb,omitempty"`
+	MemoryMB             int       `json:"memory_mb"`
+	IOWeight             int       `json:"io_weight,omitempty"`
+	TasksMax             int       `json:"tasks_max"`
+	PHPWorkers           int       `json:"php_workers"`
+	DiskMB               int       `json:"disk_mb,omitempty"`
+	Inodes               int       `json:"inodes,omitempty"`
+	FilesystemQuotaState string    `json:"filesystem_quota_state,omitempty"`
+	AppliedAt            time.Time `json:"applied_at,omitempty"`
+	State                string    `json:"state"`
 }
 type ResourceStore struct {
 	mu     sync.RWMutex
@@ -55,6 +56,16 @@ func OpenResourceStore(path string) (*ResourceStore, error) {
 		}
 		if profile.Site != site || !validResourceProfile(profile) {
 			return nil, fmt.Errorf("invalid resource profile for site %q", site)
+		}
+		if profile.FilesystemQuotaState == "" {
+			if profile.hasFilesystemQuota() {
+				profile.FilesystemQuotaState = "enforced"
+			} else {
+				profile.FilesystemQuotaState = "none"
+			}
+		}
+		if profile.FilesystemQuotaState != "none" && profile.FilesystemQuotaState != "enforced" && profile.FilesystemQuotaState != "apply-pending" && profile.FilesystemQuotaState != "clear-pending" {
+			return nil, fmt.Errorf("invalid filesystem quota state for site %q", site)
 		}
 		s.values[site] = profile
 	}
@@ -88,7 +99,7 @@ func validResourceProfile(p ResourceProfile) bool {
 
 func (p ResourceProfile) hasFilesystemQuota() bool { return p.DiskMB > 0 || p.Inodes > 0 }
 
-func (a *App) applyResourceProfile(ctx context.Context, p ResourceProfile) error {
+func (a *App) applyResourceProfile(ctx context.Context, p ResourceProfile, clearFilesystemQuota bool) error {
 	if err := runHelperCommand(ctx, a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax)); err != nil {
 		return err
 	}
@@ -97,6 +108,10 @@ func (a *App) applyResourceProfile(ctx context.Context, p ResourceProfile) error
 	}
 	if p.hasFilesystemQuota() {
 		if err := runHelperCommand(ctx, a.Config, a.Config.SiteCtl, "quota", p.Site, strconv.Itoa(p.DiskMB), strconv.Itoa(p.Inodes)); err != nil {
+			return err
+		}
+	} else if clearFilesystemQuota {
+		if err := runHelperCommand(ctx, a.Config, a.Config.SiteCtl, "quota-clear", p.Site); err != nil {
 			return err
 		}
 	}
@@ -135,6 +150,15 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 	p.Site = site
 	p = normalizeResourceProfile(p)
 	p.State = "pending"
+	p.FilesystemQuotaState = "none"
+	a.Resources.mu.RLock()
+	previous, hadPrevious := a.Resources.values[site]
+	a.Resources.mu.RUnlock()
+	if p.hasFilesystemQuota() {
+		p.FilesystemQuotaState = "apply-pending"
+	} else if hadPrevious && previous.FilesystemQuotaState != "none" && previous.FilesystemQuotaState != "" {
+		p.FilesystemQuotaState = "clear-pending"
+	}
 	if !validResourceProfile(p) {
 		http.Error(w, "invalid resource profile", 422)
 		return
@@ -147,12 +171,17 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not persist desired resource profile", 503)
 		return
 	}
-	e = a.applyResourceProfile(r.Context(), p)
+	e = a.applyResourceProfile(r.Context(), p, p.FilesystemQuotaState == "clear-pending")
 	if e != nil {
 		http.Error(w, "resource profile is pending reconciliation", 502)
 		return
 	}
 	p.State = "applied"
+	if p.hasFilesystemQuota() {
+		p.FilesystemQuotaState = "enforced"
+	} else {
+		p.FilesystemQuotaState = "none"
+	}
 	p.AppliedAt = time.Now().UTC()
 	a.Resources.mu.Lock()
 	a.Resources.values[site] = p
@@ -210,12 +239,17 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 	}
 	reconciled, failed := []string{}, map[string]string{}
 	for _, p := range pending {
-		err := a.applyResourceProfile(r.Context(), p)
+		err := a.applyResourceProfile(r.Context(), p, p.FilesystemQuotaState == "clear-pending")
 		if err != nil {
 			failed[p.Site] = "apply failed"
 			continue
 		}
 		p.State = "applied"
+		if p.hasFilesystemQuota() {
+			p.FilesystemQuotaState = "enforced"
+		} else {
+			p.FilesystemQuotaState = "none"
+		}
 		p.AppliedAt = time.Now().UTC()
 		a.Resources.mu.Lock()
 		a.Resources.values[p.Site] = p
