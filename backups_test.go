@@ -118,6 +118,34 @@ func TestCreateSiteBackupIncludesManagedDatabaseDump(t *testing.T) {
 	}
 }
 
+func TestBackupRestoreFilesPreservesExistingDatabaseBoundary(t *testing.T) {
+	root := t.TempDir()
+	webRoot := filepath.Join(root, "www")
+	backupRoot := filepath.Join(root, "backups")
+	writeTestFile(t, filepath.Join(webRoot, "sites", "account", "public", "index.html"), "restored")
+	result, err := CreateSiteBackup(Config{WebRoot: webRoot, BackupRoot: backupRoot}, "account", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(webRoot, "sites", "account", "public", "index.html"), "live")
+	writeTestFile(t, filepath.Join(webRoot, "sites", "account", "public", "keep.txt"), "keep")
+
+	restored, err := backupRestoreFiles(Config{WebRoot: webRoot, BackupRoot: backupRoot, ImportRoot: filepath.Join(root, "imports"), RecoveryRoot: filepath.Join(root, "recovery")}, filepath.Base(result.Path), "account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restored.FilesRestored || !restored.DatabasePreserved || restored.Mode != "files-only" {
+		t.Fatalf("restore result = %#v", restored)
+	}
+	data, err := os.ReadFile(filepath.Join(webRoot, "sites", "account", "public", "index.html"))
+	if err != nil || string(data) != "restored" {
+		t.Fatalf("restored file = %q, error = %v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(webRoot, "sites", "account", "public", "keep.txt")); !os.IsNotExist(err) {
+		t.Fatalf("restore unexpectedly preserved live-only file: %v", err)
+	}
+}
+
 func readTestBackupManifest(t *testing.T, root string) BackupManifest {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(root, "manifest.json"))

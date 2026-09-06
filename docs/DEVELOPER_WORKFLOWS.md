@@ -42,6 +42,13 @@ directories without following symlinks. It intentionally reports measured
 usage—not an enforced disk/inode quota—until a filesystem quota provider is
 configured.
 
+Administrators can queue a files-only restore with `POST
+/api/backups/restore-files` using `backup`, `site`, and the explicit
+`confirm=RESTORE_FILES` value. The archive and signature are verified before a
+recovery-journaled replacement; databases are deliberately preserved. Full
+database restore and restore-to-staging database cloning remain separate
+planned workflows.
+
 Administrators can use `GET /api/security/center` for a consolidated,
 read-only host posture view: existing authentication/privileged-helper checks,
 service states, free disk/inodes, and backup schedule failures. It deliberately

@@ -26,18 +26,19 @@ func newJobID(kind string) (string, error) {
 }
 
 type Job struct {
-	ID          string             `json:"id"`
-	Kind        string             `json:"kind"`
-	State       string             `json:"state"`
-	User        string             `json:"user"`
-	Result      *ImportResult      `json:"result,omitempty"`
-	WPress      *WPressResult      `json:"wpress,omitempty"`
-	Certificate *CertificateResult `json:"certificate,omitempty"`
-	Backup      *BackupResult      `json:"backup,omitempty"`
-	Cloud       *CloudActionResult `json:"cloud,omitempty"`
-	Error       string             `json:"error,omitempty"`
-	StartedAt   time.Time          `json:"started_at"`
-	FinishedAt  *time.Time         `json:"finished_at,omitempty"`
+	ID          string               `json:"id"`
+	Kind        string               `json:"kind"`
+	State       string               `json:"state"`
+	User        string               `json:"user"`
+	Result      *ImportResult        `json:"result,omitempty"`
+	WPress      *WPressResult        `json:"wpress,omitempty"`
+	Certificate *CertificateResult   `json:"certificate,omitempty"`
+	Backup      *BackupResult        `json:"backup,omitempty"`
+	Restore     *BackupRestoreResult `json:"restore,omitempty"`
+	Cloud       *CloudActionResult   `json:"cloud,omitempty"`
+	Error       string               `json:"error,omitempty"`
+	StartedAt   time.Time            `json:"started_at"`
+	FinishedAt  *time.Time           `json:"finished_at,omitempty"`
 }
 
 func (j *Jobs) SubmitCloud(id, target string, work func() (CloudActionResult, error)) error {
@@ -374,6 +375,41 @@ func (j *Jobs) SubmitBackup(id, site string, work func() (BackupResult, error)) 
 		} else {
 			item.State = "completed"
 			item.Backup = &result
+		}
+		j.mu.Unlock()
+		j.complete(item)
+	}()
+	return nil
+}
+
+// SubmitBackupRestore queues a destructive, journaled site restore while
+// using the same per-site admission guard as backup creation.
+func (j *Jobs) SubmitBackupRestore(id, site string, work func() (BackupRestoreResult, error)) error {
+	j.admission.RLock()
+	defer j.admission.RUnlock()
+	if !j.reserve(site) {
+		return ErrJobBusy
+	}
+	j.wg.Add(1)
+	item := &Job{ID: id, Kind: "site.backup-restore", State: "running", User: site, StartedAt: time.Now().UTC()}
+	if err := j.add(item); err != nil {
+		j.wg.Done()
+		j.release(site)
+		return fmt.Errorf("persist queued job: %w", err)
+	}
+	go func() {
+		defer j.wg.Done()
+		defer j.release(site)
+		result, err := work()
+		now := time.Now().UTC()
+		j.mu.Lock()
+		item.FinishedAt = &now
+		if err != nil {
+			item.State = "failed"
+			item.Error = err.Error()
+		} else {
+			item.State = "completed"
+			item.Restore = &result
 		}
 		j.mu.Unlock()
 		j.complete(item)

@@ -430,6 +430,11 @@ paths:
       summary: Verify a backup archive and optional authenticated manifest
       description: Performs archive, entry, checksum, and manifest-signature checks without extracting or changing host state.
       responses: {'200': {description: Verified backup and consistency classification}}
+  /api/backups/restore-files:
+    post:
+      summary: Queue an administrator-only verified files-only site restore
+      description: Verifies the archive and optional manifest signature, then atomically replaces site files through the recovery journal. Databases are preserved.
+      responses: {'202': {description: Restore job queued}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation
