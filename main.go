@@ -46,6 +46,10 @@ type App struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "version" || os.Args[1] == "--version") {
+		_, _ = fmt.Fprintf(os.Stdout, "StePanel %s\ncommit: %s\nbuilt: %s\n", Version, Commit, BuildDate)
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "convert-htaccess" {
 		content, err := io.ReadAll(io.LimitReader(os.Stdin, maxHTAccessBytes+1))
 		if err != nil || len(content) > maxHTAccessBytes {

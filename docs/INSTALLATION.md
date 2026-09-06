@@ -72,6 +72,13 @@ When Certbot integration is installed, issuance can be bootstrapped from the hos
 
 ## Upgrades and rollback boundary
 
+Use the installed binary to confirm the release, commit, and build timestamp
+before and after an upgrade:
+
+```sh
+/opt/stepanel/stepanel version
+```
+
 Running the installer over an existing installation preserves values from the
 root-owned, non-writable `/etc/ste-panel.env` unless the corresponding
 `STEPANEL_*` variable is explicitly supplied. This preserves the administrator
