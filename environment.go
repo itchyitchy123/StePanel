@@ -135,6 +135,47 @@ func (s *EnvironmentStore) persistLocked() error {
 	return writeAtomic(s.path, append(data, '\n'), 0600)
 }
 
+func cloneEnvironmentValues(values map[string]environmentValue) map[string]environmentValue {
+	if values == nil {
+		return nil
+	}
+	copy := make(map[string]environmentValue, len(values))
+	for name, value := range values {
+		copy[name] = value
+	}
+	return copy
+}
+
+func (a *App) removeEnvironment(ctx context.Context, site string) error {
+	a.Environments.mu.RLock()
+	previous, existed := a.Environments.values[site]
+	previous = cloneEnvironmentValues(previous)
+	a.Environments.mu.RUnlock()
+	if err := a.applyEnvironment(ctx, site, map[string]environmentValue{}); err != nil {
+		return fmt.Errorf("remove environment from host: %w", err)
+	}
+	a.Environments.mu.Lock()
+	delete(a.Environments.values, site)
+	err := a.Environments.persistLocked()
+	if err != nil {
+		if existed {
+			a.Environments.values[site] = previous
+		} else {
+			delete(a.Environments.values, site)
+		}
+	}
+	a.Environments.mu.Unlock()
+	if err == nil {
+		return nil
+	}
+	// The durable state still describes the old environment when the deletion
+	// write fails. Restore the host side to match it.
+	if restoreErr := a.applyEnvironment(ctx, site, previous); restoreErr != nil {
+		return fmt.Errorf("environment state save failed: %w; host restore failed: %v", err, restoreErr)
+	}
+	return fmt.Errorf("environment state save failed: %w", err)
+}
+
 func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
 	site := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/sites/environment/"), "/")
 	if site == "" || strings.Contains(site, "/") || safeUser(site) == "" {
@@ -206,16 +247,14 @@ func (a *App) siteEnvironment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", 403)
 			return
 		}
-		if err := a.applyEnvironment(r.Context(), site, map[string]environmentValue{}); err != nil {
-			http.Error(w, "environment could not be removed from site services", 502)
-			return
-		}
-		a.Environments.mu.Lock()
-		delete(a.Environments.values, site)
-		err := a.Environments.persistLocked()
-		a.Environments.mu.Unlock()
-		if err != nil {
-			http.Error(w, "environment state could not be saved", 503)
+		if err := a.removeEnvironment(r.Context(), site); err != nil {
+			if strings.Contains(err.Error(), "host restore failed") {
+				http.Error(w, "environment state and host restore both failed", 503)
+			} else if strings.Contains(err.Error(), "state save failed") {
+				http.Error(w, "environment state could not be saved", 503)
+			} else {
+				http.Error(w, "environment could not be removed from site services", 502)
+			}
 			return
 		}
 		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.environment.deleted", site, "all variables removed")

@@ -77,6 +77,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   retain pending errors, and reconcile interrupted FPM changes at startup.
 - Python application deployments now persist desired state before systemd
   application and retry pending services during startup reconciliation.
+- Environment deletion now compensates a failed state write by restoring the
+  previous host environment, preventing host/state divergence.
 - Plan-assigned sites now share an aggregate root-owned account cgroup slice in
   addition to their per-site slices, preventing site-count multiplication from
   bypassing the plan's application resource envelope.

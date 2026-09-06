@@ -10,7 +10,8 @@ identity or inside the dedicated Podman runner.
 Configure encrypted variables with `PUT /api/sites/environment/{site}`. Desired
 values are persisted before host application; if helper application is
 interrupted, startup reconciliation retries the persisted values. Secret
-values are never returned after write. Updates render a root-owned systemd
+values are never returned after write. Environment deletion restores the
+previous host environment if durable state removal fails. Updates render a root-owned systemd
 environment file and restart managed Node, Python, and worker services. Use
 `GET`/`PUT /api/sites/php/{site}` to inspect installed FPM versions and apply a
 validated site profile for memory, execution, uploads, input limits, OPcache,
