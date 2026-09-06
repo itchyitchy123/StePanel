@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Live systemd cgroup CPU/memory/task counters in resource status plus a
+  bounded, no-symlink site filesystem usage endpoint for quota planning.
+
 - Observed systemd-slice resource status and an audited administrator
   reconciliation endpoint that re-applies pending or inactive desired profiles.
 

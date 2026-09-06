@@ -29,6 +29,11 @@ Administrators can call `POST /api/reconcile/resources` to re-apply pending or
 inactive desired profiles after a helper failure or host restart; each repair
 is audited.
 
+`GET /api/sites/usage/{site}` reports bounded regular-file bytes, files, and
+directories without following symlinks. It intentionally reports measured
+usage—not an enforced disk/inode quota—until a filesystem quota provider is
+configured.
+
 This does **not** yet impose disk/inode/project quotas, network/bandwidth or
 block-I/O limits, database limits, or Redis ACL/memory enforcement. Those need
 host/provider-specific controls before they can be presented as tenant limits.

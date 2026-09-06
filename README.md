@@ -206,6 +206,7 @@ checkbox and should be backed up first.
 | `GET` | `/api/deployments` | List durable build and release activation records; optional `site` filter |
 | `POST` | `/api/deployments/run` | Preview: checkout, optionally back up, sandbox-build, validate, and atomically activate a complete artifact |
 | `POST` | `/api/reconcile/resources` | Re-apply pending or inactive per-site resource profiles |
+| `GET` | `/api/sites/usage/<site>` | Bounded regular-file, file-count, and directory-count usage for a site |
 | `GET` | `/api/composer/<site>` | Detect Composer project files and show the latest operation |
 | `POST` | `/api/composer/<site>/install` | Install Composer dependencies under the site identity |
 | `GET` / `PUT` | `/api/sites/php/<site>` | Inspect installed PHP runtimes or apply a validated per-site FPM profile |

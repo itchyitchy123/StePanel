@@ -371,6 +371,11 @@ paths:
     post:
       summary: Reconcile pending/inactive desired resource profiles with systemd and PHP-FPM
       responses: {'200': {description: Reconciled and failed site lists}}
+  /api/sites/usage/{site}:
+    get:
+      summary: Measure bounded regular-file usage for a site without following symlinks
+      parameters: [{name: site, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Bytes, file count, directory count and completeness}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation

@@ -315,6 +315,7 @@ func main() {
 	mux.Handle("/api/composer/", allowMethods(app.Auth.Require(http.HandlerFunc(app.composer)), http.MethodGet, http.MethodHead, http.MethodPost))
 	mux.Handle("/api/sites/php/", allowMethods(app.Auth.Require(http.HandlerFunc(app.phpRuntime)), http.MethodGet, http.MethodHead, http.MethodPut))
 	mux.Handle("/api/sites/resources/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteResources)), http.MethodGet, http.MethodHead, http.MethodPut))
+	mux.Handle("/api/sites/usage/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteUsage)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/reconcile/resources", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.reconcileResources)), http.MethodPost))
 	mux.Handle("/api/staging", allowMethods(app.Auth.Require(http.HandlerFunc(app.stagingCreate)), http.MethodPost))
 	mux.Handle("/api/runner/build", allowMethods(app.Auth.Require(http.HandlerFunc(app.runnerBuild)), http.MethodPost))

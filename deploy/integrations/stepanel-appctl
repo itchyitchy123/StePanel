@@ -197,7 +197,7 @@ EOF
     chmod 0644 "$slice"; chown root:root "$slice"; systemctl daemon-reload; systemctl start "stepanel-site-$site.slice" ;;
   resource-status)
     (( $# == 2 )) || { echo 'usage: stepanel-appctl resource-status SITE' >&2; exit 64; }
-    systemctl show "stepanel-site-$site.slice" --property=ActiveState --property=CPUQuotaPerSecUSec --property=MemoryMax --property=TasksMax --no-pager ;;
+    systemctl show "stepanel-site-$site.slice" --property=ActiveState --property=CPUQuotaPerSecUSec --property=MemoryMax --property=MemoryCurrent --property=TasksMax --property=TasksCurrent --property=CPUUsageNSec --no-pager ;;
   task-apply)
     (( $# == 8 )) || { echo 'usage: stepanel-appctl task-apply SITE NAME RUNTIME ON_CALENDAR ENABLED TIMEOUT COMMAND_B64' >&2; exit 64; }
     name=$3; runtime=$4; on_calendar=$5; enabled=$6; timeout=$7; command_b64=$8
