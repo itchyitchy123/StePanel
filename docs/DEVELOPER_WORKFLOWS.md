@@ -31,6 +31,10 @@ If no site profile is configured, each task uses a conservative local fallback
 ceiling of 100% CPU, 1 GiB memory, and 256 processes. When a site profile is
 configured, those CPU, memory, and process values are propagated into each task
 unit, while the site slice remains the parent boundary for all managed work.
+When `disk_mb` and `inodes` are supplied, the site helper applies Linux user
+quotas with `setquota`; the request fails closed unless the site filesystem is
+already mounted with user-quota support. These are per-site user quotas, not a
+portable filesystem-quota setup or a plan-level entitlement system.
 
 `GET /api/sites/resources/{site}` also reports observed systemd-slice state.
 Administrators can call `POST /api/reconcile/resources` to re-apply pending or

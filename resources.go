@@ -25,6 +25,8 @@ type ResourceProfile struct {
 	IOWeight     int       `json:"io_weight,omitempty"`
 	TasksMax     int       `json:"tasks_max"`
 	PHPWorkers   int       `json:"php_workers"`
+	DiskMB       int       `json:"disk_mb,omitempty"`
+	Inodes       int       `json:"inodes,omitempty"`
 	AppliedAt    time.Time `json:"applied_at,omitempty"`
 	State        string    `json:"state"`
 }
@@ -81,7 +83,24 @@ func normalizeResourceProfile(p ResourceProfile) ResourceProfile {
 	return p
 }
 func validResourceProfile(p ResourceProfile) bool {
-	return safeUser(p.Site) != "" && p.CPUPercent >= 25 && p.CPUPercent <= 6400 && p.CPUWeight >= 1 && p.CPUWeight <= 10000 && p.MemoryMB >= 64 && p.MemoryHighMB >= 64 && p.MemoryHighMB <= p.MemoryMB && p.MemoryMB <= 1048576 && p.IOWeight >= 1 && p.IOWeight <= 10000 && p.TasksMax >= 16 && p.TasksMax <= 100000 && p.PHPWorkers >= 1 && p.PHPWorkers <= 512
+	return safeUser(p.Site) != "" && p.CPUPercent >= 25 && p.CPUPercent <= 6400 && p.CPUWeight >= 1 && p.CPUWeight <= 10000 && p.MemoryMB >= 64 && p.MemoryHighMB >= 64 && p.MemoryHighMB <= p.MemoryMB && p.MemoryMB <= 1048576 && p.IOWeight >= 1 && p.IOWeight <= 10000 && p.TasksMax >= 16 && p.TasksMax <= 100000 && p.PHPWorkers >= 1 && p.PHPWorkers <= 512 && (p.DiskMB == 0 && p.Inodes == 0 || p.DiskMB >= 64 && p.DiskMB <= 1048576 && p.Inodes >= 1000 && p.Inodes <= 1000000000)
+}
+
+func (p ResourceProfile) hasFilesystemQuota() bool { return p.DiskMB > 0 || p.Inodes > 0 }
+
+func (a *App) applyResourceProfile(ctx context.Context, p ResourceProfile) error {
+	if err := runHelperCommand(ctx, a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax)); err != nil {
+		return err
+	}
+	if err := runHelperCommand(ctx, a.Config, a.Config.SiteCtl, "resources", p.Site, strconv.Itoa(p.PHPWorkers)); err != nil {
+		return err
+	}
+	if p.hasFilesystemQuota() {
+		if err := runHelperCommand(ctx, a.Config, a.Config.SiteCtl, "quota", p.Site, strconv.Itoa(p.DiskMB), strconv.Itoa(p.Inodes)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 	site := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/sites/resources/"), "/")
@@ -128,10 +147,7 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not persist desired resource profile", 503)
 		return
 	}
-	e = runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "resource-apply", site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax))
-	if e == nil {
-		e = runHelperCommand(r.Context(), a.Config, a.Config.SiteCtl, "resources", site, strconv.Itoa(p.PHPWorkers))
-	}
+	e = a.applyResourceProfile(r.Context(), p)
 	if e != nil {
 		http.Error(w, "resource profile is pending reconciliation", 502)
 		return
@@ -194,10 +210,7 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 	}
 	reconciled, failed := []string{}, map[string]string{}
 	for _, p := range pending {
-		err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax))
-		if err == nil {
-			err = runHelperCommand(r.Context(), a.Config, a.Config.SiteCtl, "resources", p.Site, strconv.Itoa(p.PHPWorkers))
-		}
+		err := a.applyResourceProfile(r.Context(), p)
 		if err != nil {
 			failed[p.Site] = "apply failed"
 			continue

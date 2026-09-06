@@ -2,12 +2,12 @@
 set -Eeuo pipefail
 
 if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
-(( $# == 2 || $# == 3 || $# == 11 )) || { echo 'usage: stepanel-sitectl prepare|seal SITE | resources SITE PHP_WORKERS | runtime SITE VERSION MEMORY EXEC UPLOAD POST INPUT OPCACHE DISPLAY ERROR' >&2; exit 64; }
+(( $# == 2 || $# == 3 || $# == 4 || $# == 11 )) || { echo 'usage: stepanel-sitectl prepare|seal SITE | resources SITE PHP_WORKERS | quota SITE DISK_MB INODES | runtime SITE VERSION MEMORY EXEC UPLOAD POST INPUT OPCACHE DISPLAY ERROR' >&2; exit 64; }
 
 action=$1
 site=$2
 [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
-[[ $action == prepare || $action == seal || $action == runtime || $action == resources ]] || { echo 'invalid action' >&2; exit 64; }
+[[ $action == prepare || $action == seal || $action == runtime || $action == resources || $action == quota ]] || { echo 'invalid action' >&2; exit 64; }
 
 if getent group www-data >/dev/null; then
   web_group=www-data
@@ -59,6 +59,19 @@ elif [[ $action == resources ]]; then
   tmp=$(mktemp "$php_state/.resources.XXXXXX")
   printf 'php_max_children=%q\n' "$workers" > "$tmp"; chown root:root "$tmp"; chmod 0600 "$tmp"; mv -f "$tmp" "$php_state/resources.env"
   action=seal
+elif [[ $action == quota ]]; then
+  disk_mb=$3; inodes=$4
+  [[ $disk_mb =~ ^[0-9]+$ && $inodes =~ ^[0-9]+$ ]] || { echo 'invalid filesystem quota' >&2; exit 1; }
+  (( disk_mb >= 64 && disk_mb <= 1048576 && inodes >= 1000 && inodes <= 1000000000 )) || { echo 'filesystem quota out of range' >&2; exit 1; }
+  command -v setquota >/dev/null 2>&1 || { echo 'setquota is required and filesystem quotas are not available' >&2; exit 1; }
+  command -v findmnt >/dev/null 2>&1 || { echo 'findmnt is required for filesystem quota detection' >&2; exit 1; }
+  mount=$(findmnt -no TARGET -T "$site_root") || { echo 'could not determine site filesystem mount' >&2; exit 1; }
+  options=$(findmnt -no OPTIONS -T "$site_root") || { echo 'could not inspect site filesystem quota options' >&2; exit 1; }
+  [[ $options =~ (^|,)(usrquota|uquota|usrjquota)(=|,|$) ]] || { echo 'site filesystem is not mounted with user quotas enabled' >&2; exit 1; }
+  blocks=$(( (disk_mb * 1024 * 1024 + 1023) / 1024 ))
+  setquota -u "$site_user" "$blocks" "$blocks" "$inodes" "$inodes" "$mount"
+  printf 'filesystem_quota_applied\tmount=%s\tdisk_mb=%s\tinodes=%s\n' "$mount" "$disk_mb" "$inodes"
+  exit 0
 elif [[ -f $profile && ! -L $profile ]]; then
   source "$profile"
 fi

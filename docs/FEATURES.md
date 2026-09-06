@@ -88,8 +88,9 @@ Latest stable release: `v0.6.0`
 - Preview per-site resource profiles that enforce CPU quota/weight,
   MemoryHigh/MemoryMax, I/O weight, and task limits
   for managed systemd application/worker processes plus PHP-FPM worker
-  ceilings. Disk/inode, bandwidth, database, and Redis enforcement remain
-  provider-specific planned work.
+  ceilings. Optional disk/inode values are enforced with Linux user quotas
+  when the filesystem is preconfigured for quotas; bandwidth, database, and
+  Redis enforcement remain provider-specific planned work.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
 - Independently verified site and registered-database backups.
