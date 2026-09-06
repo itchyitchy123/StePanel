@@ -91,11 +91,17 @@ Then run the review workflow on the host:
 ```sh
 sudo fpm-lens inventory
 sudo fpm-lens doktor
-sudo fpm-lens assess --samples 12 --interval-seconds 5 \
+sudo fpm-lens observe --samples 12 --interval-seconds 5 \
   --status-url 'pool=http://127.0.0.1/fpm-status?json'
 sudo fpm-lens render fpm-lens.plan.json --output-dir /var/lib/ste-panel/fpm-review
 ```
 
 Review generated files and validate them before deployment through your normal
 configuration-management process. See the companion FPM Lens repository for
-policy, evidence schemas, and supported layouts.
+policy, evidence schemas, and supported layouts. The current FPM Lens workflow
+is evidence-aware: its reviewed plan exposes target, minimum, maximum, and
+confidence for each pool. StePanel resource profiles use the reviewed
+`PHPWorkers` ceiling; they do not silently import or apply an unreviewed Lens
+plan. Use the Lens target/max recommendation as the operator input, then
+observe the resulting FPM pool through StePanel's resource status and usage
+views.

@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Extended preview resource profiles with systemd CPU weight, memory high-water
+  limit, and I/O weight controls, plus live status reporting. Updated the FPM
+  Lens integration guidance to its current evidence-aware observe/review flow.
+- Attached scheduled-task systemd services to their site resource slice so
+  cron workloads receive the same cgroup boundary as managed applications.
+
 - Added AES-GCM encryption for customer TOTP secrets with dedicated
   `STEPANEL_ACCOUNT_KEY`, one-time MFA regeneration, and session revocation.
 

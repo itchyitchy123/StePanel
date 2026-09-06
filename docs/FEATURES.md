@@ -75,9 +75,10 @@ not implemented.
 - Scheduled site tasks backed by hardened systemd services and timers instead
   of a writable host crontab, with persisted pending state and administrator
   reconciliation after interrupted host mutations.
-- Preview per-site resource profiles that enforce CPU, memory, and task limits
+- Preview per-site resource profiles that enforce CPU quota/weight,
+  MemoryHigh/MemoryMax, I/O weight, and task limits
   for managed systemd application/worker processes plus PHP-FPM worker
-  ceilings. Disk/inode, I/O, bandwidth, database, and Redis enforcement remain
+  ceilings. Disk/inode, bandwidth, database, and Redis enforcement remain
   provider-specific planned work.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.

@@ -16,13 +16,16 @@ import (
 // a per-site slice. PHP workers are separately applied to the isolated FPM
 // pool. Filesystem, network and database limits require their own providers.
 type ResourceProfile struct {
-	Site       string    `json:"site"`
-	CPUPercent int       `json:"cpu_percent"`
-	MemoryMB   int       `json:"memory_mb"`
-	TasksMax   int       `json:"tasks_max"`
-	PHPWorkers int       `json:"php_workers"`
-	AppliedAt  time.Time `json:"applied_at,omitempty"`
-	State      string    `json:"state"`
+	Site         string    `json:"site"`
+	CPUPercent   int       `json:"cpu_percent"`
+	CPUWeight    int       `json:"cpu_weight,omitempty"`
+	MemoryHighMB int       `json:"memory_high_mb,omitempty"`
+	MemoryMB     int       `json:"memory_mb"`
+	IOWeight     int       `json:"io_weight,omitempty"`
+	TasksMax     int       `json:"tasks_max"`
+	PHPWorkers   int       `json:"php_workers"`
+	AppliedAt    time.Time `json:"applied_at,omitempty"`
+	State        string    `json:"state"`
 }
 type ResourceStore struct {
 	mu     sync.RWMutex
@@ -42,6 +45,10 @@ func OpenResourceStore(path string) (*ResourceStore, error) {
 	if e = json.Unmarshal(d, &s.values); e != nil {
 		return nil, e
 	}
+	for site, profile := range s.values {
+		profile = normalizeResourceProfile(profile)
+		s.values[site] = profile
+	}
 	return s, nil
 }
 func (s *ResourceStore) persistLocked() error {
@@ -51,8 +58,23 @@ func (s *ResourceStore) persistLocked() error {
 	}
 	return writeAtomic(s.path, append(d, '\n'), 0600)
 }
+func normalizeResourceProfile(p ResourceProfile) ResourceProfile {
+	if p.CPUWeight == 0 {
+		p.CPUWeight = 100
+	}
+	if p.MemoryHighMB == 0 {
+		p.MemoryHighMB = p.MemoryMB * 90 / 100
+		if p.MemoryHighMB < 64 {
+			p.MemoryHighMB = 64
+		}
+	}
+	if p.IOWeight == 0 {
+		p.IOWeight = 100
+	}
+	return p
+}
 func validResourceProfile(p ResourceProfile) bool {
-	return safeUser(p.Site) != "" && p.CPUPercent >= 25 && p.CPUPercent <= 6400 && p.MemoryMB >= 64 && p.MemoryMB <= 1048576 && p.TasksMax >= 16 && p.TasksMax <= 100000 && p.PHPWorkers >= 1 && p.PHPWorkers <= 512
+	return safeUser(p.Site) != "" && p.CPUPercent >= 25 && p.CPUPercent <= 6400 && p.CPUWeight >= 1 && p.CPUWeight <= 10000 && p.MemoryMB >= 64 && p.MemoryHighMB >= 64 && p.MemoryHighMB <= p.MemoryMB && p.MemoryMB <= 1048576 && p.IOWeight >= 1 && p.IOWeight <= 10000 && p.TasksMax >= 16 && p.TasksMax <= 100000 && p.PHPWorkers >= 1 && p.PHPWorkers <= 512
 }
 func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 	site := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/sites/resources/"), "/")
@@ -85,6 +107,7 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.Site = site
+	p = normalizeResourceProfile(p)
 	p.State = "pending"
 	if !validResourceProfile(p) {
 		http.Error(w, "invalid resource profile", 422)
@@ -98,7 +121,7 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not persist desired resource profile", 503)
 		return
 	}
-	e = runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "resource-apply", site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.TasksMax))
+	e = runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "resource-apply", site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax))
 	if e == nil {
 		e = runHelperCommand(r.Context(), a.Config, a.Config.SiteCtl, "resources", site, strconv.Itoa(p.PHPWorkers))
 	}
@@ -159,7 +182,7 @@ func (a *App) reconcileResources(w http.ResponseWriter, r *http.Request) {
 	a.Resources.mu.RUnlock()
 	reconciled, failed := []string{}, map[string]string{}
 	for _, p := range pending {
-		err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.TasksMax))
+		err := runHelperCommand(r.Context(), a.Config, a.Config.AppCtl, "resource-apply", p.Site, strconv.Itoa(p.CPUPercent), strconv.Itoa(p.CPUWeight), strconv.Itoa(p.MemoryHighMB), strconv.Itoa(p.MemoryMB), strconv.Itoa(p.IOWeight), strconv.Itoa(p.TasksMax))
 		if err == nil {
 			err = runHelperCommand(r.Context(), a.Config, a.Config.SiteCtl, "resources", p.Site, strconv.Itoa(p.PHPWorkers))
 		}

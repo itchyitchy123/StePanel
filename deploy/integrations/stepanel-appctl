@@ -181,23 +181,26 @@ EOF
     [[ $optimize == 1 ]] && args+=(--optimize-autoloader)
     runuser -u "$site_user" -- env HOME="$root" COMPOSER_HOME="$root/.composer" PATH="/usr/local/bin:/usr/bin:/bin" composer "${args[@]}" ;;
   resource-apply)
-    (( $# == 5 )) || { echo 'usage: stepanel-appctl resource-apply SITE CPU_PERCENT MEMORY_MB TASKS_MAX' >&2; exit 64; }
-    cpu=$3; memory=$4; tasks=$5
-    [[ $cpu =~ ^[0-9]+$ && $memory =~ ^[0-9]+$ && $tasks =~ ^[0-9]+$ ]] || { echo 'invalid resource limits' >&2; exit 1; }
-    (( cpu >= 25 && cpu <= 6400 && memory >= 64 && memory <= 1048576 && tasks >= 16 && tasks <= 100000 )) || { echo 'resource limits out of range' >&2; exit 1; }
+    (( $# == 8 )) || { echo 'usage: stepanel-appctl resource-apply SITE CPU_PERCENT CPU_WEIGHT MEMORY_HIGH_MB MEMORY_MAX_MB IO_WEIGHT TASKS_MAX' >&2; exit 64; }
+    cpu=$3; cpu_weight=$4; memory_high=$5; memory=$6; io_weight=$7; tasks=$8
+    [[ $cpu =~ ^[0-9]+$ && $cpu_weight =~ ^[0-9]+$ && $memory_high =~ ^[0-9]+$ && $memory =~ ^[0-9]+$ && $io_weight =~ ^[0-9]+$ && $tasks =~ ^[0-9]+$ ]] || { echo 'invalid resource limits' >&2; exit 1; }
+    (( cpu >= 25 && cpu <= 6400 && cpu_weight >= 1 && cpu_weight <= 10000 && memory_high >= 64 && memory_high <= memory && memory <= 1048576 && io_weight >= 1 && io_weight <= 10000 && tasks >= 16 && tasks <= 100000 )) || { echo 'resource limits out of range' >&2; exit 1; }
     slice="/etc/systemd/system/stepanel-site-$site.slice"
     cat > "$slice" <<EOF
 [Unit]
 Description=StePanel resource boundary for $site
 [Slice]
 CPUQuota=${cpu}%
+CPUWeight=$cpu_weight
+MemoryHigh=${memory_high}M
 MemoryMax=${memory}M
+IOWeight=$io_weight
 TasksMax=$tasks
 EOF
     chmod 0644 "$slice"; chown root:root "$slice"; systemctl daemon-reload; systemctl start "stepanel-site-$site.slice" ;;
   resource-status)
     (( $# == 2 )) || { echo 'usage: stepanel-appctl resource-status SITE' >&2; exit 64; }
-    systemctl show "stepanel-site-$site.slice" --property=ActiveState --property=CPUQuotaPerSecUSec --property=MemoryMax --property=MemoryCurrent --property=TasksMax --property=TasksCurrent --property=CPUUsageNSec --no-pager ;;
+    systemctl show "stepanel-site-$site.slice" --property=ActiveState --property=CPUQuotaPerSecUSec --property=CPUWeight --property=MemoryHigh --property=MemoryMax --property=MemoryCurrent --property=IOWeight --property=TasksMax --property=TasksCurrent --property=CPUUsageNSec --no-pager ;;
   task-apply)
     (( $# == 8 )) || { echo 'usage: stepanel-appctl task-apply SITE NAME RUNTIME ON_CALENDAR ENABLED TIMEOUT COMMAND_B64' >&2; exit 64; }
     name=$3; runtime=$4; on_calendar=$5; enabled=$6; timeout=$7; command_b64=$8
@@ -216,6 +219,7 @@ Description=StePanel scheduled task $site/$name
 Type=oneshot
 User=$site_user
 Group=$site_user
+Slice=stepanel-site-$site.slice
 WorkingDirectory=$root
 ExecStart=$script
 TimeoutStartSec=${timeout}s
