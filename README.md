@@ -69,7 +69,7 @@ external WAF/security proxy. See [integrations](docs/INTEGRATIONS.md).
 For Apache migrations to the default Caddy stack, see the
 [`.htaccess` migration guide](docs/HTACCESS_MIGRATION.md).
 
-> **Status:** StePanel includes a constrained single-host shared-hosting beta. It is not yet a complete multi-tenant hosting platform: plans currently limit assigned sites, not host resources, and customer mail/file/database/restore lifecycle remains unavailable. Administrator resource profiles, security posture, and restore-to-staging are available with explicit beta/operator boundaries. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
+> **Status:** StePanel includes a constrained single-host shared-hosting beta. It is not yet a complete multi-tenant hosting platform: plans currently limit assigned sites, not host resources, and customer mail/file/database/full-restore lifecycle remains unavailable. Administrator resource profiles, security posture, verified files-only restore, and restore-to-staging are available with explicit beta/operator boundaries. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
 
 ## See it quickly
 

@@ -119,9 +119,10 @@ Latest stable release: `v0.6.0`
 - Backup verification is available through the CLI and administrator API. Each
   backup records `crash-consistent / logical backup` classification and can be
   authenticated with an external `STEPANEL_BACKUP_SIGNING_KEY`. Administrator
-  restore-to-staging is available for verified files; database restore,
-  off-site browsing/restore, and full customer self-service restore remain
-  deliberately guarded until a transactional database restore workflow exists.
+  files-only restore and restore-to-staging are available for verified files;
+  database restore, off-site browsing/restore, and full customer self-service
+  restore remain deliberately guarded until a transactional database restore
+  workflow exists.
 - The customer workspace currently authorizes assigned site viewing, verified
   backup creation, domain routing, and job history only. It is not yet a full
   tenant self-service portal.
