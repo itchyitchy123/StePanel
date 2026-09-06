@@ -204,11 +204,7 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site document root does not exist", http.StatusUnprocessableEntity)
 		return
 	}
-	extension := ".conf"
-	if a.Config.WebServer == "caddy" {
-		extension = ".caddy"
-	}
-	name := "site-" + input.Site + "-" + strings.ReplaceAll(input.Domain, ".", "_") + extension
+	name := siteVHostConfigName(a.Config.WebServer, input.Site, input.Domain)
 	releaseUnlock := a.siteOperations.acquireMany(input.Site, "vhost:"+name)
 	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain); err != nil {
@@ -219,6 +215,14 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		log.Printf("site deployed but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"site": input.Site, "domain": input.Domain, "config": filepath.Join(a.Config.VHostRoot, name)})
+}
+
+func siteVHostConfigName(webserver, site, domain string) string {
+	extension := ".conf"
+	if webserver == "caddy" {
+		extension = ".caddy"
+	}
+	return "site-" + site + "-" + strings.ReplaceAll(strings.ToLower(domain), ".", "_") + extension
 }
 
 func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {

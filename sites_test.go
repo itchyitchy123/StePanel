@@ -42,6 +42,15 @@ func TestSiteDeployRejectsMissingDocumentRoot(t *testing.T) {
 	}
 }
 
+func TestSiteVHostConfigNameMatchesWebserverRouteConvention(t *testing.T) {
+	if got := siteVHostConfigName("caddy", "my-site", "WWW.Example.com"); got != "site-my-site-www_example_com.caddy" {
+		t.Fatalf("Caddy route name = %q", got)
+	}
+	if got := siteVHostConfigName("apache", "my-site", "WWW.Example.com"); got != "site-my-site-www_example_com.conf" {
+		t.Fatalf("Apache route name = %q", got)
+	}
+}
+
 func TestSiteListFiltersUnmanagedFiles(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "site-account-example_com.conf"), "managed")
