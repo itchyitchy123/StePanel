@@ -59,15 +59,21 @@ the HTTP handlers, shared configuration, test fixtures, and embedded dashboard
 are still tightly coupled. A mechanical directory move would obscure those
 dependencies without improving the runtime boundary.
 
-The next structural refactor should extract stable seams in this order:
+The structural refactor is now underway. Durable deployment history and
+revocable session state have been extracted behind internal package seams. The
+remaining boundaries should be extracted in this order:
 
-1. `internal/auth` for sessions, CSRF, MFA, and rate limiting.
+1. `internal/auth` for CSRF, MFA, and rate limiting.
 2. `internal/jobs` for durable state, worker admission, and per-target
    serialization.
 3. `internal/migration` for cpmove/WPress inspection, staging, and recovery.
 4. `internal/backup` for verified archives, retention, and offsite publishing.
 5. `internal/operations` for cloud, SSH, service, and privileged-helper
    adapters.
+
+The current extracted seams are `internal/deployment` for deployment history
+and `internal/session` for durable, revocable session entries. Both retain
+atomic file persistence, bounded state, and package-level contract tests.
 
 The HTTP layer should remain an assembly point that supplies interfaces for
 these packages. Each extraction should preserve the existing tests and add a
