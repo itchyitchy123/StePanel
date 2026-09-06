@@ -376,6 +376,11 @@ paths:
       summary: Measure bounded regular-file usage for a site without following symlinks
       parameters: [{name: site, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Bytes, file count, directory count and completeness}}
+  /api/backups/restore-to-staging:
+    post:
+      summary: Restore verified backup files into a new isolated staging site
+      description: Refuses existing destinations and deliberately does not restore database dumps.
+      responses: {'202': {description: Files restored and staging route activated}}
   /api/composer/{site}:
     get:
       summary: Inspect Composer project files and last operation

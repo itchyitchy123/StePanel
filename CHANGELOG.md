@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Verified files-only backup restore to a new recovery-journaled staging site;
+  existing destinations and database restore remain deliberately refused.
+
 - Live systemd cgroup CPU/memory/task counters in resource status plus a
   bounded, no-symlink site filesystem usage endpoint for quota planning.
 

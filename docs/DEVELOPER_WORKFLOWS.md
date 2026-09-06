@@ -101,6 +101,11 @@ never production secrets. Database cloning, Basic Auth, no-index headers, and
 outbound-email blocking remain planned integrations so staging cannot silently
 expose data.
 
+`POST /api/backups/restore-to-staging` restores a fully verified backup's
+regular site files into a new isolated site and validated route. It deliberately
+refuses existing destinations and never restores database dumps; use it to
+inspect a recovery point before deciding on a production change.
+
 ## Access, logs, and workers
 
 Site access APIs manage validated SSH public-key fingerprints plus SFTP/shell

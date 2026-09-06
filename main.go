@@ -325,6 +325,7 @@ func main() {
 	mux.Handle("/api/sites/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteDeploy)), http.MethodPost))
 	mux.Handle("/api/sites/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.siteManage)), http.MethodDelete))
 	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
+	mux.Handle("/api/backups/restore-to-staging", allowMethods(app.Auth.Require(http.HandlerFunc(app.backupRestoreToStaging)), http.MethodPost))
 	mux.Handle("/api/backup-schedules", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.backupSchedules)), http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete))
 	mux.Handle("/api/apps", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appList)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/apps/deploy", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.appDeploy)), http.MethodPost))

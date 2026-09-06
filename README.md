@@ -226,6 +226,7 @@ checkbox and should be backed up first.
 | `DELETE` | `/api/sites/<config>` | Remove a managed PHP site vhost |
 | `GET` | `/api/backups` | List private verified backup artifacts (`site` filter; `limit` 1–500, default 100) |
 | `POST` | `/api/backups` | Queue a site backup with optional managed database dumps |
+| `POST` | `/api/backups/restore-to-staging` | Restore verified site files only into a new isolated staging site |
 | `POST` | `/api/certificates/issue` | Queue a validated Let’s Encrypt certificate request |
 | `POST` | `/api/apps/<site>/rollback` | Roll back a managed Node app to its previous manifest |
 | `POST` | `/api/sites/git-deploy` | Checkout a validated HTTPS Git ref into an atomic site release |
