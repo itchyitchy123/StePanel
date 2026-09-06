@@ -47,6 +47,18 @@ func resourceProfileForPlan(account, site string, plan HostingPlan) ResourceProf
 	return ResourceProfile{Account: account, Site: site, CPUPercent: plan.CPUPercent, CPUWeight: 100, MemoryHighMB: high, MemoryMB: plan.MemoryMB, IOWeight: 100, TasksMax: plan.TasksMax, PHPWorkers: plan.PHPWorkers, State: "pending", FilesystemQuotaState: "none"}
 }
 
+func clampResourceProfileToPlan(profile ResourceProfile, plan HostingPlan) ResourceProfile {
+	profile.CPUPercent = minInt(profile.CPUPercent, plan.CPUPercent)
+	profile.MemoryHighMB = minInt(profile.MemoryHighMB, plan.MemoryMB*90/100)
+	profile.MemoryMB = minInt(profile.MemoryMB, plan.MemoryMB)
+	profile.TasksMax = minInt(profile.TasksMax, plan.TasksMax)
+	profile.PHPWorkers = minInt(profile.PHPWorkers, plan.PHPWorkers)
+	if profile.MemoryHighMB > profile.MemoryMB {
+		profile.MemoryHighMB = profile.MemoryMB
+	}
+	return profile
+}
+
 // ensurePlanResources persists desired resource profiles for newly assigned
 // sites without overwriting an administrator's existing site-specific policy.
 // Host application is deliberately separate so a helper failure leaves a
@@ -150,14 +162,7 @@ func (a *App) reconcileAccountResourcePlan(previous, account HostingAccount) ([]
 			profile = resourceProfileForPlan(account.Username, site, plan)
 		} else {
 			profile.Account = account.Username
-			profile.CPUPercent = minInt(profile.CPUPercent, plan.CPUPercent)
-			profile.MemoryHighMB = minInt(profile.MemoryHighMB, plan.MemoryMB*90/100)
-			profile.MemoryMB = minInt(profile.MemoryMB, plan.MemoryMB)
-			profile.TasksMax = minInt(profile.TasksMax, plan.TasksMax)
-			profile.PHPWorkers = minInt(profile.PHPWorkers, plan.PHPWorkers)
-			if profile.MemoryHighMB > profile.MemoryMB {
-				profile.MemoryHighMB = profile.MemoryMB
-			}
+			profile = clampResourceProfileToPlan(profile, plan)
 			profile.State = "pending"
 		}
 		a.Resources.values[site] = profile
@@ -348,6 +353,23 @@ func (a *App) siteResources(w http.ResponseWriter, r *http.Request) {
 		p.Account = previous.Account
 	}
 	p = normalizeResourceProfile(p)
+	if p.Account != "" {
+		if a.Accounts == nil {
+			http.Error(w, "owning account state is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		account, exists := a.Accounts.Get(p.Account)
+		if !exists {
+			http.Error(w, "owning account is unavailable", http.StatusConflict)
+			return
+		}
+		plan, exists := hostingPlans[account.Plan]
+		if !exists {
+			http.Error(w, "owning account plan is unavailable", http.StatusConflict)
+			return
+		}
+		p = clampResourceProfileToPlan(p, plan)
+	}
 	p.State = "pending"
 	p.FilesystemQuotaState = "none"
 	if p.hasFilesystemQuota() {

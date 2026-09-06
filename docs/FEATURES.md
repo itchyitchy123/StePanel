@@ -94,7 +94,8 @@ Latest stable release: `v0.6.0`
   MemoryHigh/MemoryMax, I/O weight, and task limits
   for managed systemd application/worker processes plus PHP-FPM worker
   ceilings. Plan-assigned sites additionally inherit an aggregate account
-  cgroup envelope. Optional disk/inode values are enforced with Linux user
+  cgroup envelope; direct site-profile changes cannot exceed the owning
+  account plan. Optional disk/inode values are enforced with Linux user
   quotas when the filesystem is preconfigured for quotas. Profiles are
   re-applied during startup and through the administrator reconciliation
   endpoint; bandwidth, database, and Redis enforcement remain

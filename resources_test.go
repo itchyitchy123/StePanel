@@ -34,6 +34,20 @@ func TestOpenResourceStoreRejectsInvalidPersistedProfile(t *testing.T) {
 	}
 }
 
+func TestClampResourceProfileToPlanNeverExceedsAccountEnvelope(t *testing.T) {
+	profile := ResourceProfile{
+		CPUPercent:   6400,
+		MemoryHighMB: 4096,
+		MemoryMB:     4096,
+		TasksMax:     100000,
+		PHPWorkers:   512,
+	}
+	clamped := clampResourceProfileToPlan(profile, hostingPlans["starter"])
+	if clamped.CPUPercent != 100 || clamped.MemoryHighMB != 460 || clamped.MemoryMB != 512 || clamped.TasksMax != 128 || clamped.PHPWorkers != 8 {
+		t.Fatalf("clamped profile = %#v", clamped)
+	}
+}
+
 func TestEnsurePlanResourcesPersistsEnforcedEnvelopeAsPendingOnHelperFailure(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "resources.json")
 	store, err := OpenResourceStore(path)

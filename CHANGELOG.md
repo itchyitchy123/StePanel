@@ -25,6 +25,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   gap where a reboot could leave durable resource policy unapplied until a
   manual administrator action.
 
+- Applied account-plan ceilings to direct administrator site-resource edits,
+  preventing a site profile from bypassing the owning account's CPU, memory,
+  process, or PHP-worker envelope.
+
 - Extended per-site mutation serialization to environment, resource-profile,
   scheduled-task, and worker updates/reconciliation, preventing concurrent
   helper calls from racing over systemd, PHP, and site-level state.
