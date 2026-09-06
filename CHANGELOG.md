@@ -11,6 +11,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Fixed disposable installation smoke coverage to exercise the production
   off-site-backup requirement with a local synthetic target instead of
   contradicting the installer contract.
+- The installation smoke harness now installs `rclone` before readiness checks,
+  covering the actual dependency required by mandatory off-site backups.
 
 - Updated the standalone `/api/runner/build` path for the resource-limited
   runner contract and serialized it with other same-site builds, preventing

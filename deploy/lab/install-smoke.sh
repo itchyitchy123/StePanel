@@ -23,6 +23,14 @@ export STEPANEL_INSTALL_SECURITY=0
 export STEPANEL_REQUIRE_OFFSITE_BACKUP=1
 export STEPANEL_OFFSITE_TARGET=local:/tmp/stepanel-offsite
 
+if command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y rclone
+else
+  dnf install -y rclone
+fi
+
 ./install.sh
 systemctl is-active --quiet stepanel.service
 curl --fail --silent --max-time 5 http://127.0.0.1:8090/livez >/dev/null
