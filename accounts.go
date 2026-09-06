@@ -703,7 +703,17 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 				return
 			}
+			pendingResources, resourceErr := a.reconcileAccountResourcePlan(account, updated)
+			if resourceErr != nil {
+				_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.resource-reconciliation-failed", username, resourceErr.Error())
+				http.Error(w, "account updated but resource desired state could not be persisted", http.StatusServiceUnavailable)
+				return
+			}
 			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.updated", username, "plan or site assignments changed")
+			if len(pendingResources) > 0 {
+				writeJSON(w, http.StatusAccepted, map[string]any{"account": updated, "resource_reconciliation": "pending", "pending_sites": pendingResources})
+				return
+			}
 			writeJSON(w, http.StatusOK, updated)
 			return
 		}
