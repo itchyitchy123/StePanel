@@ -114,8 +114,10 @@ appears in `/api/sites/overview`, its own backup/job history is visible, and
 `/api/services` returns `403`. Keep a record of the assignment and recovery
 contact outside the panel. Administrators can suspend/unsuspend panel access
 and remove customer login records; suspension revokes active sessions, while
-login removal deliberately retains workloads. This beta has no password reset,
-hosting-workload suspension/termination, billing, or resource-quota workflow.
+login removal deliberately retains workloads. Customer credential recovery is
+available through the documented administrator recovery and customer completion
+endpoints. This beta has no hosting-workload suspension/termination, billing,
+or resource-quota workflow.
 Do not represent
 `starter`, `professional`, or `agency` as a CPU, memory, bandwidth, disk, or
 support entitlement: they enforce only 1, 5, or 25 assigned sites.

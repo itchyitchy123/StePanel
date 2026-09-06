@@ -28,6 +28,11 @@ delivery. `POST /api/accounts/{username}/recovery-codes` generates ten
 one-time recovery codes, persists only bcrypt hashes, revokes existing sessions,
 and returns the codes once for secure delivery. Generating a new set invalidates
 the previous set.
+For a complete incident response, `POST /api/accounts/{username}/recover`
+rotates the temporary password, TOTP seed, and recovery codes in one persisted
+operation, revokes sessions, and requires the customer to complete password and
+MFA enrollment. Temporary credentials and replacement seeds are returned once;
+deliver them over separate secure channels.
 
 `STEPANEL_AUDIT_KEY` protects the HMAC-linked audit chain. Do not rotate it in
 place: existing events would no longer verify. Preserve the old key with the

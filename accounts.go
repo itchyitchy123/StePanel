@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,15 +37,17 @@ var hostingPlans = map[string]HostingPlan{
 }
 
 type HostingAccount struct {
-	Username           string    `json:"username"`
-	PasswordHash       string    `json:"password_hash"`
-	TOTPSecret         string    `json:"totp_secret"`
-	TOTPEncrypted      bool      `json:"totp_encrypted,omitempty"`
-	RecoveryCodeHashes []string  `json:"recovery_code_hashes,omitempty"`
-	Plan               string    `json:"plan"`
-	Sites              []string  `json:"sites"`
-	Suspended          bool      `json:"suspended"`
-	CreatedAt          time.Time `json:"created_at"`
+	Username              string    `json:"username"`
+	PasswordHash          string    `json:"password_hash"`
+	TOTPSecret            string    `json:"totp_secret"`
+	TOTPEncrypted         bool      `json:"totp_encrypted,omitempty"`
+	RecoveryCodeHashes    []string  `json:"recovery_code_hashes,omitempty"`
+	PasswordResetRequired bool      `json:"password_reset_required,omitempty"`
+	MFAEnrollmentRequired bool      `json:"mfa_enrollment_required,omitempty"`
+	Plan                  string    `json:"plan"`
+	Sites                 []string  `json:"sites"`
+	Suspended             bool      `json:"suspended"`
+	CreatedAt             time.Time `json:"created_at"`
 }
 
 // AccountStore holds customer identities and site assignments. Administrator
@@ -264,7 +267,7 @@ func (s *AccountStore) ResetTOTP(username string) (HostingAccount, string, error
 		return HostingAccount{}, "", errors.New("account not found")
 	}
 	previous := account.TOTPSecret
-	account.TOTPSecret, account.TOTPEncrypted = secret, false
+	account.TOTPSecret, account.TOTPEncrypted, account.MFAEnrollmentRequired = secret, false, true
 	s.accounts[username] = account
 	if err := s.persistLocked(); err != nil {
 		account.TOTPSecret, account.TOTPEncrypted = previous, false
@@ -334,6 +337,104 @@ func (s *AccountStore) ConsumeRecoveryCode(username, code string) (bool, error) 
 		return true, nil
 	}
 	return false, nil
+}
+
+func (s *AccountStore) RecoverCredentials(username string) (HostingAccount, string, string, []string, error) {
+	passwordBytes := make([]byte, 18)
+	if _, err := io.ReadFull(rand.Reader, passwordBytes); err != nil {
+		return HostingAccount{}, "", "", nil, err
+	}
+	temporaryPassword := base64.RawURLEncoding.EncodeToString(passwordBytes)
+	totpBytes := make([]byte, 20)
+	if _, err := io.ReadFull(rand.Reader, totpBytes); err != nil {
+		return HostingAccount{}, "", "", nil, err
+	}
+	totpSecret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(totpBytes)
+	recoveryCodes := make([]string, 10)
+	recoveryHashes := make([]string, len(recoveryCodes))
+	for i := range recoveryCodes {
+		buf := make([]byte, 8)
+		if _, err := io.ReadFull(rand.Reader, buf); err != nil {
+			return HostingAccount{}, "", "", nil, err
+		}
+		recoveryCodes[i] = fmt.Sprintf("%x", buf)
+		hash, err := hashPassword(recoveryCodes[i])
+		if err != nil {
+			return HostingAccount{}, "", "", nil, err
+		}
+		recoveryHashes[i] = hash
+	}
+	passwordHash, err := hashPassword(temporaryPassword)
+	if err != nil {
+		return HostingAccount{}, "", "", nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return HostingAccount{}, "", "", nil, errors.New("account not found")
+	}
+	previous := account
+	account.PasswordHash = passwordHash
+	account.TOTPSecret = totpSecret
+	account.TOTPEncrypted = false
+	account.RecoveryCodeHashes = recoveryHashes
+	account.PasswordResetRequired = true
+	account.MFAEnrollmentRequired = true
+	s.accounts[username] = account
+	if err := s.persistLocked(); err != nil {
+		s.accounts[username] = previous
+		return HostingAccount{}, "", "", nil, err
+	}
+	response := account
+	response.PasswordHash, response.TOTPSecret, response.TOTPEncrypted, response.RecoveryCodeHashes = "", "", false, nil
+	return response, temporaryPassword, totpSecret, recoveryCodes, nil
+}
+
+func (s *AccountStore) SetPassword(username, password string) (HostingAccount, error) {
+	if len(password) < 20 || len(password) > 128 {
+		return HostingAccount{}, errors.New("password must be 20-128 characters")
+	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		return HostingAccount{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return HostingAccount{}, errors.New("account not found")
+	}
+	previous := account
+	account.PasswordHash, account.PasswordResetRequired = hash, false
+	s.accounts[username] = account
+	if err := s.persistLocked(); err != nil {
+		s.accounts[username] = previous
+		return HostingAccount{}, err
+	}
+	account.PasswordHash, account.TOTPSecret, account.RecoveryCodeHashes = "", "", nil
+	return account, nil
+}
+
+func (s *AccountStore) SetTOTP(username, secret string) (HostingAccount, error) {
+	if _, err := decodeTOTPSecret(secret); err != nil {
+		return HostingAccount{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account, ok := s.accounts[username]
+	if !ok {
+		return HostingAccount{}, errors.New("account not found")
+	}
+	previous := account
+	account.TOTPSecret, account.TOTPEncrypted, account.MFAEnrollmentRequired = secret, false, false
+	s.accounts[username] = account
+	if err := s.persistLocked(); err != nil {
+		s.accounts[username] = previous
+		return HostingAccount{}, err
+	}
+	account.PasswordHash, account.TOTPSecret, account.RecoveryCodeHashes = "", "", nil
+	return account, nil
 }
 
 func encryptAccountTOTP(key []byte, value string) (string, error) {
@@ -420,6 +521,32 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.mfa-reset", username, "TOTP regenerated and sessions revoked")
 		writeJSON(w, http.StatusOK, map[string]any{"account": account, "totp_secret": secret})
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasSuffix(strings.Trim(r.URL.Path, "/"), "/recover") {
+		if !a.Auth.CSRF(r) {
+			http.Error(w, "invalid request", http.StatusForbidden)
+			return
+		}
+		path := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/accounts/"), "/recover")
+		username := safeUser(strings.Trim(path, "/"))
+		if username == "" || strings.Contains(path, "/") {
+			http.Error(w, "invalid account", http.StatusBadRequest)
+			return
+		}
+		account, password, totpSecret, recoveryCodes, err := a.Accounts.RecoverCredentials(username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if a.Auth.sessions != nil {
+			if err := a.Auth.sessions.revokeUser(username); err != nil {
+				http.Error(w, "credentials reset but session revocation could not be persisted", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.credentials-recovered", username, "temporary password, new MFA, recovery codes, and session revocation")
+		writeJSON(w, http.StatusOK, map[string]any{"account": account, "temporary_password": password, "totp_secret": totpSecret, "recovery_codes": recoveryCodes})
 		return
 	}
 	if r.Method == http.MethodPost && strings.HasSuffix(strings.Trim(r.URL.Path, "/"), "/recovery-codes") {
@@ -531,4 +658,66 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (a *App) customerPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	username := a.Auth.UsernameForRequest(r)
+	if username == "" || a.Auth.IsAdministrator(r) || a.Accounts == nil {
+		http.Error(w, "customer account required", http.StatusForbidden)
+		return
+	}
+	var input struct {
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if _, err := a.Accounts.SetPassword(username, input.Password); err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if a.Auth.sessions != nil {
+		if err := a.Auth.sessions.revokeUser(username); err != nil {
+			http.Error(w, "password changed but session revocation could not be persisted", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	_ = AuditAs(a.Config.AuditLog, username, "hosting.account.password-changed", username, "customer completed password recovery")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *App) customerMFA(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
+		http.Error(w, "invalid request", http.StatusForbidden)
+		return
+	}
+	username := a.Auth.UsernameForRequest(r)
+	if username == "" || a.Auth.IsAdministrator(r) || a.Accounts == nil {
+		http.Error(w, "customer account required", http.StatusForbidden)
+		return
+	}
+	var input struct {
+		TOTPSecret string `json:"totp_secret"`
+	}
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if _, err := a.Accounts.SetTOTP(username, input.TOTPSecret); err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if a.Auth.sessions != nil {
+		if err := a.Auth.sessions.revokeUser(username); err != nil {
+			http.Error(w, "MFA enrollment saved but session revocation could not be persisted", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	_ = AuditAs(a.Config.AuditLog, username, "hosting.account.mfa-enrolled", username, "customer completed MFA recovery")
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -192,6 +192,9 @@ checkbox and should be backed up first.
 | `PATCH` / `DELETE` | `/api/accounts/<username>` | Suspend/unsuspend or remove a customer login; workloads are retained |
 | `POST` | `/api/accounts/<username>/mfa` | Regenerate encrypted customer TOTP and revoke that customer's sessions |
 | `POST` | `/api/accounts/<username>/recovery-codes` | Generate one-time hashed recovery codes and revoke that customer's sessions |
+| `POST` | `/api/accounts/<username>/recover` | Administrator credential recovery: temporary password, MFA, recovery codes, and session revocation |
+| `POST` | `/api/account/password` | Customer completes a required password change |
+| `POST` | `/api/account/mfa` | Customer completes required MFA enrollment |
 | `GET` | `/api/cloud` | Authenticated Linode/AWS/OpenStack inventory for servers, DNS, load balancers, and snapshots |
 | `POST` | `/api/cloud/action` | Queue a cloud server start, stop, reboot, or snapshot action |
 | `GET` | `/api/cloud/dns` | List Linode DNS records |

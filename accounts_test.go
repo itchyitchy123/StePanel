@@ -116,6 +116,32 @@ func TestRecoveryCodesAreOneTimeAndOnlyHashesPersist(t *testing.T) {
 	}
 }
 
+func TestCredentialRecoveryRotatesAllMFAMaterial(t *testing.T) {
+	store, err := OpenAccountStore(filepath.Join(t.TempDir(), "accounts.json"), "account-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err != nil {
+		t.Fatal(err)
+	}
+	account, temporaryPassword, totpSecret, codes, err := store.RecoverCredentials("customer")
+	if err != nil || len(temporaryPassword) < 20 || len(codes) != 10 || account.TOTPSecret != "" {
+		t.Fatalf("credential recovery = %#v, %q, %q, %d codes, %v", account, temporaryPassword, totpSecret, len(codes), err)
+	}
+	if !account.PasswordResetRequired || !account.MFAEnrollmentRequired {
+		t.Fatal("credential recovery did not set completion requirements")
+	}
+	if _, err := decodeTOTPSecret(totpSecret); err != nil {
+		t.Fatalf("recovered TOTP secret invalid: %v", err)
+	}
+	if updated, err := store.SetPassword("customer", "a new sufficiently long customer password"); err != nil || updated.PasswordResetRequired {
+		t.Fatalf("password completion = %#v, %v", updated, err)
+	}
+	if updated, err := store.SetTOTP("customer", totpSecret); err != nil || updated.MFAEnrollmentRequired {
+		t.Fatalf("MFA completion = %#v, %v", updated, err)
+	}
+}
+
 func TestCustomerLoginRequiresAccountTOTP(t *testing.T) {
 	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
 	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")

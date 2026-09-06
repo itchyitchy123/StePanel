@@ -53,6 +53,9 @@ not implemented.
 - Administrator-only customer MFA regeneration through
   `/api/accounts/{username}/mfa`, returning the replacement seed once and
   revoking that customer's sessions.
+- Administrator customer credential recovery with temporary password,
+  regenerated MFA, one-time recovery codes, session revocation, and customer
+  password/MFA completion endpoints.
 - Constrained Git releases and one-click rollback at `/api/sites/git-deploy` and `/api/sites/git-rollback`, with public HTTPS sources or per-site deploy-key-authenticated `git@host:path.git` sources, an exact hostname allowlist, shallow ref checkout, commit identification, symlink rejection, Git-metadata removal, atomic activation, previous-release preservation, and audit events. Repository build scripts are not executed.
 - Developer runtime APIs for encrypted site environments, version-selected
   PHP-FPM profiles, Composer inspection/install, Node package tooling, Python

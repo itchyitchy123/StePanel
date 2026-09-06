@@ -59,6 +59,11 @@ are revoked, and the seed must be delivered through a secure channel.
 Administrators can generate one-time recovery codes with `POST
 /api/accounts/{username}/recovery-codes`; only bcrypt hashes are stored and the
 codes are returned once.
+For a full recovery, administrators use `POST /api/accounts/{username}/recover`.
+It rotates the temporary password, TOTP seed, and recovery codes, marks both
+`password_reset_required` and `mfa_enrollment_required`, and revokes sessions.
+The customer completes the two steps through `/api/account/password` and
+`/api/account/mfa`; each endpoint revokes the current session after success.
 
 ## Site environment variables
 
