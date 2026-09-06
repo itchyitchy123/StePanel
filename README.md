@@ -248,6 +248,10 @@ checkbox and should be backed up first.
 | `POST` | `/api/runner/build` | Run a validated build definition in the rootless Podman runner |
 | `GET` | `/api/deployments` | List durable build and release activation records; optional `site` filter |
 | `POST` | `/api/deployments/run` | Preview: checkout, optionally back up, sandbox-build, validate, and atomically activate a complete artifact |
+| `POST` | `/api/backups/restore-files` | Queue an administrator-only verified files-only restore |
+| `POST` | `/api/backups/restore-database` | Queue an administrator-only verified managed-database restore |
+| `POST` | `/api/backups/restore-offsite-files` | Queue a verified files-only restore from the configured rclone target |
+| `POST` | `/api/backups/restore-offsite-database` | Queue a verified managed-database restore from the configured rclone target |
 | `POST` | `/api/reconcile/resources` | Re-apply pending or inactive per-site resource profiles |
 | `POST` | `/api/reconcile/tasks` | Re-apply pending or remove deleted scheduled-task definitions |
 | `GET` | `/api/sites/usage/<site>` | Bounded regular-file, file-count, and directory-count usage for a site |

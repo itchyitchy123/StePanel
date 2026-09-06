@@ -51,7 +51,7 @@ no-index staging route. Values are synthetic and do not represent a live host.
 <td><strong>Developer workspace</strong><br>Managed sites group domains, runtime/environment controls, deployments, logs, workers, scheduled tasks, and verified recent activity.</td>
 </tr>
 <tr>
-<td><strong>Resource and recovery operations</strong><br>Administrators can inspect desired/applied resource profiles, live cgroup counters, reconciliation state, bounded site usage, and restore verified files into isolated staging.</td>
+<td><strong>Resource and recovery operations</strong><br>Administrators can inspect desired/applied resource profiles, live cgroup counters, reconciliation state, bounded site usage, and restore verified files or managed database dumps locally, from off-site storage, or into isolated staging where supported.</td>
 <td><strong>Security operations</strong><br>The read-only Security Center combines posture checks, service health, disk/inode pressure, and backup schedule health without implying firewall or patch automation.</td>
 </tr>
 </table>
