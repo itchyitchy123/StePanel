@@ -28,13 +28,13 @@ maps to authenticated API and helper behavior documented in
 
 ## Dashboard
 
-![StePanel dashboard preview](assets/dashboard-preview.png)
+![StePanel dashboard workspace preview](assets/dashboard-workspace-preview.png)
 
 This is the current dark, navigation-led dashboard shell. It matches the live
 workspace hierarchy—operator context, managed-site cards, security posture,
 and persistent jobs—rather than the retired light infrastructure layout. The
 preview is rendered at 2× resolution for crisp display on GitHub and retina
-screens. The editable [SVG source](assets/dashboard-preview.svg) remains
+screens. The editable [SVG source](assets/dashboard-workspace-preview.svg) remains
 available for presentations and product materials.
 
 ## What the preview covers
