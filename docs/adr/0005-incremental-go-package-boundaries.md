@@ -21,7 +21,8 @@ small steps. New boundaries will be introduced in this order:
 4. backups and migration workflows;
 5. resource enforcement and reconciliation.
 
-The first completed extractions are `internal/session`, `internal/deployment`,
+The first completed extractions are `internal/auth` for login throttling and
+peer-address policy, `internal/session`, `internal/deployment`,
 `internal/operations`, `internal/usage`, and the platform-neutral
 `internal/state` atomic writer. The remaining authentication, job, platform,
 backup, and resource seams are intentionally still coupled to the HTTP assembly

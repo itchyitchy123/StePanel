@@ -59,12 +59,13 @@ the HTTP handlers, shared configuration, test fixtures, and embedded dashboard
 are still tightly coupled. A mechanical directory move would obscure those
 dependencies without improving the runtime boundary.
 
-The structural refactor is now underway. Durable deployment history, revocable
-session state, bounded filesystem accounting, and asynchronous job admission
-have been extracted behind internal package seams. The
+The structural refactor is now underway. Authentication rate limiting and
+peer-address normalization, durable deployment history, revocable session
+state, bounded filesystem accounting, and asynchronous job admission have
+been extracted behind internal package seams. The
 remaining boundaries should be extracted in this order:
 
-1. `internal/auth` for CSRF, MFA, and rate limiting.
+1. `internal/auth` for CSRF, MFA, and the remaining authentication policy.
 2. `internal/jobs` for durable state, worker admission, and per-target
    serialization.
 3. `internal/migration` for cpmove/WPress inspection, staging, and recovery.
@@ -72,7 +73,8 @@ remaining boundaries should be extracted in this order:
 5. `internal/operations` for cloud, SSH, service, and privileged-helper
    adapters.
 
-The current extracted seams are `internal/deployment` for deployment history,
+The current extracted seams are `internal/auth` for bounded login throttling
+and trusted peer-address extraction, `internal/deployment` for deployment history,
 `internal/session` for durable, revocable session entries,
 `internal/operations` for site mutation locks, `internal/usage` for bounded
 filesystem accounting, `internal/state` for atomic state writes, and

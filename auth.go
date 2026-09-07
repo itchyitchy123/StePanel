@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	authpolicy "github.com/itchyitchy123/StePanel/internal/auth"
 	sessionstate "github.com/itchyitchy123/StePanel/internal/session"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -30,7 +31,7 @@ type Auth struct {
 	TOTPEnabled                              bool
 	totpSecret                               []byte
 	totpReplay                               *totpReplayState
-	loginLimiter                             *loginLimiter
+	loginLimiter                             *authpolicy.Limiter
 	sessions                                 *sessionRegistry
 	Accounts                                 *AccountStore
 }
@@ -89,7 +90,7 @@ func NewAuth(secureCookies bool) (Auth, error) {
 		passwordDigest := sha256.Sum256([]byte(password))
 		credentialKey = "password-digest:" + hex.EncodeToString(passwordDigest[:])
 	}
-	return Auth{Username: username, PasswordHash: hash, Secret: secret, credentialKey: credentialKey, credentialHash: hash, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{lastCounter: make(map[string]uint64)}, loginLimiter: newLoginLimiter(), sessions: &sessionRegistry{inner: sessionstate.New("")}}, nil
+	return Auth{Username: username, PasswordHash: hash, Secret: secret, credentialKey: credentialKey, credentialHash: hash, Enabled: true, SecureCookies: secureCookies, TOTPEnabled: len(totpSecret) > 0, totpSecret: totpSecret, totpReplay: &totpReplayState{lastCounter: make(map[string]uint64)}, loginLimiter: authpolicy.NewLimiter(), sessions: &sessionRegistry{inner: sessionstate.New("")}}, nil
 }
 
 func (a *Auth) ConfigureSessionStore(path string) error {
@@ -146,8 +147,8 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if a.loginLimiter != nil && !a.loginLimiter.Allow(clientIP(r)) {
-		_ = AuditAs(a.AuditLog, "unknown", "auth.login.throttled", clientIP(r), "login rate limit exceeded")
+	if a.loginLimiter != nil && !a.loginLimiter.Allow(authpolicy.ClientIP(r)) {
+		_ = AuditAs(a.AuditLog, "unknown", "auth.login.throttled", authpolicy.ClientIP(r), "login rate limit exceeded")
 		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
 		return
 	}
@@ -188,16 +189,16 @@ func (a Auth) Login(w http.ResponseWriter, r *http.Request) {
 		if actor == "" {
 			actor = "unknown"
 		}
-		_ = AuditAs(a.AuditLog, actor, "auth.login.failed", clientIP(r), "invalid credentials")
+		_ = AuditAs(a.AuditLog, actor, "auth.login.failed", authpolicy.ClientIP(r), "invalid credentials")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(loginPage("Invalid credentials", true)))
 		return
 	}
 	if a.loginLimiter != nil {
-		a.loginLimiter.Reset(clientIP(r))
+		a.loginLimiter.Reset(authpolicy.ClientIP(r))
 	}
-	if err := AuditAs(a.AuditLog, username, "auth.login.succeeded", clientIP(r), "session issued"); err != nil {
+	if err := AuditAs(a.AuditLog, username, "auth.login.succeeded", authpolicy.ClientIP(r), "session issued"); err != nil {
 		http.Error(w, "audit persistence is unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -245,7 +246,7 @@ func (a Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	if actor == "" {
 		actor = a.Username
 	}
-	_ = AuditAs(a.AuditLog, actor, "auth.logout", clientIP(r), "session ended")
+	_ = AuditAs(a.AuditLog, actor, "auth.logout", authpolicy.ClientIP(r), "session ended")
 	http.SetCookie(w, &http.Cookie{Name: "stepanel_session", MaxAge: -1, Path: "/", HttpOnly: true, Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
 	http.SetCookie(w, &http.Cookie{Name: "stepanel_csrf", MaxAge: -1, Path: "/", Secure: a.SecureCookies, SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -258,7 +259,7 @@ func (a Auth) Require(next http.Handler) http.Handler {
 		}
 		if a.validSession(r) {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
-				if err := AuditAs(a.AuditLog, a.UsernameForRequest(r), "http.request", r.URL.Path, clientIP(r)); err != nil {
+				if err := AuditAs(a.AuditLog, a.UsernameForRequest(r), "http.request", r.URL.Path, authpolicy.ClientIP(r)); err != nil {
 					http.Error(w, "audit persistence is unavailable", http.StatusServiceUnavailable)
 					return
 				}

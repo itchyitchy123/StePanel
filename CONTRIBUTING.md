@@ -13,13 +13,18 @@ make check
 go run .
 ```
 
+For the full pre-review gate, run `make audit`. It adds race detection and
+release-metadata validation to the normal formatting, vet, and test checks.
+
 The local server uses `data/imports` and `data/www` by default, so development does not require root. Never test a restore against a production backup or live web root.
 
 ## Pull requests
 
 - Explain the operator-facing behavior and the security implications.
 - Add or update tests for parsing, validation, and failure paths.
-- Run `make check` and `bash -n install.sh` before opening a pull request.
+- Run `make audit`, `bash -n install.sh`, and ShellCheck before opening a pull
+  request. On constrained hosts, run the race target in CI and record any
+  environment limitation rather than weakening the check.
 - Update the README, relevant guide, and `CHANGELOG.md` when behavior changes.
 - Keep commits focused and avoid bundling unrelated formatting changes.
 - Keep package-local unit tests beside the package they exercise. Root-package

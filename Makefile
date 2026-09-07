@@ -2,7 +2,7 @@ APP := stepanel
 GO ?= go
 LDFLAGS := -s -w -X main.Commit=$${GIT_COMMIT:-dev} -X main.BuildDate=$$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: all build test fmt fmt-check vet coverage check release-check clean
+.PHONY: all build test test-race fmt fmt-check vet coverage check audit release-check clean
 
 all: check build
 
@@ -11,6 +11,9 @@ build:
 
 test:
 	$(GO) test ./...
+
+test-race:
+	$(GO) test -race ./...
 
 fmt:
 	$(GO) fmt ./...
@@ -25,6 +28,8 @@ vet:
 	$(GO) vet ./...
 
 check: fmt-check vet test
+
+audit: fmt-check vet test test-race release-check
 
 release-check:
 	./scripts/check-release.sh

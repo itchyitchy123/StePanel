@@ -30,6 +30,9 @@ isolation, recovery, and operational consistency.
   records.
 - Added a reproducible interrupted-restore case study and clarified that the
   next milestone is a stability/architecture release.
+- Extracted bounded login throttling and peer-address policy into the tested
+  `internal/auth` package, and added a first-class `make audit` target covering
+  formatting, vet, tests, race tests, and release metadata.
 
 - Reworked the live dashboard into the same dark, site-focused workspace
   shell used by the developer views: persistent desktop navigation, compact
