@@ -2,7 +2,7 @@
 
 ## Assets
 
-- Administrator credentials and session cookies.
+- Administrator/customer credentials, MFA material, and session cookies.
 - Uploaded cPanel backups and extracted site files.
 - Database credentials and imported SQL data.
 - Server configuration and audit history.
@@ -19,8 +19,12 @@
 
 - Authenticated mutating routes require CSRF validation.
 - Sessions are signed, expiring, and protected with HttpOnly/SameSite cookies.
+  Customer credential, MFA, and suspension changes increment a durable session
+  generation; this invalidates existing customer sessions even if registry
+  revocation cannot be persisted at the same moment.
 - Optional TOTP adds replay-resistant second-factor validation; accepted codes
-  cannot be reused within the process lifetime.
+  cannot be reused within the process lifetime. Customer TOTP material is
+  AES-GCM encrypted at rest when `STEPANEL_ACCOUNT_KEY` is configured.
 - Login attempts are rate-limited.
 - Uploads are size-limited and staged privately.
 - Archive paths are checked for absolute paths and traversal.
@@ -45,6 +49,9 @@
   `StrictHostKeyChecking=yes`. Both paths reject symlinks and special files,
   strip repository metadata, and do not execute repository-provided build
   scripts in the control plane.
+- Staging Basic Auth is enforced only through the Caddy and Apache helpers.
+  Unsupported OpenLiteSpeed requests are rejected instead of accepting a
+  protection setting that cannot be applied.
 
 ## Residual risks
 

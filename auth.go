@@ -351,7 +351,13 @@ func (a Auth) credentialFingerprintFor(username, passwordHash string) string {
 	if username == a.Username && a.credentialKey != "" && !(strings.HasPrefix(a.credentialKey, "password-digest:") && a.credentialHash != a.PasswordHash) {
 		key = a.credentialKey
 	}
-	digest := sha256.Sum256([]byte(username + "\x00" + key))
+	generation := uint64(0)
+	if username != a.Username && a.Accounts != nil {
+		if account, ok := a.Accounts.Get(username); ok {
+			generation = account.SessionGeneration
+		}
+	}
+	digest := sha256.Sum256([]byte(username + "\x00" + key + "\x00" + strconv.FormatUint(generation, 10)))
 	return hex.EncodeToString(digest[:16])
 }
 

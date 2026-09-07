@@ -9,10 +9,21 @@
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
   <div class="app-shell">
-    <header class="topbar">
+    <aside class="workspace-sidebar" aria-label="Workspace navigation">
       <a class="brand" href="/" aria-label="StePanel home"><span class="brand-mark">S</span><span>StePanel</span></a>
-      <nav class="topnav" aria-label="Primary"><a href="#sites">My sites</a><a href="#start">Get started</a>{{ if .IsAdministrator }}<a href="#migrations">Migrate</a><a href="#database">Databases</a><a href="#operations">Operations</a>{{ else }}<a href="#jobs">Activity</a>{{ end }}</nav>
-      <div class="topbar-meta"><span class="pulse" aria-hidden="true"></span> Connected <span class="divider"></span> <time datetime="{{ .Now.Format "2006-01-02" }}">{{ .Now.Format "02 Jan 2006" }}</time>{{ if .AuthEnabled }}<form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ .CSRF }}"><button class="avatar" type="submit" aria-label="Sign out {{ .Username }}">{{ if .Username }}{{ .Username }}{{ else }}admin{{ end }} · Sign out</button></form>{{ end }}</div>
+      <p class="sidebar-label">Workspace</p>
+      <nav class="workspace-nav" aria-label="Primary">
+        <a class="is-active" href="#main"><span aria-hidden="true">⌂</span>Overview</a>
+        <a href="#sites"><span aria-hidden="true">◌</span>Sites</a>
+        {{ if .IsAdministrator }}<a href="#database"><span aria-hidden="true">▤</span>Databases</a><a href="#migrations"><span aria-hidden="true">⇄</span>Migrations</a><a href="#operations"><span aria-hidden="true">◫</span>Operations</a><a href="#security"><span aria-hidden="true">◇</span>Security</a>{{ end }}
+        <a href="#jobs"><span aria-hidden="true">◷</span>Activity</a>
+      </nav>
+      <div class="sidebar-footer"><span class="pulse" aria-hidden="true"></span><span>Control plane connected</span></div>
+    </aside>
+    <header class="topbar">
+      <a class="mobile-brand brand" href="/" aria-label="StePanel home"><span class="brand-mark">S</span><span>StePanel</span></a>
+      <div class="workspace-context"><span class="eyebrow">Hosting workspace</span><strong>{{ if .IsAdministrator }}Operator overview{{ else }}Your sites{{ end }}</strong></div>
+      <div class="topbar-meta"><time datetime="{{ .Now.Format "2006-01-02" }}">{{ .Now.Format "02 Jan 2006" }}</time>{{ if .AuthEnabled }}<form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ .CSRF }}"><button class="avatar" type="submit" aria-label="Sign out {{ .Username }}">{{ if .Username }}{{ .Username }}{{ else }}admin{{ end }} <span aria-hidden="true">↗</span></button></form>{{ end }}</div>
     </header>
     <main class="content" id="main">
       <section class="hero">

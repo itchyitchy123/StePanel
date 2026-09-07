@@ -356,3 +356,260 @@ body {
   .card-heading { align-items: flex-start; flex-direction: column; }
   .quiet-action { width: fit-content; }
 }
+
+/* Application shell: the dashboard uses the same focused, dark workspace
+   language as the developer views. Existing semantic components remain in
+   place; this layer only changes hierarchy and presentation. */
+:root {
+  --panel-bg: #080e17;
+  --panel-surface: #101925;
+  --panel-surface-raised: #151f2c;
+  --panel-line: #293544;
+  --panel-text: #f1f5f9;
+  --panel-muted: #a9b5c5;
+  --panel-accent: #68d391;
+  --panel-blue: #69b7ff;
+}
+
+body { background: var(--panel-bg); color: var(--panel-text); }
+.app-shell {
+  display: grid;
+  grid-template-columns: 218px minmax(0, 1fr);
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 73% -15%, rgba(43, 92, 153, .22), transparent 31rem),
+    linear-gradient(135deg, #0a111c, #0b121d 55%, #0d1821);
+}
+.workspace-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 24px 14px 18px;
+  border-right: 1px solid var(--panel-line);
+  background: rgba(7, 13, 22, .84);
+}
+.workspace-sidebar .brand { padding: 0 10px; color: var(--panel-text); }
+.workspace-sidebar .brand-mark {
+  width: 34px;
+  height: 34px;
+  border-color: #34465d;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #25364b, #172231);
+  box-shadow: none;
+  color: #dbeafe;
+}
+.sidebar-label {
+  margin: 42px 10px 9px;
+  color: #718096;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.workspace-nav { display: grid; gap: 4px; }
+.workspace-nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+.workspace-nav a span { width: 14px; color: #8191a6; font-size: 17px; text-align: center; }
+.workspace-nav a:hover,
+.workspace-nav a:focus-visible,
+.workspace-nav .is-active { border-color: #34465b; background: #182535; color: #fff; }
+.workspace-nav .is-active span { color: var(--panel-accent); }
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: auto;
+  padding: 15px 10px 4px;
+  border-top: 1px solid #202c3a;
+  color: #8ea0b4;
+  font-size: 11px;
+}
+.sidebar-footer .pulse { background: var(--panel-accent); box-shadow: 0 0 0 4px rgba(104, 211, 145, .11); }
+
+.topbar {
+  grid-column: 2;
+  min-height: 76px;
+  padding: 0 clamp(24px, 4vw, 54px);
+  border-bottom-color: var(--panel-line);
+  background: rgba(10, 16, 26, .66);
+}
+.mobile-brand { display: none; }
+.workspace-context { display: grid; gap: 2px; }
+.workspace-context .eyebrow { margin: 0; color: #7e91a8; font-size: 9px; }
+.workspace-context strong { color: #eff6ff; font-size: 15px; letter-spacing: -.02em; }
+.topbar-meta { color: #91a1b5; }
+.topbar-meta .avatar {
+  border-color: #34465b;
+  background: #182535;
+  color: #e5edf7;
+}
+.topbar-meta .avatar:hover { background: #223247; }
+
+.content {
+  grid-column: 2;
+  width: min(100%, 1500px);
+  padding: clamp(35px, 5vw, 68px) clamp(24px, 5vw, 76px) 62px;
+}
+.hero {
+  min-height: 214px;
+  padding: clamp(28px, 4vw, 48px);
+  border-color: #344256;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 85% 18%, rgba(66, 153, 225, .23), transparent 18rem),
+    linear-gradient(125deg, #111b29, #152638 65%, #102e32);
+  box-shadow: none;
+}
+.hero:before { right: 7%; bottom: -124px; border-color: rgba(152, 220, 255, .15); }
+.hero h1 { color: #f8fafc; font-size: clamp(32px, 4.4vw, 48px); }
+.hero .lede,
+.hero .import-note { color: #b5c4d6; }
+.hero .primary-action { background: #e7f7ef; color: #115433; }
+
+.metrics { gap: 14px; }
+.metric,
+.onboarding,
+.import-panel,
+.database-admin,
+.activity-card,
+.security-card,
+.site-detail {
+  border-color: var(--panel-line);
+  background: rgba(16, 25, 37, .89);
+  box-shadow: none;
+}
+.metric { min-height: 132px; background: linear-gradient(145deg, #121c29, #101925); }
+.metric-label { color: #8fa1b7; }
+.metric strong,
+.onboarding h2,
+.section-heading h2,
+.card-heading h2,
+.import-panel h2,
+.database-admin h2,
+.site-card h3,
+.site-detail h3 { color: #f3f7fb; }
+.metric-note,
+.import-copy,
+.onboarding p:not(.eyebrow) { color: var(--panel-muted); }
+.metric-note.warning { color: #f6bd68; }
+
+.onboarding { margin-bottom: 42px; background: linear-gradient(135deg, #111d2a, #122330); }
+.task-card {
+  border-color: #334156;
+  background: #172230;
+  box-shadow: none;
+  color: #eef5fb;
+}
+.task-card strong { color: #f1f5f9; }
+.task-card span { color: #a9b8c9; }
+.task-card:hover { border-color: #5b8bb8; background: #1a2a3b; box-shadow: none; }
+
+.quiet-action {
+  border-color: #3a4b60;
+  background: #162230;
+  color: #b9cce2;
+}
+.quiet-action:hover { border-color: #5a85ae; background: #1d3043; color: #dff2ff; }
+.primary-action { background: #2563a7; color: #f8fbff; }
+.primary-action:hover { background: #3182ce; }
+
+.site-overview { background: rgba(15, 24, 36, .92); }
+.site-card {
+  border-color: #354459 !important;
+  background: linear-gradient(145deg, #172230, #121c29) !important;
+  box-shadow: none !important;
+}
+.site-card:hover { border-color: #5785b0 !important; background: #192a3b !important; box-shadow: none !important; }
+.site-card code,
+.site-card p { color: #a8bbcf; }
+.site-card .site-actions button,
+.site-detail .site-detail-actions button {
+  border-color: #38506a;
+  background: #1a2a39;
+  color: #bde9dd;
+}
+.site-detail { color: #dce7f3; }
+
+.security-card { background: linear-gradient(145deg, #121e2a, #111a28); }
+.security-item { border-color: #344357; background: #172230; color: #e7eef7; }
+.security-item small { color: #9eafc3; }
+.resource-table { border-top-color: #516276; }
+.table-head { color: #8fa1b5; }
+.table-row { border-color: #303e50; background: #121c28; }
+.resource-name strong { color: #eaf1f8; }
+.resource-name small,
+.muted { color: #96a8bc; }
+.server-icon { background: #1a2d3d; color: #8ed7ff; }
+.status-ok i { background: var(--panel-accent); }
+
+.database-grid { border-color: #303f52; background: #303f52; }
+.database-grid > div { background: #15202d; }
+.database-grid strong { color: #edf4fb; }
+.database-grid small { color: #9cafc3; }
+.database-grid a,
+.import-note { color: #8fd4ca; }
+.database-record { border-color: #304154; color: #e2ebf4; }
+.database-inline input,
+.import-form input:not([type=checkbox]),
+.import-form select,
+.file-input,
+.import-form textarea,
+.site-detail input {
+  border-color: #3a4b60;
+  background: #0e1722;
+  color: #edf4fb;
+}
+.import-form input:not([type=checkbox]):focus,
+.import-form select:focus,
+.import-form textarea:focus,
+.site-detail input:focus { border-color: #5ca8df; box-shadow: 0 0 0 4px rgba(92, 168, 223, .15); }
+.import-form output:not(:empty) { background: #15332f; color: #b7efd8; }
+.check { color: #c6d3e1; }
+
+.activity-card { background: #111b28; }
+.activity-item { border-top-color: #2c394a; color: #e5edf6; }
+.activity-item p,
+.activity-time,
+.empty-state { color: #9eafc2; }
+.brief-card { border-color: #34475e; background: linear-gradient(145deg, #16344c, #174f4a); }
+.brief-card p:not(.eyebrow) { color: #c2dce1; }
+.app-footer { border-top-color: #2c394a; color: #95a8ba; }
+.app-footer strong { color: #dce7f2; }
+.app-footer a { color: #8ed7c7; }
+
+@media (max-width: 1050px) {
+  .app-shell { grid-template-columns: 76px minmax(0, 1fr); }
+  .workspace-sidebar { padding: 22px 10px; }
+  .workspace-sidebar .brand { justify-content: center; padding: 0; }
+  .workspace-sidebar .brand > span:last-child,
+  .sidebar-label,
+  .workspace-nav a { font-size: 0; }
+  .workspace-nav a { justify-content: center; padding: 0; }
+  .workspace-nav a span { width: auto; font-size: 18px; }
+  .sidebar-footer { justify-content: center; padding: 14px 0 2px; font-size: 0; }
+}
+@media (max-width: 720px) {
+  .app-shell { display: block; }
+  .workspace-sidebar { display: none; }
+  .topbar { padding: 0 18px; }
+  .mobile-brand { display: flex; color: #f1f5f9; font-size: 16px; }
+  .mobile-brand .brand-mark { border-color: #34465d; background: #1c2c3d; color: #e2f3ff; }
+  .workspace-context { display: none; }
+  .content { padding: 28px 18px 42px; }
+}

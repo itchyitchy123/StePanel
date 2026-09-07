@@ -47,6 +47,7 @@ type HostingAccount struct {
 	TOTPSecret            string    `json:"totp_secret"`
 	TOTPEncrypted         bool      `json:"totp_encrypted,omitempty"`
 	RecoveryCodeHashes    []string  `json:"recovery_code_hashes,omitempty"`
+	SessionGeneration     uint64    `json:"session_generation,omitempty"`
 	PasswordResetRequired bool      `json:"password_reset_required,omitempty"`
 	MFAEnrollmentRequired bool      `json:"mfa_enrollment_required,omitempty"`
 	Plan                  string    `json:"plan"`
@@ -183,12 +184,16 @@ func (s *AccountStore) SetSuspended(username string, suspended bool) (HostingAcc
 	if !ok {
 		return HostingAccount{}, errors.New("account not found")
 	}
-	previous := account.Suspended
+	previous := account
 	account.Suspended = suspended
+	if previous.Suspended != suspended {
+		// A failed session-registry write must not make an old cookie valid
+		// again if the account is later unsuspended.
+		account.SessionGeneration++
+	}
 	s.accounts[username] = account
 	if err := s.persistLocked(); err != nil {
-		account.Suspended = previous
-		s.accounts[username] = account
+		s.accounts[username] = previous
 		return HostingAccount{}, err
 	}
 	account.PasswordHash = ""
@@ -328,12 +333,12 @@ func (s *AccountStore) ResetTOTP(username string) (HostingAccount, string, error
 	if !ok {
 		return HostingAccount{}, "", errors.New("account not found")
 	}
-	previous := account.TOTPSecret
+	previous := account
 	account.TOTPSecret, account.TOTPEncrypted, account.MFAEnrollmentRequired = secret, false, true
+	account.SessionGeneration++
 	s.accounts[username] = account
 	if err := s.persistLocked(); err != nil {
-		account.TOTPSecret, account.TOTPEncrypted = previous, false
-		s.accounts[username] = account
+		s.accounts[username] = previous
 		return HostingAccount{}, "", err
 	}
 	response := account
@@ -362,12 +367,12 @@ func (s *AccountStore) GenerateRecoveryCodes(username string) (HostingAccount, [
 	if !ok {
 		return HostingAccount{}, nil, errors.New("account not found")
 	}
-	previous := account.RecoveryCodeHashes
+	previous := account
 	account.RecoveryCodeHashes = hashes
+	account.SessionGeneration++
 	s.accounts[username] = account
 	if err := s.persistLocked(); err != nil {
-		account.RecoveryCodeHashes = previous
-		s.accounts[username] = account
+		s.accounts[username] = previous
 		return HostingAccount{}, nil, err
 	}
 	account.PasswordHash, account.TOTPSecret, account.RecoveryCodeHashes = "", "", nil
@@ -443,6 +448,7 @@ func (s *AccountStore) RecoverCredentials(username string) (HostingAccount, stri
 	account.RecoveryCodeHashes = recoveryHashes
 	account.PasswordResetRequired = true
 	account.MFAEnrollmentRequired = true
+	account.SessionGeneration++
 	s.accounts[username] = account
 	if err := s.persistLocked(); err != nil {
 		s.accounts[username] = previous
@@ -469,6 +475,7 @@ func (s *AccountStore) SetPassword(username, password string) (HostingAccount, e
 	}
 	previous := account
 	account.PasswordHash, account.PasswordResetRequired = hash, false
+	account.SessionGeneration++
 	s.accounts[username] = account
 	if err := s.persistLocked(); err != nil {
 		s.accounts[username] = previous
@@ -490,6 +497,7 @@ func (s *AccountStore) SetTOTP(username, secret string) (HostingAccount, error) 
 	}
 	previous := account
 	account.TOTPSecret, account.TOTPEncrypted, account.MFAEnrollmentRequired = secret, false, false
+	account.SessionGeneration++
 	s.accounts[username] = account
 	if err := s.persistLocked(); err != nil {
 		s.accounts[username] = previous

@@ -31,6 +31,33 @@ isolation, recovery, and operational consistency.
 - Added a reproducible interrupted-restore case study and clarified that the
   next milestone is a stability/architecture release.
 
+- Reworked the live dashboard into the same dark, site-focused workspace
+  shell used by the developer views: persistent desktop navigation, compact
+  operator context, responsive mobile header, and consistent interactive
+  cards without changing existing API routes or controls.
+
+### Fixed
+
+- Corrected Apache and Caddy staging Basic Auth helper validation. Apache now
+  initializes validated site data before deriving its auth-file path, accepts
+  valid bcrypt hashes, and rolls staged auth state back with the vhost when
+  validation or reload fails. OpenLiteSpeed staging requests now explicitly
+  reject Basic Auth instead of silently creating an unprotected route.
+
+- Made scheduled-task and worker desired-state writes transactional in memory:
+  a failed durable state write restores the previous in-process value rather
+  than reporting an unavailable operation while later requests observe a
+  phantom change.
+
+- Added a per-customer session generation to credential, MFA, and suspension
+  changes. Password, TOTP, recovery-code, or lifecycle rotations invalidate
+  existing customer sessions even if a separate session-registry persistence
+  operation fails.
+- Switched durable session-registry writes to the shared atomic state writer,
+  including parent-directory synchronization after rename.
+- Corrected malformed shell conditionals in the privileged Git and build-runner
+  helpers and made the helper scripts pass `bash -n` and ShellCheck validation.
+
 ### Added
 
 - Added retry-safe cPanel restore jobs with persisted `Idempotency-Key`

@@ -24,7 +24,7 @@ case "$action" in
     cat "$key.pub"
     ;;
   public)
-    (( $# == 2 && -f $key.pub && ! -L $key.pub )) || { echo 'deploy key is not configured' >&2; exit 1; }
+    [[ $# -eq 2 && -f $key.pub && ! -L $key.pub ]] || { echo 'deploy key is not configured' >&2; exit 1; }
     cat "$key.pub"
     ;;
   delete)

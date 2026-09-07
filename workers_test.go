@@ -29,3 +29,37 @@ func TestReconcileWorkersRetainsPendingStateWhenHelperFails(t *testing.T) {
 		t.Fatalf("worker state = %#v", worker)
 	}
 }
+
+func TestWorkerStoreSaveRollsBackMemoryOnPersistFailure(t *testing.T) {
+	root := t.TempDir()
+	store, err := OpenWorkerStore(filepath.Join(root, "workers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := Worker{Site: "demo", Name: "queue", Type: "laravel", Processes: 1, MemoryMB: 128, Root: "/var/www/sites/demo/public", State: "applied"}
+	store.values["demo/queue"] = previous
+	store.path = root // A directory cannot be atomically replaced as state.
+	if err := store.save("demo/queue", Worker{Site: "demo", Name: "queue", Type: "node", Processes: 2, MemoryMB: 256, Root: "/var/www/sites/demo/public", State: "pending"}); err == nil {
+		t.Fatal("expected worker state persistence failure")
+	}
+	if got := store.values["demo/queue"]; got != previous {
+		t.Fatalf("worker state after failed save = %#v, want %#v", got, previous)
+	}
+}
+
+func TestWorkerStoreRemoveRollsBackMemoryOnPersistFailure(t *testing.T) {
+	root := t.TempDir()
+	store, err := OpenWorkerStore(filepath.Join(root, "workers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := Worker{Site: "demo", Name: "queue", Type: "laravel", Processes: 1, MemoryMB: 128, Root: "/var/www/sites/demo/public", State: "pending", Deleted: true}
+	store.values["demo/queue"] = previous
+	store.path = root // A directory cannot be atomically replaced as state.
+	if err := store.remove("demo/queue"); err == nil {
+		t.Fatal("expected worker state persistence failure")
+	}
+	if got := store.values["demo/queue"]; got != previous {
+		t.Fatalf("worker state after failed removal = %#v, want %#v", got, previous)
+	}
+}

@@ -61,6 +61,25 @@ func (s *TaskStore) persistLocked() error {
 	}
 	return writeAtomic(s.path, append(d, '\n'), 0600)
 }
+
+// save persists a complete desired task state and restores the in-memory
+// value if durability fails. This keeps the running control plane aligned with
+// the state that will be loaded after a restart.
+func (s *TaskStore) save(key string, task ScheduledTask) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous, existed := s.values[key]
+	s.values[key] = task
+	if err := s.persistLocked(); err != nil {
+		if existed {
+			s.values[key] = previous
+		} else {
+			delete(s.values, key)
+		}
+		return err
+	}
+	return nil
+}
 func validTaskRuntime(v string) bool {
 	return v == "php" || v == "node" || v == "python" || v == "shell"
 }
@@ -96,13 +115,12 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 		}
 		releaseUnlock := a.siteOperations.Acquire(site)
 		defer releaseUnlock()
-		a.Tasks.mu.Lock()
 		key := site + "/" + name
+		a.Tasks.mu.RLock()
 		task := a.Tasks.values[key]
+		a.Tasks.mu.RUnlock()
 		task.Site, task.Name, task.State, task.Deleted, task.LastError = site, name, "pending", true, ""
-		a.Tasks.values[key] = task
-		err := a.Tasks.persistLocked()
-		a.Tasks.mu.Unlock()
+		err := a.Tasks.save(key, task)
 		if err != nil {
 			http.Error(w, "could not persist task state", 503)
 			return
@@ -143,11 +161,8 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 	}
 	releaseUnlock := a.siteOperations.Acquire(site)
 	defer releaseUnlock()
-	a.Tasks.mu.Lock()
 	key := site + "/" + name
-	a.Tasks.values[key] = input
-	err := a.Tasks.persistLocked()
-	a.Tasks.mu.Unlock()
+	err := a.Tasks.save(key, input)
 	if err != nil {
 		http.Error(w, "could not persist task state", 503)
 		return
@@ -157,11 +172,8 @@ func (a *App) tasks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "scheduled task is pending reconciliation", 502)
 		return
 	}
-	a.Tasks.mu.Lock()
 	input.State, input.LastError = "applied", ""
-	a.Tasks.values[key] = input
-	err = a.Tasks.persistLocked()
-	a.Tasks.mu.Unlock()
+	err = a.Tasks.save(key, input)
 	if err != nil {
 		a.recordTaskError(key, err)
 		http.Error(w, "scheduled task applied but state update is pending", 503)
@@ -204,14 +216,15 @@ func (a *App) applyTask(ctx context.Context, task ScheduledTask) error {
 }
 
 func (a *App) recordTaskError(key string, applyErr error) {
-	a.Tasks.mu.Lock()
-	defer a.Tasks.mu.Unlock()
-	if task, ok := a.Tasks.values[key]; ok {
-		task.State = "pending"
-		task.LastError = applyErr.Error()
-		a.Tasks.values[key] = task
-		_ = a.Tasks.persistLocked()
+	a.Tasks.mu.RLock()
+	task, ok := a.Tasks.values[key]
+	a.Tasks.mu.RUnlock()
+	if !ok {
+		return
 	}
+	task.State = "pending"
+	task.LastError = applyErr.Error()
+	_ = a.Tasks.save(key, task)
 }
 
 func (a *App) reconcileTasks(ctx context.Context) (reconciled []string, failed map[string]string) {
@@ -233,19 +246,24 @@ func (a *App) reconcileTasks(ctx context.Context) (reconciled []string, failed m
 			releaseUnlock()
 			continue
 		}
-		a.Tasks.mu.Lock()
 		if task.Deleted {
-			delete(a.Tasks.values, key)
+			a.Tasks.mu.Lock()
+			err := a.finalizeTaskDeletionLocked(key, task)
+			a.Tasks.mu.Unlock()
+			if err != nil {
+				failed[key] = "state persistence failed"
+				a.recordTaskError(key, errors.New("state persistence failed"))
+				releaseUnlock()
+				continue
+			}
 		} else {
 			task.State, task.LastError = "applied", ""
-			a.Tasks.values[key] = task
-		}
-		err := a.Tasks.persistLocked()
-		a.Tasks.mu.Unlock()
-		if err != nil {
-			failed[key] = "state persistence failed"
-			releaseUnlock()
-			continue
+			if err := a.Tasks.save(key, task); err != nil {
+				failed[key] = "state persistence failed"
+				a.recordTaskError(key, errors.New("state persistence failed"))
+				releaseUnlock()
+				continue
+			}
 		}
 		reconciled = append(reconciled, key)
 		releaseUnlock()

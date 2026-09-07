@@ -42,6 +42,10 @@ type StagingResult struct {
 	CreatedAt         time.Time `json:"created_at"`
 }
 
+func stagingBasicAuthSupported(webserver string) bool {
+	return webserver == "caddy" || webserver == "apache"
+}
+
 func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || !a.Auth.CSRF(r) {
 		http.Error(w, "invalid request", 403)
@@ -168,6 +172,10 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	noIndex := input.NoIndex == nil || *input.NoIndex
 	basicAuth := input.BasicAuth != nil && *input.BasicAuth
+	if basicAuth && !stagingBasicAuthSupported(a.Config.WebServer) {
+		http.Error(w, "Basic Auth staging protection is currently supported only for Caddy and Apache", http.StatusUnprocessableEntity)
+		return
+	}
 	authHash := ""
 	if basicAuth {
 		input.AuthUser = strings.TrimSpace(input.AuthUser)

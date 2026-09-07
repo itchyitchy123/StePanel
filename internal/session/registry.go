@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	statefile "github.com/itchyitchy123/StePanel/internal/state"
 )
 
 type Entry struct {
@@ -149,29 +150,5 @@ func (r *Registry) persistLocked() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(r.path), 0750); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(r.path), ".session-state-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(0600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, r.path)
+	return statefile.WriteAtomic(r.path, append(data, '\n'), 0600)
 }

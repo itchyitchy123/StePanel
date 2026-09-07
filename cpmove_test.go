@@ -26,6 +26,28 @@ func TestSafeArchivePath(t *testing.T) {
 	}
 }
 
+func FuzzSafeArchivePath(f *testing.F) {
+	for _, seed := range []string{
+		"homedir/public_html/index.php",
+		"mysql/site.sql",
+		"../etc/passwd",
+		"/etc/shadow",
+		`homedir\\..\\etc\\passwd`,
+		"a/./b",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, name string) {
+		if !safeArchivePath(name) {
+			return
+		}
+		clean := filepath.Clean(name)
+		if filepath.IsAbs(name) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || strings.Contains(name, "\\") {
+			t.Fatalf("accepted unsafe archive path %q (clean %q)", name, clean)
+		}
+	})
+}
+
 func TestSafeUser(t *testing.T) {
 	for _, value := range []string{"stephen", "site_01", "site-name"} {
 		if safeUser(value) != value {
@@ -186,6 +208,35 @@ func TestExtractArchiveRejectsStagedUploadOverwrite(t *testing.T) {
 	}
 }
 
+func TestExtractArchiveRejectsTraversalAndLinkEntries(t *testing.T) {
+	tests := []struct {
+		name   string
+		header tar.Header
+		want   string
+	}{
+		{name: "parent traversal", header: tar.Header{Name: "../outside", Mode: 0600, Size: 1}, want: "unsafe archive path"},
+		{name: "absolute path", header: tar.Header{Name: "/etc/shadow", Mode: 0600, Size: 1}, want: "unsafe archive path"},
+		{name: "symlink", header: tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "/etc/shadow"}, want: "unsupported archive entry type"},
+		{name: "hardlink", header: tar.Header{Name: "link", Typeflag: tar.TypeLink, Linkname: "target"}, want: "unsupported archive entry type"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			archive := filepath.Join(root, "backup.tar.gz")
+			if err := writeTarHeaders(archive, []tar.Header{tc.header}, map[string][]byte{tc.header.Name: []byte("x")}); err != nil {
+				t.Fatal(err)
+			}
+			err := extractArchive(archive, root)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("extractArchive() = %v, want %q", err, tc.want)
+			}
+			if _, err := os.Stat(filepath.Join(root, "outside")); !os.IsNotExist(err) {
+				t.Fatalf("unexpected extraction outside staging root: %v", err)
+			}
+		})
+	}
+}
+
 func TestRestoreFailureRestoresExistingSite(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "sites", "account", "public")
@@ -247,21 +298,45 @@ func makeTarGz(t *testing.T, entries map[string]string) string {
 }
 
 func writeTarGz(path string, entries map[string]string) error {
+	headers := make([]tar.Header, 0, len(entries))
+	bodies := make(map[string][]byte, len(entries))
+	for name, content := range entries {
+		body := []byte(content)
+		headers = append(headers, tar.Header{Name: name, Mode: 0600, Size: int64(len(body))})
+		bodies[name] = body
+	}
+	return writeTarHeaders(path, headers, bodies)
+}
+
+func writeTarHeaders(path string, headers []tar.Header, bodies map[string][]byte) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	gz := gzip.NewWriter(file)
 	tarWriter := tar.NewWriter(gz)
-	for name, content := range entries {
-		body := []byte(content)
-		if err := tarWriter.WriteHeader(&tar.Header{Name: name, Mode: 0600, Size: int64(len(body))}); err != nil {
+	for _, header := range headers {
+		if err := tarWriter.WriteHeader(&header); err != nil {
 			_ = file.Close()
 			return err
 		}
-		if _, err := tarWriter.Write(body); err != nil {
+		body := bodies[header.Name]
+		if header.Typeflag != tar.TypeSymlink && header.Typeflag != tar.TypeLink && len(body) > 0 {
+			if _, err := tarWriter.Write(body); err != nil {
+				_ = file.Close()
+				return err
+			}
+		}
+		if header.Size > int64(len(body)) && header.Typeflag != tar.TypeSymlink && header.Typeflag != tar.TypeLink {
 			_ = file.Close()
-			return err
+			return io.ErrShortWrite
+		}
+		if header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink {
+			continue
+		}
+		if header.Size < int64(len(body)) {
+			_ = file.Close()
+			return io.ErrShortWrite
 		}
 	}
 	if err := tarWriter.Close(); err != nil {

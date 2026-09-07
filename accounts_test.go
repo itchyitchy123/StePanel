@@ -113,6 +113,59 @@ func TestAccountStoreEncryptsTOTPAndSupportsRegeneration(t *testing.T) {
 	}
 }
 
+func TestResetTOTPRollsBackAllFieldsOnPersistFailure(t *testing.T) {
+	root := t.TempDir()
+	store, err := OpenAccountStore(filepath.Join(root, "accounts.json"), "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err != nil {
+		t.Fatal(err)
+	}
+	before, ok := store.Get("customer")
+	if !ok {
+		t.Fatal("created account missing")
+	}
+	store.path = root // A directory cannot be atomically replaced as state.
+	if _, _, err := store.ResetTOTP("customer"); err == nil {
+		t.Fatal("expected TOTP persistence failure")
+	}
+	after, ok := store.Get("customer")
+	if !ok || after.TOTPSecret != before.TOTPSecret || after.MFAEnrollmentRequired != before.MFAEnrollmentRequired || after.TOTPEncrypted != before.TOTPEncrypted {
+		t.Fatalf("account after failed TOTP reset = %#v, want %#v", after, before)
+	}
+}
+
+func TestCredentialAndLifecycleChangesRollBackSessionGenerationOnPersistFailure(t *testing.T) {
+	root := t.TempDir()
+	store, err := OpenAccountStore(filepath.Join(root, "accounts.json"), "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err != nil {
+		t.Fatal(err)
+	}
+	before, ok := store.Get("customer")
+	if !ok {
+		t.Fatal("created account missing")
+	}
+	store.path = root // A directory cannot be atomically replaced as state.
+	if _, _, err := store.GenerateRecoveryCodes("customer"); err == nil {
+		t.Fatal("expected recovery-code persistence failure")
+	}
+	afterCodes, _ := store.Get("customer")
+	if afterCodes.SessionGeneration != before.SessionGeneration || len(afterCodes.RecoveryCodeHashes) != len(before.RecoveryCodeHashes) {
+		t.Fatalf("recovery-code failure changed account state: %#v, want %#v", afterCodes, before)
+	}
+	if _, err := store.SetSuspended("customer", true); err == nil {
+		t.Fatal("expected suspension persistence failure")
+	}
+	afterSuspension, _ := store.Get("customer")
+	if afterSuspension.SessionGeneration != before.SessionGeneration || afterSuspension.Suspended != before.Suspended {
+		t.Fatalf("suspension failure changed account state: %#v, want %#v", afterSuspension, before)
+	}
+}
+
 func TestEncryptedAccountStateRequiresKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "accounts.json")
 	store, err := OpenAccountStore(path, "account-encryption-key")
@@ -227,6 +280,50 @@ func TestCustomerLoginRequiresAccountTOTP(t *testing.T) {
 	}
 	if auth.validSession(sessionRequest) {
 		t.Fatal("existing customer session survived suspension")
+	}
+}
+
+func TestCustomerTOTPRotationInvalidatesExistingSessionsWithoutRegistryWrite(t *testing.T) {
+	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
+	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")
+	t.Setenv("STEPANEL_SESSION_SECRET", "12345678901234567890123456789012")
+	t.Setenv("STEPANEL_ADMIN_TOTP_SECRET", "")
+	store, err := OpenAccountStore(filepath.Join(t.TempDir(), "accounts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err != nil {
+		t.Fatal(err)
+	}
+	auth, err := NewAuth(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth.Accounts = store
+	secret, err := decodeTOTPSecret(testTOTPSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := totpCode(secret, uint64(time.Now().Unix()/30))
+	login := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=customer&password=a+sufficiently+long+customer+password&totp="+code))
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	auth.Login(response, login)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("customer login status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+	sessionRequest := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, cookie := range response.Result().Cookies() {
+		sessionRequest.AddCookie(cookie)
+	}
+	if !auth.validSession(sessionRequest) {
+		t.Fatal("fresh customer session was invalid")
+	}
+	if _, _, err := store.ResetTOTP("customer"); err != nil {
+		t.Fatal(err)
+	}
+	if auth.validSession(sessionRequest) {
+		t.Fatal("session survived customer TOTP rotation")
 	}
 }
 

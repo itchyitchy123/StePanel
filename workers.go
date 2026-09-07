@@ -59,6 +59,40 @@ func (s *WorkerStore) persistLocked() error {
 	}
 	return writeAtomic(s.path, append(d, '\n'), 0600)
 }
+
+// save persists a complete desired worker state and restores the in-memory
+// value if the write fails.
+func (s *WorkerStore) save(key string, worker Worker) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous, existed := s.values[key]
+	s.values[key] = worker
+	if err := s.persistLocked(); err != nil {
+		if existed {
+			s.values[key] = previous
+		} else {
+			delete(s.values, key)
+		}
+		return err
+	}
+	return nil
+}
+
+// remove persists removal of a desired worker and restores the exact previous
+// value if durable state cannot be updated.
+func (s *WorkerStore) remove(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous, existed := s.values[key]
+	delete(s.values, key)
+	if err := s.persistLocked(); err != nil {
+		if existed {
+			s.values[key] = previous
+		}
+		return err
+	}
+	return nil
+}
 func validWorkerName(v string) bool {
 	if v == "" || len(v) > 32 {
 		return false
@@ -125,13 +159,13 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 		releaseUnlock := a.siteOperations.Acquire(site)
 		defer releaseUnlock()
 		key := site + "/" + name
-		a.Workers.mu.Lock()
-		worker := a.Workers.values[key]
+		a.Workers.mu.RLock()
+		previous := a.Workers.values[key]
+		a.Workers.mu.RUnlock()
+		worker := previous
 		worker.Site, worker.Name = site, name
 		worker.State, worker.LastError, worker.Deleted = "pending", "", true
-		a.Workers.values[key] = worker
-		e := a.Workers.persistLocked()
-		a.Workers.mu.Unlock()
+		e := a.Workers.save(key, worker)
 		if e != nil {
 			http.Error(w, "worker state could not be saved", 503)
 			return
@@ -141,13 +175,7 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "worker removal is pending reconciliation", http.StatusBadGateway)
 			return
 		}
-		a.Workers.mu.Lock()
-		delete(a.Workers.values, key)
-		e = a.Workers.persistLocked()
-		if e != nil {
-			a.Workers.values[key] = worker
-		}
-		a.Workers.mu.Unlock()
+		e = a.Workers.remove(key)
 		if e != nil {
 			http.Error(w, "worker removed but state cleanup is pending", 503)
 			return
@@ -178,26 +206,21 @@ func (a *App) workers(w http.ResponseWriter, r *http.Request) {
 	}
 	releaseUnlock := a.siteOperations.Acquire(site)
 	defer releaseUnlock()
-	a.Workers.mu.Lock()
-	a.Workers.values[site+"/"+name] = input
-	e := a.Workers.persistLocked()
-	a.Workers.mu.Unlock()
+	key := site + "/" + name
+	e := a.Workers.save(key, input)
 	if e != nil {
 		http.Error(w, "worker state could not be saved", 503)
 		return
 	}
 	if e := a.applyWorker(r.Context(), input); e != nil {
-		a.recordWorkerError(site+"/"+name, e)
+		a.recordWorkerError(key, e)
 		http.Error(w, "worker is pending reconciliation", 502)
 		return
 	}
 	input.State, input.LastError = "applied", ""
-	a.Workers.mu.Lock()
-	a.Workers.values[site+"/"+name] = input
-	e = a.Workers.persistLocked()
-	a.Workers.mu.Unlock()
+	e = a.Workers.save(key, input)
 	if e != nil {
-		a.recordWorkerError(site+"/"+name, e)
+		a.recordWorkerError(key, e)
 		http.Error(w, "worker applied but state update is pending", 503)
 		return
 	}
@@ -213,14 +236,15 @@ func (a *App) applyWorker(ctx context.Context, worker Worker) error {
 }
 
 func (a *App) recordWorkerError(key string, applyErr error) {
-	a.Workers.mu.Lock()
-	defer a.Workers.mu.Unlock()
-	if worker, ok := a.Workers.values[key]; ok {
-		worker.State = "pending"
-		worker.LastError = applyErr.Error()
-		a.Workers.values[key] = worker
-		_ = a.Workers.persistLocked()
+	a.Workers.mu.RLock()
+	worker, ok := a.Workers.values[key]
+	a.Workers.mu.RUnlock()
+	if !ok {
+		return
 	}
+	worker.State = "pending"
+	worker.LastError = applyErr.Error()
+	_ = a.Workers.save(key, worker)
 }
 
 func (a *App) reconcileWorkers(ctx context.Context) (reconciled []string, failed map[string]string) {
@@ -245,23 +269,21 @@ func (a *App) reconcileWorkers(ctx context.Context) (reconciled []string, failed
 			releaseUnlock()
 			continue
 		}
-		a.Workers.mu.Lock()
 		if worker.Deleted {
-			delete(a.Workers.values, key)
+			if err := a.Workers.remove(key); err != nil {
+				failed[key] = "state persistence failed"
+				a.recordWorkerError(key, errors.New("state persistence failed"))
+				releaseUnlock()
+				continue
+			}
 		} else {
 			worker.State, worker.LastError = "applied", ""
-			a.Workers.values[key] = worker
-		}
-		err := a.Workers.persistLocked()
-		if err != nil {
-			worker.State, worker.LastError = "pending", "state persistence failed"
-			a.Workers.values[key] = worker
-		}
-		a.Workers.mu.Unlock()
-		if err != nil {
-			failed[key] = "state persistence failed"
-			releaseUnlock()
-			continue
+			if err := a.Workers.save(key, worker); err != nil {
+				failed[key] = "state persistence failed"
+				a.recordWorkerError(key, errors.New("state persistence failed"))
+				releaseUnlock()
+				continue
+			}
 		}
 		reconciled = append(reconciled, key)
 		releaseUnlock()

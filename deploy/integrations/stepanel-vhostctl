@@ -44,12 +44,11 @@ domain_in_use() {
 
 case "$action" in
   apply|apply-auth)
-    (( ( $action == apply-auth && $# == 5 ) || ( $action == apply && $# == 3 ) )) || { echo 'invalid vhost arguments' >&2; exit 64; }
-    auth_user=${4:-}; auth_hash=${5:-}
-    if [[ $action == apply-auth ]]; then [[ $auth_user =~ ^[A-Za-z0-9._-]{1,64}$ && $auth_hash =~ '^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$' ]] || { echo 'invalid Basic Auth credentials' >&2; exit 1; }; fi
-    auth_file="$config_root/.stepanel-auth-$site"
-    if [[ $action == apply-auth ]]; then printf '%s:%s\n' "$auth_user" "$auth_hash" > "$auth_file"; chmod 0600 "$auth_file"; chown root:root "$auth_file"; fi
+    [[ ( $action == "apply-auth" && $# -eq 5 ) || ( $action == "apply" && $# -eq 3 ) ]] || { echo 'invalid vhost arguments' >&2; exit 64; }
     site=$2; domain=${3,,}
+    auth_user=${4:-}; auth_hash=${5:-}
+    bcrypt_pattern='^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
+    if [[ $action == apply-auth ]]; then [[ $auth_user =~ ^[A-Za-z0-9._-]{1,64}$ && $auth_hash =~ $bcrypt_pattern ]] || { echo 'invalid Basic Auth credentials' >&2; exit 1; }; fi
     [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
     [[ $domain =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo 'invalid domain' >&2; exit 1; }
     (( ${#site} + ${#domain} <= 220 )) || { echo 'site and domain combination is too long' >&2; exit 1; }
@@ -82,10 +81,22 @@ case "$action" in
     fi
     [[ -f $pool ]] || { echo 'isolated PHP-FPM pool is not configured for this site' >&2; exit 1; }
     backup=$(mktemp)
+    auth_file="$config_root/.stepanel-auth-$site"
+    auth_backup=$(mktemp)
+    auth_existed=0
+    auth_staged=
+    if [[ $action == apply-auth ]]; then
+      [[ ! -f $auth_file ]] || { cp -p "$auth_file" "$auth_backup"; auth_existed=1; }
+      auth_staged=$(mktemp "$config_root/.stepanel-auth.XXXXXX")
+      printf '%s:%s\n' "$auth_user" "$auth_hash" > "$auth_staged"
+      chmod 0600 "$auth_staged"
+      chown root:root "$auth_staged"
+      mv -f "$auth_staged" "$auth_file"
+    fi
     existed=0
     [[ ! -f $path ]] || { cp -p "$path" "$backup"; existed=1; }
     staged=$(mktemp "$config_root/.stepanel-site.XXXXXX")
-    trap 'rm -f "$backup" "$staged"' EXIT
+    trap 'rm -f "$backup" "$staged" "$auth_backup" "$auth_staged"' EXIT
     cat > "$staged" <<EOF
 <VirtualHost *:80>
     ServerName $domain
@@ -116,13 +127,16 @@ EOF
     mv -f "$staged" "$path"
     if ! apache_test; then
       if (( existed )); then mv -f "$backup" "$path"; else rm -f "$path"; fi
+      if [[ $action == apply-auth ]]; then if (( auth_existed )); then mv -f "$auth_backup" "$auth_file"; else rm -f "$auth_file"; fi; fi
       exit 1
     fi
     if ! apache_reload; then
       if (( existed )); then mv -f "$backup" "$path"; else rm -f "$path"; fi
+      if [[ $action == apply-auth ]]; then if (( auth_existed )); then mv -f "$auth_backup" "$auth_file"; else rm -f "$auth_file"; fi; fi
       if apache_test; then apache_reload || true; fi
       exit 1
     fi
+    if [[ $action == apply ]]; then rm -f "$auth_file"; fi
     ;;
   delete)
     (( $# == 2 )) || { echo 'usage: stepanel-vhostctl delete NAME' >&2; exit 64; }

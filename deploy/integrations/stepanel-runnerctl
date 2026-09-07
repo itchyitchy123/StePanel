@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo 'must run as root' >&2; exit 1; }
-(( $# == 8 && $1 == build )) || { echo 'usage: stepanel-runnerctl build SITE IMAGE ROOT SCRIPT CPU_PERCENT MEMORY_MB TASKS_MAX' >&2; exit 64; }
+[[ $# -eq 8 && $1 == "build" ]] || { echo 'usage: stepanel-runnerctl build SITE IMAGE ROOT SCRIPT CPU_PERCENT MEMORY_MB TASKS_MAX' >&2; exit 64; }
 site=$2 image=$3 root=$4 script=$5 cpu_percent=$6 memory_mb=$7 tasks_max=$8
 [[ $site =~ ^[a-z0-9_-]{1,32}$ && $image =~ ^[a-z0-9][a-z0-9._/-]{0,180}(:[A-Za-z0-9._-]{1,80})?$ && $cpu_percent =~ ^[0-9]+$ && $memory_mb =~ ^[0-9]+$ && $tasks_max =~ ^[0-9]+$ && $cpu_percent -ge 25 && $cpu_percent -le 6400 && $memory_mb -ge 64 && $memory_mb -le 1048576 && $tasks_max -ge 16 && $tasks_max -le 100000 && ( $root == "/var/www/sites/$site/public" || $root =~ ^/var/www/sites/$site/\.stepanel-release-[A-Za-z0-9-]+$ ) ]] || { echo 'invalid build request' >&2; exit 1; }
 [[ -d $root && ! -L $root && -f $script && ! -L $script && -d "/var/www/sites/$site" && ! -L "/var/www/sites/$site" ]] || { echo 'invalid build inputs' >&2; exit 1; }

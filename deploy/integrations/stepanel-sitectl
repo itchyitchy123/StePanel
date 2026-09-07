@@ -167,6 +167,7 @@ elif [[ $action == quota-clear ]]; then
   printf 'filesystem_quota_cleared\tmount=%s\n' "$mount"
   exit 0
 elif [[ -f $profile && ! -L $profile ]]; then
+  # shellcheck source=/dev/null
   source "$profile"
 fi
 php_max_children=5
