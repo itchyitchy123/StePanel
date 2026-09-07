@@ -207,6 +207,27 @@ func TestDurableCancellationCrossProcessIsAuthoritative(t *testing.T) {
 	}
 }
 
+func TestDurableListReleasesSQLiteRowsBeforeRefreshingJobs(t *testing.T) {
+	db, err := openControlPlaneDB(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	jobs := newJobsWithDB(db, 1)
+	queued, err := jobs.Enqueue("list.operation", "site", "", nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := jobs.List(10)
+	if len(listed) != 1 || listed[0].ID != queued.ID {
+		t.Fatalf("durable list = %#v, want job %q", listed, queued.ID)
+	}
+	if _, ok := jobs.Get(queued.ID); !ok {
+		t.Fatal("job could not be refreshed after durable list")
+	}
+}
+
 func TestDurableLoaderUsesRelationalStateAfterLeaseTransitions(t *testing.T) {
 	db, err := openControlPlaneDB(filepath.Join(t.TempDir(), "control.db"))
 	if err != nil {

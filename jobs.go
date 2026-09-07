@@ -1363,22 +1363,29 @@ func (j *Jobs) List(limit int) []Job {
 	if j.db != nil {
 		rows, err := j.db.Query(`SELECT id FROM jobs ORDER BY started_at DESC, id DESC LIMIT ?`, limit)
 		if err == nil {
-			defer rows.Close()
-			items := make([]Job, 0, limit)
+			ids := make([]string, 0, limit)
 			for rows.Next() {
 				var id string
-				if rows.Scan(&id) != nil {
-					continue
-				}
-				if item, ok, loadErr := j.loadDurableJob(id); loadErr == nil && ok {
-					j.mu.Lock()
-					j.items[id] = &item
-					j.mu.Unlock()
-					materializeJobOutput(&item)
-					items = append(items, item)
+				if rows.Scan(&id) == nil {
+					ids = append(ids, id)
 				}
 			}
-			if rows.Err() == nil {
+			rowsErr := rows.Err()
+			closeErr := rows.Close()
+			if rowsErr != nil {
+				rowsErr = fmt.Errorf("list durable jobs: %w", rowsErr)
+			}
+			if rowsErr == nil && closeErr == nil {
+				items := make([]Job, 0, limit)
+				for _, id := range ids {
+					if item, ok, loadErr := j.loadDurableJob(id); loadErr == nil && ok {
+						j.mu.Lock()
+						j.items[id] = &item
+						j.mu.Unlock()
+						materializeJobOutput(&item)
+						items = append(items, item)
+					}
+				}
 				return items
 			}
 		}
