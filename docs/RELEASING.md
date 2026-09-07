@@ -17,6 +17,10 @@ match the source version.
    the Go version, Helm chart, OpenAPI document, and changelog agree. Then run
    `GOCACHE=/tmp/stepanel-go-cache GOFLAGS=-p=1 make check` locally when
    working on a constrained machine.
+   The recovery runner sets `GOFLAGS=-p=1` by default and executes each drill
+   group serially. A host that is near its process/task limit can still fail
+   subprocess-heavy drills; treat that as an infrastructure gate failure and
+   rerun on a disposable host with capacity before accepting the release.
 3. Review the generated release notes and confirm the supported upgrade path.
    Release automation rejects tags that do not match `version.go`.
 4. Create and push an annotated tag:
@@ -36,3 +40,19 @@ match the source version.
 
 Never include database passwords, backup archives, production configuration, or
 session secrets in release artifacts.
+
+## Architecture checkpoint acceptance
+
+Before promoting the stabilization branch, verify the durable control plane,
+worker, and recovery behavior together:
+
+```sh
+GOMAXPROCS=1 GOCACHE=/tmp/stepanel-go-cache GOFLAGS=-p=1 make audit
+```
+
+Confirm that `/readyz` fails for a corrupt control-plane database, unresolved
+dead-letter jobs, and pending required resource enforcement. On a disposable
+host, also exercise `stepanel-worker.service`, control-plane backup/restore,
+site termination recovery, and the domain-claim gate. The feature catalog and
+production-gap analysis remain authoritative for capabilities that are still
+operator-only or require external provider adapters.

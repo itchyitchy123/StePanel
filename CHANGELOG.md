@@ -9,6 +9,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 The unreleased work is being prepared as the `v0.7.0` stabilization milestone:
 isolation, recovery, and operational consistency.
 
+This checkpoint is committed in the production-architecture pass and remains
+unreleased until the version metadata and release gates are advanced.
+
+### Production architecture checkpoint
+
+- Durable SQLite control-plane state now covers accounts, site ownership,
+  sessions, API tokens, jobs, leases, cancellation, retry/dead-letter state,
+  resource profiles, routes, DNS claims, and lifecycle state.
+- Workers can run independently under `stepanel-worker.service`; job status,
+  listings, claims, cancellation, and recovery refresh from the authoritative
+  database across process restarts.
+- Customer and administrator API tokens have hashed, expiring, revocable
+  credentials with explicit scopes. Customer data access is tenant-scoped at
+  both HTTP and data-operation boundaries.
+- Site lifecycle, route activation, staging, resource enforcement, and
+  recovery readiness now use durable desired/applied state and fail closed when
+  required host enforcement or control-plane integrity is unresolved.
+- Customer domain activation requires a DNS TXT ownership claim and rechecks
+  that claim for both production and staging routes.
+- Recovery drills are wired into `make audit` and CI. The drill runner limits
+  Go package parallelism for constrained hosts; the disposable-host, power-loss,
+  and provider-failure drills remain release acceptance work.
+
 ### Changed
 
 - Shortened the README landing page around the project identity, dashboard

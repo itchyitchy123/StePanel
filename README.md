@@ -40,6 +40,7 @@ encrypted environment metadata, builds, staging, logs, and workers.
 | Installation | Caddy by default, or Apache/OpenLiteSpeed, PHP, MySQL/MariaDB/PostgreSQL, optional phpMyAdmin/phpPgAdmin, Exim/Dovecot/SpamAssassin/vsftpd, systemd, Debian/Ubuntu and RHEL-family systems |
 | Migration | cPanel `.tar.gz` inspection, safe staging, website, SQL, staged mailbox restore, and fail-closed `.htaccess` conversion for Caddy |
 | Operations | Dashboard, health endpoint, metrics endpoint, audit log, asynchronous restore jobs |
+| Control plane | Durable SQLite state, independently supervised worker, leases/retries/cancellation, dead-letter readiness gate, desired-state reconciliation, and recovery inventory |
 | Shared-hosting beta | Administrator-provisioned customer accounts with independent TOTP MFA, enforced assigned-site limits, and customer-scoped site/backup/job access |
 | Security | bcrypt credentials, signed sessions, CSRF protection, archive traversal checks, restricted service user |
 | Delivery | Dockerfile, ARM64/AMD64 release workflow, checksums, CI, vulnerability scanning |
