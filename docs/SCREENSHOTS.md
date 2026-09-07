@@ -30,7 +30,9 @@ maps to authenticated API and helper behavior documented in
 
 ![StePanel dashboard preview](assets/dashboard-preview.png)
 
-This overview remains available as the general infrastructure dashboard. The
+This is the current dark, navigation-led dashboard shell. It matches the live
+workspace hierarchy—operator context, managed-site cards, security posture,
+and persistent jobs—rather than the retired light infrastructure layout. The
 preview is rendered at 2× resolution for crisp display on GitHub and retina
 screens. The editable [SVG source](assets/dashboard-preview.svg) remains
 available for presentations and product materials.

@@ -24,6 +24,7 @@ import (
 type App struct {
 	Config                   Config
 	View                     *template.Template
+	AssetVersion             string
 	Auth                     Auth
 	Jobs                     *Jobs
 	Metrics                  *Metrics
@@ -233,6 +234,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("load embedded static assets: %v", err)
 	}
+	assetVersion, err := embeddedAssetVersion()
+	if err != nil {
+		log.Fatalf("fingerprint embedded static assets: %v", err)
+	}
 	jobs, err := OpenJobs(cfg.JobState, cfg.MaxConcurrentJobs)
 	if err != nil {
 		log.Fatalf("open persistent job state: %v", err)
@@ -241,7 +246,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open backup schedules: %v", err)
 	}
-	app := &App{Config: cfg, View: view, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, Tasks: tasks, Deployments: deployments, Resources: resources, RecoveryError: errors.Join(recoveryFailures...)}
+	app := &App{Config: cfg, View: view, AssetVersion: assetVersion, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, Tasks: tasks, Deployments: deployments, Resources: resources, RecoveryError: errors.Join(recoveryFailures...)}
 	// Reconcile domains independently. A single shared deadline allowed a slow
 	// host/helper operation in an early domain to starve every later domain.
 	// Each domain remains bounded, and failures are retained in its own report.
@@ -463,7 +468,7 @@ func (a *App) dashboard(w http.ResponseWriter, r *http.Request) {
 	if isAdministrator {
 		security = a.SecurityChecks()
 	}
-	if err := a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.UsernameForRequest(r), "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": security, "Jobs": jobs, "Capabilities": a.Capabilities(), "Database": a.DatabaseAdmin(), "IsAdministrator": isAdministrator, "Account": account, "AccountSiteCount": accountSiteCount}); err != nil {
+	if err := a.View.Execute(w, map[string]any{"Title": "StePanel", "Config": a.Config, "AssetVersion": a.AssetVersion, "CSRF": csrf, "AuthEnabled": a.Auth.Enabled, "Username": a.Auth.UsernameForRequest(r), "Now": time.Now(), "Servers": servers, "Healthy": healthy, "Alerts": alerts, "Security": security, "Jobs": jobs, "Capabilities": a.Capabilities(), "Database": a.DatabaseAdmin(), "IsAdministrator": isAdministrator, "Account": account, "AccountSiteCount": accountSiteCount}); err != nil {
 		log.Printf("dashboard render failed: %v", err)
 	}
 }

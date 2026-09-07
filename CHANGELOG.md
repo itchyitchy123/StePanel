@@ -35,6 +35,8 @@ isolation, recovery, and operational consistency.
   shell used by the developer views: persistent desktop navigation, compact
   operator context, responsive mobile header, and consistent interactive
   cards without changing existing API routes or controls.
+- Replaced the retired light dashboard illustration with a current dark
+  workspace preview and regenerated the PNG used by product documentation.
 
 ### Fixed
 

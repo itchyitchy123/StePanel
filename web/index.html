@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ .Title }} · hosting workspace</title><link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css"><link rel="stylesheet" href="/static/import.css"><link rel="stylesheet" href="/static/workspace.css">
+  <title>{{ .Title }} · hosting workspace</title><link rel="icon" href="/static/favicon.svg?v={{ .AssetVersion }}" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v={{ .AssetVersion }}"><link rel="stylesheet" href="/static/import.css?v={{ .AssetVersion }}"><link rel="stylesheet" href="/static/workspace.css?v={{ .AssetVersion }}">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
@@ -88,12 +88,12 @@
       </footer>
     </main>
   </div>
-<script src="/static/cpmove.js" defer></script>
-<script src="/static/deploy.js" defer></script>
-<script src="/static/certificates.js" defer></script>
-<script src="/static/wpress.js" defer></script>
-<script src="/static/database.js" defer></script>
-<script src="/static/sites.js" defer></script>
-<script src="/static/htaccess.js" defer></script>
+<script src="/static/cpmove.js?v={{ .AssetVersion }}" defer></script>
+<script src="/static/deploy.js?v={{ .AssetVersion }}" defer></script>
+<script src="/static/certificates.js?v={{ .AssetVersion }}" defer></script>
+<script src="/static/wpress.js?v={{ .AssetVersion }}" defer></script>
+<script src="/static/database.js?v={{ .AssetVersion }}" defer></script>
+<script src="/static/sites.js?v={{ .AssetVersion }}" defer></script>
+<script src="/static/htaccess.js?v={{ .AssetVersion }}" defer></script>
 </body>
 </html>

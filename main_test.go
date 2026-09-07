@@ -44,17 +44,27 @@ func TestEmbeddedDashboardTemplate(t *testing.T) {
 		t.Fatalf("parse embedded dashboard: %v", err)
 	}
 	var rendered bytes.Buffer
-	if err := view.Execute(&rendered, map[string]any{"Title": "StePanel", "Now": time.Now(), "Servers": []ServiceSummary{{Name: "apache2", Status: "active"}}, "Healthy": 1, "Alerts": 0, "Security": []SecurityCheck{}, "Jobs": []Job{}, "Capabilities": map[string]bool{}, "IsAdministrator": true, "Database": DatabaseAdmin{Engine: "mysql", Version: "default", Host: "local socket", Service: "mysql", Status: "missing", Client: "mariadb", AdminProduct: "phpMyAdmin", AdminURL: "/phpmyadmin"}}); err != nil {
+	if err := view.Execute(&rendered, map[string]any{"Title": "StePanel", "AssetVersion": "test-assets", "Now": time.Now(), "Servers": []ServiceSummary{{Name: "apache2", Status: "active"}}, "Healthy": 1, "Alerts": 0, "Security": []SecurityCheck{}, "Jobs": []Job{}, "Capabilities": map[string]bool{}, "IsAdministrator": true, "Database": DatabaseAdmin{Engine: "mysql", Version: "default", Host: "local socket", Service: "mysql", Status: "missing", Client: "mariadb", AdminProduct: "phpMyAdmin", AdminURL: "/phpmyadmin"}}); err != nil {
 		t.Fatalf("render embedded dashboard: %v", err)
 	}
 	if strings.Contains(rendered.String(), "Stephan") || !strings.Contains(rendered.String(), "Manage your sites with confidence") {
 		t.Fatal("dashboard contains simulated content or is missing its customer workspace")
 	}
-	if !strings.Contains(rendered.String(), "/static/workspace.css") {
+	if !strings.Contains(rendered.String(), "/static/workspace.css?v=test-assets") {
 		t.Fatal("dashboard does not load the workspace design layer")
 	}
 	if _, err := webAssets.ReadFile("web/static/workspace.css"); err != nil {
 		t.Fatalf("workspace design asset is not embedded: %v", err)
+	}
+}
+
+func TestEmbeddedAssetVersion(t *testing.T) {
+	version, err := embeddedAssetVersion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(version) != 16 {
+		t.Fatalf("asset version = %q, want a 16-character fingerprint", version)
 	}
 }
 
