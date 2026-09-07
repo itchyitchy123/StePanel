@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLivezOnlyReportsProcessLiveness(t *testing.T) {
@@ -69,6 +70,32 @@ func TestReadyzFailsWhenRequiredOffsiteBackupIsNotConfigured(t *testing.T) {
 	response := httptest.NewRecorder()
 	app.readyz(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "offsite_backup") {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestReadyzFailsWhenDurableJobIsDeadLettered(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{filepath.Join(root, "imports"), filepath.Join(root, "backups"), filepath.Join(root, "sites")} {
+		if err := os.MkdirAll(path, 0750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db, err := openControlPlaneDB(filepath.Join(root, "control-plane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	jobs := newJobsWithDB(db, 1)
+	item := &Job{ID: "dead-letter-test", Kind: "test", State: "dead-letter", User: "site", StartedAt: time.Now().UTC(), Error: "operator review required"}
+	jobs.items[item.ID] = item
+	if err := jobs.persistLocked(); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{Config: Config{ImportRoot: filepath.Join(root, "imports"), BackupRoot: filepath.Join(root, "backups"), JobState: filepath.Join(root, "jobs.json"), RecoveryRoot: filepath.Join(root, "sites", ".stepanel-recovery"), MinFreeBytes: 1}, Jobs: jobs}
+	response := httptest.NewRecorder()
+	app.readyz(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "dead_letter_jobs") {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }

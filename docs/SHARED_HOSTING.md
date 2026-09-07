@@ -15,18 +15,32 @@ This is a deliberate first boundary, not a claim of cPanel/Plesk parity.
   unpadded Base32 TOTP seed of at least 160 bits. Customer MFA is always
   required, including outside production mode.
 - `starter`, `professional`, and `agency` cap assignments at 1, 5, and 25
-sites respectively. Built-in plans also apply aggregate account and per-site
-CPU, memory, process, and PHP-worker envelopes to newly assigned sites;
-disk/inode values require an explicit filesystem quota profile.
-- Administrators can apply preview resource profiles to managed application,
-  worker, scheduled-task, and optionally filesystem user-quota boundaries, but
-  plans do not yet enforce disk, inode, bandwidth, database, or Redis
-  entitlements.
+  sites respectively. Built-in plans apply aggregate account and per-site
+  CPU, memory, process, PHP-worker, disk, and inode ceilings to newly assigned
+  sites. Disk and inode enforcement requires a filesystem mounted with user
+  quotas; failed quota application remains pending, suspends the affected
+  account, and blocks a false applied state until an administrator verifies
+  enforcement and explicitly unsuspends it.
+- Administrators can apply resource profiles to managed application, worker,
+  scheduled-task, and filesystem user-quota boundaries. Database provisioning,
+  credential rotation, and deletion are customer-scoped and capped by plan;
+  bandwidth and mail entitlements still require provider-specific enforcement.
+  Redis allocations are visible to customers, but customer mutations fail
+  closed until a reviewed Redis/Valkey runtime isolation adapter is configured;
+  administrator allocations remain operator-managed.
+- Startup and administrator reconciliation treat pending quota/cgroup state as
+  unenforced; if a managed profile cannot be reapplied, its owning account is
+  suspended until enforcement is restored and explicitly verified.
 - Customer sessions can view only assigned site workspaces and their matching
   backup and job records. They can create a verified backup or add a domain
-  route only for an assigned site.
+  route only for an assigned site. Customer route activation first requires
+  `POST /api/sites/domains/claim`, publication of the returned TXT value at
+  `_stepanel.<domain>`, and `POST /api/sites/domains/verify`; this is an
+  ownership proof for the panel and is revalidated before route activation,
+  not registrar, DNS-zone, DNSSEC, or ACME lifecycle management.
 - Cloud, SSH, service, database administration, migration, application,
-  certificate, security, and account-management APIs remain administrator-only.
+  certificate, security, and account-management APIs remain administrator-only;
+  customer database lifecycle is limited to the customer-scoped database API.
 
 ## Administrator API
 
@@ -51,10 +65,11 @@ before persisting the change. Accounts also expose a `suspended` lifecycle flag;
 `{"suspended":true|false}` immediately rejects active sessions and revokes
 persisted sessions for that customer. It suspends **panel access**, not hosting
 workloads: sites, services, data, backups, and external resources remain intact.
-`DELETE /api/accounts/{username}` removes only the
-customer login record and its sessions; it is not a hosting-account teardown.
-The operation is audited as login removal and retains assigned workloads for a
-separate, reviewed lifecycle workflow.
+`DELETE /api/accounts/{username}` removes only the customer login record and
+its sessions after all managed sites have been detached. It returns `409` while
+sites remain assigned, preventing an orphaned hosting workload; it is not a
+hosting-account teardown. Use the administrator-only durable site termination
+workflow before removing a login.
 When a plan or assignment changes, StePanel persists the affected resource
 profiles as pending desired state, clamps ceilings that exceed the new plan,
 preserves stricter operator settings, removes the old account aggregate from
@@ -105,12 +120,13 @@ allowlists and release validation still apply.
 
 ## Redis / Valkey allocations
 
-`GET`, `PUT`, and `DELETE /api/sites/redis/{site}` manage a site’s logical
+`GET`, `PUT`, and `DELETE /api/sites/redis/{site}` expose a site’s logical
 Redis/Valkey allocation. The contract includes `database` (0–15), `namespace`,
 `memory_mb`, and `eviction` (`allkeys-lru` or `noeviction`). The API reports
-whether `redis-server` or `valkey-server` is installed. These are allocation
-records; actual ACL, namespace, and cgroup memory enforcement require a
-reviewed privileged helper before use with untrusted tenants.
+whether `redis-server` or `valkey-server` is installed. Customer `PUT` and
+`DELETE` are rejected until actual ACL, namespace, and cgroup memory
+enforcement is provided by a reviewed privileged adapter; administrator
+allocations remain operator-managed.
 
 ## Composer
 
@@ -143,11 +159,14 @@ outbound-email blocking, schema rollback, and promotion remain unavailable.
 
 ## Sandboxed build runner
 
-`POST /api/runner/build` submits a site, OCI image, and bounded command list to
+`POST /api/runner/build` submits a site, immutable OCI image digest, and bounded command list to
 the rootless Podman runner. The runner mounts source read-only and writes only
 to the site artifact directory. It uses a separate network namespace, dropped
 Linux capabilities, a read-only container filesystem, and a bounded temporary
-area. Activation remains a separate StePanel atomic-release operation.
+area. Image tags are rejected; use an image reference ending in
+`@sha256:<64 lowercase hex characters>`. The helper validates artifact
+ownership and clears it without following symlinks or crossing a filesystem
+boundary. Activation remains a separate StePanel atomic-release operation.
 
 ## Node developer tooling
 
@@ -202,9 +221,8 @@ arguments and repository build commands remain intentionally unsupported.
 ## Not yet available to customers
 
 Do not market this beta as unrestricted shared hosting. It does not yet provide
-mailbox/FTP lifecycle, browser file
-management, customer database credentials, customer self-service scheduled
-tasks, DNS/registrar lifecycle, enforced disk/inode/bandwidth/I/O quotas,
+mailbox/FTP lifecycle, browser file management, customer self-service scheduled
+tasks, DNS/registrar lifecycle, provider-enforced bandwidth/mail/Redis quotas,
 billing, customer-initiated restores, transactional database promotion,
 support workflows, reseller roles, or a multi-host control plane. These gaps require
 host-level enforcement and durable tenancy-aware state, not merely dashboard

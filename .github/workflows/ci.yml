@@ -33,6 +33,12 @@ jobs:
       - run: go vet ./...
       - run: go test ./... -coverprofile=coverage.out -covermode=atomic
       - run: go test -race ./...
+      - name: Recovery drills
+        run: bash deploy/lab/run-recovery-drills.sh /tmp/stepanel-recovery-drills.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: recovery-drill-results
+          path: /tmp/stepanel-recovery-drills.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: go-coverage

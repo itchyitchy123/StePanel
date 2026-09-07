@@ -36,6 +36,9 @@ func controlPlaneDRChecks(cfg Config) []DRCheck {
 			check.Status, check.Detail = "present", "regular file available for backup"
 			if info.Mode().Perm()&0077 != 0 {
 				check.Status, check.Detail = "warning", "present but group/world permissions are too broad"
+				if required {
+					check.Status, check.Detail = "unsafe", "required recovery artifact has group/world permissions"
+				}
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			check.Status, check.Detail = "error", err.Error()
@@ -49,7 +52,12 @@ func controlPlaneDRChecks(cfg Config) []DRCheck {
 	addFile("audit log", "preserve", cfg.AuditLog, true)
 	addFile("audit continuity state", "preserve", cfg.AuditLog+".state", true)
 	addFile("audit HMAC key", "preserve", auditKeyPath, true)
-	addFile("job state", "preserve", cfg.JobState, true)
+	if drPathConfigured(cfg.ControlPlaneDB) {
+		addFile("legacy job state", "preserve-or-regenerate", cfg.JobState, false)
+	} else {
+		addFile("job state", "preserve", cfg.JobState, true)
+	}
+	addFile("control-plane database", "preserve", cfg.ControlPlaneDB, true)
 	addFile("session state", "preserve-or-regenerate", cfg.SessionState, false)
 	addFile("account state", "preserve", cfg.AccountState, false)
 	addFile("environment state", "preserve", cfg.EnvironmentState, false)
@@ -73,7 +81,7 @@ func runDRCheck(cfg Config) error {
 		"This manifest inventories recovery obligations; it does not copy or expose secret values.",
 		"Preserve encryption/signing keys with their ciphertext or signed artifacts.",
 		"Deploy keys may be regenerated after recovery if provider access is intentionally re-established.",
-		"Remote audit anchoring and automated control-plane archive/restore are planned integrations.",
+		"Remote audit anchoring remains a planned integration; control-plane backup and dry-run validation are provided by the CLI.",
 	}}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

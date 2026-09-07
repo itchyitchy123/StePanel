@@ -42,6 +42,77 @@ func TestAccountStorePersistsOnlyValidatedAssignments(t *testing.T) {
 	}
 }
 
+func TestAccountStoreReservesAdministratorIdentity(t *testing.T) {
+	store, err := OpenAccountStore(filepath.Join(t.TempDir(), "accounts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("admin", "a sufficiently long customer password", testTOTPSecret, "starter", nil); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("default administrator identity was accepted: %v", err)
+	}
+	if err := store.SetAdministratorUsername("panel-owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("panel-owner", "another sufficiently long customer password", testTOTPSecret, "starter", nil); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("custom administrator identity was accepted: %v", err)
+	}
+}
+
+func TestAccountStoreUsesDurableControlPlaneDatabase(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "control-plane.db")
+	db, err := openControlPlaneDB(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store, err := OpenAccountStoreDB(db, "", "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", []string{"site-a"}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenAccountStoreDB(db, "", "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account, ok := reopened.Get("customer"); !ok || account.Username != "customer" {
+		t.Fatalf("durable account = %#v, found = %v", account, ok)
+	}
+	if !reopened.OwnsSite("customer", "site-a") {
+		t.Fatal("durable tenant ownership was not enforced")
+	}
+}
+
+func TestAccountStoreMutationsRefreshDurableOwnership(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "control-plane.db")
+	db, err := openControlPlaneDB(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	first, err := OpenAccountStoreDB(db, "", "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := OpenAccountStoreDB(db, "", "account-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Create("customer", "a sufficiently long customer password", testTOTPSecret, "starter", []string{"site-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Create("other", "another sufficiently long customer password", testTOTPSecret, "starter", []string{"site-b"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.Update("customer", "starter", []string{"site-b"}); err == nil || !strings.Contains(err.Error(), "already assigned") {
+		t.Fatalf("stale store bypassed durable ownership: %v", err)
+	}
+	if _, err := second.Create("third", "third sufficiently long customer password", testTOTPSecret, "starter", []string{"site-b"}); err == nil || !strings.Contains(err.Error(), "already assigned") {
+		t.Fatalf("stale store created duplicate durable ownership: %v", err)
+	}
+}
+
 func TestAccountStoreUpdatesPlanAndAssignmentsAtomically(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "accounts.json")
 	store, err := OpenAccountStore(path)

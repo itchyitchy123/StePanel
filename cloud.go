@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -54,6 +56,159 @@ type cloudLBRequest struct {
 	Action         string `json:"action"`
 }
 
+type durableCloudRequest struct {
+	Operation string          `json:"operation"`
+	Provider  string          `json:"provider"`
+	Action    string          `json:"action"`
+	ID        string          `json:"id"`
+	Service   string          `json:"service,omitempty"`
+	DNS       cloudDNSRequest `json:"dns,omitempty"`
+	LB        cloudLBRequest  `json:"load_balancer,omitempty"`
+	Actor     string          `json:"actor"`
+}
+
+func (a *App) enqueueCloudJob(request durableCloudRequest) (Job, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return Job{}, err
+	}
+	owner := request.ID
+	if owner == "" {
+		owner = request.DNS.DomainID
+	}
+	if owner == "" {
+		owner = request.LB.NodeBalancerID
+	}
+	// Exclude the actor from the idempotency identity: a retried operator
+	// request must converge on the same provider mutation regardless of which
+	// authenticated process re-submits it.
+	identity := request
+	identity.Actor = ""
+	identityPayload, err := json.Marshal(identity)
+	if err != nil {
+		return Job{}, err
+	}
+	hash := sha256.Sum256(identityPayload)
+	operationKey := request.Operation + ":" + request.Action + ":" + owner + ":" + hex.EncodeToString(hash[:8])
+	job, _, err := a.Jobs.EnqueueIdempotent("cloud.action", owner, operationKey, payload, 3)
+	return job, err
+}
+
+func (a *App) handleCloudJob(ctx context.Context, item Job) ([]byte, error) {
+	var request durableCloudRequest
+	if err := json.Unmarshal(item.Payload, &request); err != nil {
+		return nil, fmt.Errorf("decode cloud job payload: %w", err)
+	}
+	if request.Actor == "" {
+		return nil, errors.New("cloud job actor is required")
+	}
+	if ctx.Err() != nil || a.Jobs.CancellationRequested(item.ID) {
+		return nil, context.Canceled
+	}
+	var result CloudActionResult
+	var err error
+	switch request.Operation {
+	case "instance":
+		workerCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		err = executeCloudAction(workerCtx, request.Provider, request.Action, request.ID)
+		result = CloudActionResult{Provider: request.Provider, Action: request.Action, ID: request.ID, CompletedAt: time.Now().UTC()}
+	case "ssh":
+		workerCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		err = executeSSHAction(workerCtx, request.ID, request.Action, request.Service)
+		result = CloudActionResult{Provider: "ssh", Action: request.Action, ID: request.ID, CompletedAt: time.Now().UTC()}
+	case "dns":
+		request.DNS.Type = strings.ToUpper(request.DNS.Type)
+		var path, method string
+		var body any
+		alreadyPresent := false
+		if request.Action == "delete" {
+			path = "/domains/" + request.DNS.DomainID + "/records/" + request.DNS.RecordID
+			method = http.MethodDelete
+		} else {
+			if request.Action == "create" {
+				if existing, lookupErr := linodeAPIRequest(ctx, http.MethodGet, "/domains/"+request.DNS.DomainID+"/records", nil); lookupErr == nil && dnsRecordExists(existing, request.DNS) {
+					alreadyPresent = true
+				}
+			}
+			if !alreadyPresent {
+				path = "/domains/" + request.DNS.DomainID + "/records"
+				method = http.MethodPost
+				if request.Action == "update" {
+					path += "/" + request.DNS.RecordID
+					method = http.MethodPut
+				}
+				body = map[string]any{"type": request.DNS.Type, "name": request.DNS.Name, "target": request.DNS.Target, "ttl_sec": request.DNS.TTL}
+			}
+		}
+		if !alreadyPresent {
+			_, err = linodeAPIRequest(ctx, method, path, body)
+		}
+		result = CloudActionResult{Provider: "linode", Action: "dns." + request.Action, ID: request.DNS.DomainID, CompletedAt: time.Now().UTC()}
+	case "loadbalancer":
+		var path, method string
+		var body any
+		if request.LB.Action == "remove" {
+			path = "/nodebalancers/" + request.LB.NodeBalancerID + "/configs/" + request.LB.ConfigID + "/nodes/" + request.LB.NodeID
+			method = http.MethodDelete
+		} else {
+			path = "/nodebalancers/" + request.LB.NodeBalancerID + "/configs/" + request.LB.ConfigID + "/nodes"
+			method = http.MethodPost
+			body = map[string]any{"address": request.LB.Address, "label": request.LB.Label, "port": request.LB.Port, "weight": request.LB.Weight}
+		}
+		_, err = linodeAPIRequest(ctx, method, path, body)
+		result = CloudActionResult{Provider: "linode", Action: "loadbalancer." + request.LB.Action, ID: request.LB.NodeBalancerID, CompletedAt: time.Now().UTC()}
+	case "snapshot.delete":
+		_, err = linodeAPIRequest(ctx, http.MethodDelete, "/account/linode/backups/"+request.ID, nil)
+		result = CloudActionResult{Provider: "linode", Action: "snapshot.delete", ID: request.ID, CompletedAt: time.Now().UTC()}
+	default:
+		return nil, fmt.Errorf("unsupported cloud job operation %q", request.Operation)
+	}
+	if err != nil {
+		if request.Operation == "dns" && a.DNSDesired != nil {
+			if desiredErr := a.DNSDesired.markResult(request.DNS, request.Action, err); desiredErr != nil {
+				return nil, fmt.Errorf("%w; persist DNS failure state: %v", err, desiredErr)
+			}
+		}
+		auditPrefix := "cloud."
+		if request.Operation == "ssh" {
+			auditPrefix = "ssh."
+		}
+		auditAction := request.Action
+		if request.Operation == "dns" {
+			auditAction = "dns." + request.Action
+		} else if request.Operation == "loadbalancer" {
+			auditAction = "loadbalancer." + request.Action
+		}
+		_ = AuditAs(a.Config.AuditLog, request.Actor, auditPrefix+auditAction+".failed", result.ID, err.Error())
+		return nil, err
+	}
+	if request.Operation == "dns" && a.DNSDesired != nil {
+		if desiredErr := a.DNSDesired.markResult(request.DNS, request.Action, nil); desiredErr != nil {
+			return nil, fmt.Errorf("persist DNS applied state: %w", desiredErr)
+		}
+	}
+	auditPrefix := "cloud."
+	if request.Operation == "ssh" {
+		auditPrefix = "ssh."
+	}
+	auditAction := request.Action
+	if request.Operation == "dns" {
+		auditAction = "dns." + request.Action
+	} else if request.Operation == "loadbalancer" {
+		auditAction = "loadbalancer." + request.Action
+	}
+	if auditErr := AuditAs(a.Config.AuditLog, request.Actor, auditPrefix+auditAction, result.ID, result.Provider); auditErr != nil {
+		log.Printf("cloud action completed but audit persistence is unavailable: %v", auditErr)
+	}
+	output, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	return output, nil
+}
+
 func (a *App) cloudInventory(w http.ResponseWriter, _ *http.Request) {
 	provider := strings.ToLower(strings.TrimSpace(a.Config.CloudProvider))
 	if provider == "" {
@@ -103,32 +258,12 @@ func (a *App) cloudAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid provider, action, or resource ID", http.StatusUnprocessableEntity)
 		return
 	}
-	id, err := newJobID("cloud")
+	job, err := a.enqueueCloudJob(durableCloudRequest{Operation: "instance", Provider: in.Provider, Action: in.Action, ID: in.ID, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create cloud job", http.StatusInternalServerError)
+		http.Error(w, "could not persist cloud job", http.StatusInternalServerError)
 		return
 	}
-	if err := a.Jobs.SubmitCloud(id, in.ID, func() (CloudActionResult, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := executeCloudAction(ctx, in.Provider, in.Action, in.ID); err != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud."+in.Action+".failed", in.ID, err.Error())
-			return CloudActionResult{}, err
-		}
-		result := CloudActionResult{Provider: in.Provider, Action: in.Action, ID: in.ID, CompletedAt: time.Now().UTC()}
-		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud."+in.Action, in.ID, in.Provider); err != nil {
-			log.Printf("cloud action completed but audit persistence is unavailable: %v", err)
-		}
-		return result, nil
-	}); err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
-		} else {
-			http.Error(w, "could not persist cloud job", http.StatusInternalServerError)
-		}
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID})
 }
 
 func (a *App) cloudDNS(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +282,16 @@ func (a *App) cloudDNS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 503)
 			return
 		}
-		writeJSON(w, 200, value)
+		desired := []DNSDesiredRecord(nil)
+		if a.DNSDesired != nil {
+			desired = a.DNSDesired.list(domain)
+		}
+		if response, ok := value.(map[string]any); ok {
+			response["desired"] = desired
+			writeJSON(w, 200, response)
+		} else {
+			writeJSON(w, 200, map[string]any{"provider": value, "desired": desired})
+		}
 		return
 	}
 	if !a.Auth.CSRF(r) {
@@ -168,7 +312,7 @@ func (a *App) cloudDNS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid record_id", 422)
 			return
 		}
-		a.queueDNSJob(w, in, "delete")
+		a.queueDNSJob(w, r, in, "delete")
 		return
 	}
 	if r.Method != http.MethodPost || !cloudDNSRecordValid(in) {
@@ -180,7 +324,7 @@ func (a *App) cloudDNS(w http.ResponseWriter, r *http.Request) {
 	if in.RecordID != "" {
 		action = "update"
 	}
-	a.queueDNSJob(w, in, action)
+	a.queueDNSJob(w, r, in, action)
 }
 
 func (a *App) cloudLoadBalancer(w http.ResponseWriter, r *http.Request) {
@@ -210,39 +354,12 @@ func (a *App) cloudLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid backend address, port, or weight", 422)
 		return
 	}
-	id, err := newJobID("loadbalancer")
+	job, err := a.enqueueCloudJob(durableCloudRequest{Operation: "loadbalancer", Provider: "linode", Action: in.Action, ID: in.NodeBalancerID, LB: in, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create load balancer job", 500)
+		http.Error(w, "could not persist load balancer job", 500)
 		return
 	}
-	if err := a.Jobs.SubmitCloud(id, in.NodeBalancerID, func() (CloudActionResult, error) {
-		var path, method string
-		var body any
-		if in.Action == "remove" {
-			path = "/nodebalancers/" + in.NodeBalancerID + "/configs/" + in.ConfigID + "/nodes/" + in.NodeID
-			method = http.MethodDelete
-		} else {
-			path = "/nodebalancers/" + in.NodeBalancerID + "/configs/" + in.ConfigID + "/nodes"
-			method = http.MethodPost
-			body = map[string]any{"address": in.Address, "label": in.Label, "port": in.Port, "weight": in.Weight}
-		}
-		if _, err := linodeAPIRequest(context.Background(), method, path, body); err != nil {
-			return CloudActionResult{}, err
-		}
-		result := CloudActionResult{Provider: "linode", Action: "loadbalancer." + in.Action, ID: in.NodeBalancerID, CompletedAt: time.Now().UTC()}
-		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.loadbalancer."+in.Action, in.NodeBalancerID, in.Address); err != nil {
-			log.Printf("load balancer action completed but audit persistence is unavailable: %v", err)
-		}
-		return result, nil
-	}); err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), 429)
-		} else {
-			http.Error(w, "could not persist load balancer job", 500)
-		}
-		return
-	}
-	writeJSON(w, 202, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
+	writeJSON(w, 202, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID})
 }
 
 func (a *App) cloudSnapshots(w http.ResponseWriter, r *http.Request) {
@@ -268,31 +385,12 @@ func (a *App) cloudSnapshots(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid snapshot id", 422)
 		return
 	}
-	jobID, err := newJobID("snapshot")
+	job, err := a.enqueueCloudJob(durableCloudRequest{Operation: "snapshot.delete", Provider: "linode", Action: "snapshot.delete", ID: id, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create snapshot job", 500)
+		http.Error(w, "could not persist snapshot job", 500)
 		return
 	}
-	err = a.Jobs.SubmitCloud(jobID, id, func() (CloudActionResult, error) {
-		if _, err := linodeAPIRequest(context.Background(), http.MethodDelete, "/account/linode/backups/"+id, nil); err != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.snapshot.delete.failed", id, err.Error())
-			return CloudActionResult{}, err
-		}
-		result := CloudActionResult{Provider: "linode", Action: "snapshot.delete", ID: id, CompletedAt: time.Now().UTC()}
-		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.snapshot.delete", id, "linode"); err != nil {
-			log.Printf("snapshot deletion completed but audit persistence is unavailable: %v", err)
-		}
-		return result, nil
-	})
-	if err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), 429)
-		} else {
-			http.Error(w, "could not persist snapshot job", 500)
-		}
-		return
-	}
-	writeJSON(w, 202, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID})
+	writeJSON(w, 202, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID})
 }
 
 var cloudNumericID = regexp.MustCompile(`^[0-9]{1,12}$`)
@@ -350,50 +448,22 @@ func numeric(value string) bool {
 	return true
 }
 
-func (a *App) queueDNSJob(w http.ResponseWriter, in cloudDNSRequest, action string) error {
-	id, err := newJobID("dns")
+func (a *App) queueDNSJob(w http.ResponseWriter, r *http.Request, in cloudDNSRequest, action string) error {
+	if a.DNSDesired != nil {
+		if err := a.DNSDesired.markPending(in, action, a.Auth.UsernameForRequest(r)); err != nil {
+			http.Error(w, "could not persist DNS desired state", http.StatusServiceUnavailable)
+			return err
+		}
+	}
+	job, err := a.enqueueCloudJob(durableCloudRequest{Operation: "dns", Provider: "linode", Action: action, ID: in.DomainID, DNS: in, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create DNS job", 500)
+		if a.DNSDesired != nil {
+			_ = a.DNSDesired.markResult(in, action, err)
+		}
+		http.Error(w, "could not persist DNS job", 500)
 		return nil
 	}
-	err = a.Jobs.SubmitCloud(id, in.DomainID, func() (CloudActionResult, error) {
-		var path, method string
-		var body any
-		if action == "delete" {
-			path = "/domains/" + in.DomainID + "/records/" + in.RecordID
-			method = http.MethodDelete
-		} else {
-			if action == "create" {
-				if existing, err := linodeAPIRequest(context.Background(), http.MethodGet, "/domains/"+in.DomainID+"/records", nil); err == nil && dnsRecordExists(existing, in) {
-					return CloudActionResult{}, errors.New("an identical DNS record already exists")
-				}
-			}
-			path = "/domains/" + in.DomainID + "/records"
-			method = http.MethodPost
-			if action == "update" {
-				path += "/" + in.RecordID
-				method = http.MethodPut
-			}
-			body = map[string]any{"type": in.Type, "name": in.Name, "target": in.Target, "ttl_sec": in.TTL}
-		}
-		if _, err := linodeAPIRequest(context.Background(), method, path, body); err != nil {
-			return CloudActionResult{}, err
-		}
-		result := CloudActionResult{Provider: "linode", Action: "dns." + action, ID: in.DomainID, CompletedAt: time.Now().UTC()}
-		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "cloud.dns."+action, in.DomainID, in.Name); err != nil {
-			log.Printf("DNS action completed but audit persistence is unavailable: %v", err)
-		}
-		return result, nil
-	})
-	if err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), 429)
-		} else {
-			http.Error(w, "could not persist DNS job", 500)
-		}
-		return nil
-	}
-	writeJSON(w, 202, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
+	writeJSON(w, 202, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID})
 	return nil
 }
 

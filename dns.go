@@ -49,7 +49,11 @@ func (a *App) dnsCapability() DNSCapability {
 	provider := strings.ToLower(strings.TrimSpace(a.Config.CloudProvider))
 	adapters := []string{"powerdns", "rfc2136", "cloudflare", "route53", "linode", "digitalocean"}
 	if provider == "linode" {
-		return DNSCapability{Provider: provider, Status: "adapter-available", Adapters: adapters, Detail: "Linode DNS is available through the existing provider adapter; zone ownership and desired-state reconciliation remain operator-managed."}
+		detail := "Linode DNS is available through the existing provider adapter; zone ownership and DNSSEC remain operator-managed."
+		if a.DNSDesired != nil {
+			detail = "Linode DNS record mutations use durable desired state and retryable jobs; zone ownership and DNSSEC remain operator-managed."
+		}
+		return DNSCapability{Provider: provider, Status: "adapter-available", Adapters: adapters, DNSSEC: false, Detail: detail}
 	}
 	return DNSCapability{Provider: provider, Status: "not-configured", Adapters: adapters, Detail: "No DNS provider adapter is configured. DNS changes are not simulated or silently applied."}
 }
@@ -59,7 +63,7 @@ func (a *App) dnsCapabilities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"capability": a.dnsCapability(), "desired_state": false, "dnssec": false})
+	writeJSON(w, http.StatusOK, map[string]any{"capability": a.dnsCapability(), "desired_state": a.DNSDesired != nil, "dnssec": false})
 }
 
 var errDNSProviderNotConfigured = errors.New("DNS provider adapter is not configured")

@@ -19,18 +19,18 @@
   (available in `Unreleased` after 0.6.0)
 - Customer-first hosting workspace with per-site domain connection and
   verified-backup actions (available in `Unreleased` after 0.6.0); DNS
-  lifecycle and customer authorization remain future work.
-- Constrained shared-hosting customer accounts, assigned-site plan limits, and
-  customer-scoped site/backup/job visibility (available in `Unreleased`);
-  panel-session suspension and built-in application resource ceilings are
-  shipped, while hosting-workload lifecycle and complete customer resource
-  quotas remain future work.
+  lifecycle and multi-host authorization remain future work.
+- Constrained shared-hosting customer accounts, durable assigned-site
+  ownership, assigned-site plan limits, and customer-scoped site/backup/job
+  visibility (available in `Unreleased`); panel-session suspension and
+  application/filesystem resource ceilings are shipped, while
+  hosting-workload lifecycle and provider-specific quotas remain future work.
 
 ## 0.3 — Recovery and scale
 
 - Snapshot-backed restore rollback for files and databases
 - Scheduled backup policies with bounded local retention and RPO evidence (shipped in 0.6)
-- Durable job state, retry/cancellation semantics, and worker health
+- Durable job state, lease/retry/cancellation semantics, and worker health
 - Import progress, cancellation, and retry
 - Docker and distribution integration tests
 
@@ -59,7 +59,8 @@ and installation evidence before the version is tagged.
 
 ## 2.0 — Shared-hosting platform
 
-- Tenant/account model with quotas, service plans, scoped RBAC, API tokens,
+- Tenant/account model with quotas, service plans, scoped RBAC, customer API
+  tokens,
   OIDC, and phishing-resistant MFA
 - Durable relational control-plane state and multi-host agent orchestration
 - Complete domain, DNS, TLS, database, mail, FTP/SFTP, cron, SSH, and billing

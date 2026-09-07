@@ -184,9 +184,11 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_MAX_UPLOAD_BYTES` | Bytes, up to 20 GiB | Maximum compressed restore request size |
 | `STEPANEL_MAX_ARCHIVE_ENTRIES` | `1`–`1000000` | Maximum filesystem entries in a restore or backup |
 | `STEPANEL_MAX_CONCURRENT_JOBS` | `1`–`32` | Global restore, backup, and certificate job slots |
+| `STEPANEL_WORKER_MODE` | `embedded` or `external` | Run jobs in the panel process or in the separately supervised worker service; the installer selects `external` |
+| `STEPANEL_CONTROL_PLANE_DB` | Absolute path in production | SQLite control-plane database for durable jobs, customer accounts, site ownership, and sessions |
 | `STEPANEL_ACCOUNT_STATE` | Absolute path in production | Optional private customer-account state file; defaults beside session state |
 | `STEPANEL_ENVIRONMENT_KEY` | Secret string | Enables AES-GCM encrypted site environment storage; keep stable and back it up securely |
-| `STEPANEL_ACCOUNT_KEY` | Secret string | Encrypts customer TOTP secrets in account state; required in production and must be backed up with `STEPANEL_ACCOUNT_STATE` |
+| `STEPANEL_ACCOUNT_KEY` | Secret string | Encrypts customer TOTP secrets and sensitive durable job payloads (including WordPress restore credentials); required for those features and must be backed up with the control-plane database |
 | `STEPANEL_BACKUP_SIGNING_KEY` | Secret string | Signs backup manifests with HMAC-SHA256; keep outside the backup root and escrow separately for disaster recovery |
 | `STEPANEL_ENVIRONMENT_STATE` | Filesystem path | Site environment state file; defaults beside the job state |
 | `STEPANEL_REDIS_STATE` | Filesystem path | Redis/Valkey site allocation state; defaults beside the job state |
@@ -216,7 +218,8 @@ outbound-network policy.
 | `/var/www/sites/.stepanel-recovery` | Journaled site rollback data |
 | `/etc/ste-panel.env` | Runtime configuration |
 | `/etc/stepanel-audit.key` | Root-only HMAC key for audit verification |
-| `/etc/systemd/system/stepanel.service` | Service definition |
+| `/etc/systemd/system/stepanel.service` | Panel service definition |
+| `/etc/systemd/system/stepanel-worker.service` | Durable job worker service definition |
 | `/etc/logrotate.d/stepanel` | Audit-log retention policy |
 
 Caddy obtains and renews HTTPS certificates automatically. On an explicitly

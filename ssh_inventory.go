@@ -88,32 +88,12 @@ func (a *App) sshAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid SSH server, action, or service", 422)
 		return
 	}
-	id, err := newJobID("ssh")
+	job, err := a.enqueueCloudJob(durableCloudRequest{Operation: "ssh", Provider: "ssh", Action: in.Action, ID: in.Server, Service: in.Service, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create SSH job", 500)
+		http.Error(w, "could not persist SSH job", 500)
 		return
 	}
-	if err := a.Jobs.SubmitCloud(id, in.Server, func() (CloudActionResult, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		if err := executeSSHAction(ctx, in.Server, in.Action, in.Service); err != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "ssh."+in.Action+".failed", in.Server, err.Error())
-			return CloudActionResult{}, err
-		}
-		result := CloudActionResult{Provider: "ssh", Action: in.Action, ID: in.Server, CompletedAt: time.Now().UTC()}
-		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "ssh."+in.Action, in.Server, in.Service); err != nil {
-			return result, err
-		}
-		return result, nil
-	}); err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), 429)
-		} else {
-			http.Error(w, "could not persist SSH job", 500)
-		}
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": id, "status_url": "/api/jobs/" + id})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID})
 }
 
 var sshServicePattern = regexp.MustCompile(`^[a-zA-Z0-9@_.:-]{1,80}$`)

@@ -151,9 +151,9 @@ During an incident:
   managed parent directories concurrently, use filesystem permissions and
   private staging to reduce exposure; directory-FD/openat2 traversal remains a
   future hardening item.
-- Job and session state use atomic JSON snapshots. Retention and bounded
-  admission keep normal installations manageable, but very high-volume fleets
-  should monitor persistence latency and plan a transactional store.
+- Job, account, tenant ownership, and session state use the transactional
+  control-plane database. Very high-volume or multi-host fleets still require
+  PostgreSQL-class HA storage and independently monitored workers.
 - Git file deployment, app process deployment, and proxy deployment are
   separate API operations. Operators should use the site workspace and audit
   history to reconcile partial failures explicitly.

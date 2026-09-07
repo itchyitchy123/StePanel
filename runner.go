@@ -9,7 +9,9 @@ import (
 	"strings"
 )
 
-var runnerImagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{0,180}(:[A-Za-z0-9._-]{1,80})?$`)
+// Build images must be immutable references so the same request cannot run
+// different code after a registry tag is moved.
+var runnerImagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{0,180}@sha256:[0-9a-f]{64}$`)
 
 type BuildRequest struct {
 	Site     string   `json:"site"`

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -35,6 +36,91 @@ type BackupRestoreResult struct {
 	Consistency       string    `json:"consistency"`
 	SchemaRollback    string    `json:"schema_rollback"`
 	CompletedAt       time.Time `json:"completed_at"`
+}
+
+type durableBackupRestoreRequest struct {
+	Mode     string `json:"mode"`
+	Site     string `json:"site"`
+	Backup   string `json:"backup"`
+	Database string `json:"database,omitempty"`
+	Actor    string `json:"actor"`
+}
+
+func (a *App) enqueueBackupRestoreJob(request durableBackupRestoreRequest) (Job, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return Job{}, err
+	}
+	job, _, err := a.Jobs.EnqueueIdempotent("backup.restore", request.Site, "", payload, 2)
+	return job, err
+}
+
+func (a *App) handleBackupRestoreJob(ctx context.Context, item Job) ([]byte, error) {
+	var request durableBackupRestoreRequest
+	if err := json.Unmarshal(item.Payload, &request); err != nil {
+		return nil, fmt.Errorf("decode backup restore job payload: %w", err)
+	}
+	if safeUser(request.Site) == "" || !validBackupName(request.Backup) || request.Actor == "" {
+		return nil, errors.New("invalid durable backup restore payload")
+	}
+	if err := a.authorizeDurableSiteJob(request.Site, request.Actor, false); err != nil {
+		return nil, err
+	}
+	if ctx.Err() != nil || a.Jobs.CancellationRequested(item.ID) {
+		return nil, context.Canceled
+	}
+	releaseUnlock := a.siteOperations.Acquire(request.Site)
+	defer releaseUnlock()
+	var result BackupRestoreResult
+	var err error
+	switch request.Mode {
+	case "files":
+		result, err = backupRestoreFiles(a.Config, request.Backup, request.Site)
+	case "database":
+		var safety BackupResult
+		safety, err = CreateSiteBackup(a.Config, request.Site, true)
+		if err == nil {
+			result, err = restoreManagedDatabase(a.Config, request.Backup, request.Site, request.Database)
+			result.SafetyBackup = safety.Path
+		}
+	case "offsite-files":
+		var root string
+		var cleanup func()
+		root, cleanup, err = downloadOffsiteBackup(a.Config, request.Site, request.Backup)
+		if err == nil {
+			defer cleanup()
+			cfg := a.Config
+			cfg.BackupRoot = root
+			result, err = backupRestoreFiles(cfg, request.Backup, request.Site)
+		}
+	case "offsite-database":
+		var root string
+		var cleanup func()
+		root, cleanup, err = downloadOffsiteBackup(a.Config, request.Site, request.Backup)
+		if err == nil {
+			defer cleanup()
+			var safety BackupResult
+			safety, err = CreateSiteBackup(a.Config, request.Site, true)
+			if err == nil {
+				cfg := a.Config
+				cfg.BackupRoot = root
+				result, err = restoreManagedDatabase(cfg, request.Backup, request.Site, request.Database)
+				result.SafetyBackup = safety.Path
+			}
+		}
+	default:
+		return nil, errors.New("unsupported backup restore mode")
+	}
+	if err != nil {
+		_ = AuditAs(a.Config.AuditLog, request.Actor, "backup."+request.Mode+".failed", request.Site, err.Error())
+		return nil, err
+	}
+	_ = AuditAs(a.Config.AuditLog, request.Actor, "backup."+request.Mode+".completed", request.Site, request.Backup)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	return output, nil
 }
 
 // backupVerify performs the same archive and manifest checks used before a
@@ -356,28 +442,12 @@ func (a *App) backupRestoreFilesHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "backup verification failed", http.StatusUnprocessableEntity)
 		return
 	}
-	jobID, err := newJobID("backup-restore")
+	job, err := a.enqueueBackupRestoreJob(durableBackupRestoreRequest{Mode: "files", Site: input.Site, Backup: input.Backup, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		http.Error(w, "could not persist restore job", http.StatusInternalServerError)
 		return
 	}
-	if err := a.Jobs.SubmitBackupRestore(jobID, input.Site, func() (BackupRestoreResult, error) {
-		result, restoreErr := backupRestoreFiles(a.Config, input.Backup, input.Site)
-		if restoreErr != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-files.failed", input.Site, restoreErr.Error())
-			return result, restoreErr
-		}
-		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-files.completed", input.Site, input.Backup)
-		return result, nil
-	}); err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
-		} else {
-			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
-		}
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "files-only"})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID, "mode": "files-only"})
 }
 
 func backupContainsDatabase(manifest BackupManifest, database string) bool {
@@ -469,33 +539,12 @@ func (a *App) backupRestoreDatabaseHTTP(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "verified backup does not contain the selected site database", http.StatusUnprocessableEntity)
 		return
 	}
-	jobID, err := newJobID("backup-db-restore")
+	job, err := a.enqueueBackupRestoreJob(durableBackupRestoreRequest{Mode: "database", Site: input.Site, Backup: input.Backup, Database: input.Database, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		http.Error(w, "could not persist restore job", http.StatusInternalServerError)
 		return
 	}
-	if err := a.Jobs.SubmitBackupRestore(jobID, input.Site, func() (BackupRestoreResult, error) {
-		safety, safetyErr := CreateSiteBackup(a.Config, input.Site, true)
-		if safetyErr != nil {
-			return BackupRestoreResult{}, fmt.Errorf("create pre-restore safety backup: %w", safetyErr)
-		}
-		result, restoreErr := restoreManagedDatabase(a.Config, input.Backup, input.Site, input.Database)
-		if restoreErr != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-database.failed", input.Site, restoreErr.Error())
-			return result, restoreErr
-		}
-		result.SafetyBackup = safety.Path
-		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-database.completed", input.Site, input.Database+" safety_backup="+safety.Path)
-		return result, nil
-	}); err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
-		} else {
-			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
-		}
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "database-only", "schema_rollback": "manual"})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID, "mode": "database-only", "schema_rollback": "manual"})
 }
 
 func (a *App) backupRestoreOffsiteFilesHTTP(w http.ResponseWriter, r *http.Request) {
@@ -522,35 +571,12 @@ func (a *App) backupRestoreOffsiteFilesHTTP(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "offsite backup restore is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	jobID, err := newJobID("offsite-restore")
+	job, err := a.enqueueBackupRestoreJob(durableBackupRestoreRequest{Mode: "offsite-files", Site: input.Site, Backup: input.Backup, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		http.Error(w, "could not persist restore job", http.StatusInternalServerError)
 		return
 	}
-	if err := a.Jobs.SubmitBackupRestore(jobID, input.Site, func() (BackupRestoreResult, error) {
-		root, cleanup, downloadErr := downloadOffsiteBackup(a.Config, input.Site, input.Backup)
-		if downloadErr != nil {
-			return BackupRestoreResult{}, downloadErr
-		}
-		defer cleanup()
-		cfg := a.Config
-		cfg.BackupRoot = root
-		result, restoreErr := backupRestoreFiles(cfg, input.Backup, input.Site)
-		if restoreErr != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-offsite-files.failed", input.Site, restoreErr.Error())
-			return result, restoreErr
-		}
-		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-offsite-files.completed", input.Site, input.Backup)
-		return result, nil
-	}); err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
-		} else {
-			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
-		}
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "offsite-files-only"})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID, "mode": "offsite-files-only"})
 }
 
 func (a *App) backupRestoreOffsiteDatabaseHTTP(w http.ResponseWriter, r *http.Request) {
@@ -578,38 +604,10 @@ func (a *App) backupRestoreOffsiteDatabaseHTTP(w http.ResponseWriter, r *http.Re
 		http.Error(w, "offsite database restore is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	jobID, err := newJobID("offsite-db-restore")
+	job, err := a.enqueueBackupRestoreJob(durableBackupRestoreRequest{Mode: "offsite-database", Site: input.Site, Backup: input.Backup, Database: input.Database, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		http.Error(w, "could not persist restore job", http.StatusInternalServerError)
 		return
 	}
-	if err := a.Jobs.SubmitBackupRestore(jobID, input.Site, func() (BackupRestoreResult, error) {
-		root, cleanup, downloadErr := downloadOffsiteBackup(a.Config, input.Site, input.Backup)
-		if downloadErr != nil {
-			return BackupRestoreResult{}, downloadErr
-		}
-		defer cleanup()
-		safety, safetyErr := CreateSiteBackup(a.Config, input.Site, true)
-		if safetyErr != nil {
-			return BackupRestoreResult{}, fmt.Errorf("create pre-restore safety backup: %w", safetyErr)
-		}
-		cfg := a.Config
-		cfg.BackupRoot = root
-		result, restoreErr := restoreManagedDatabase(cfg, input.Backup, input.Site, input.Database)
-		if restoreErr != nil {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-offsite-database.failed", input.Site, restoreErr.Error())
-			return result, restoreErr
-		}
-		result.SafetyBackup = safety.Path
-		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "backup.restore-offsite-database.completed", input.Site, input.Database+" safety_backup="+safety.Path)
-		return result, nil
-	}); err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
-		} else {
-			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
-		}
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": "/api/jobs/" + jobID, "mode": "offsite-database-only", "schema_rollback": "manual"})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID, "mode": "offsite-database-only", "schema_rollback": "manual"})
 }

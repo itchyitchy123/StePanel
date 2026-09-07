@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,11 +34,15 @@ type App struct {
 	RecoveryError            error
 	Environments             *EnvironmentStore
 	Redis                    *RedisAllocationStore
+	DNSDesired               *DNSDesiredStore
+	Routes                   *RouteStore
+	Domains                  *DomainClaimStore
 	Access                   *SiteAccessStore
 	Workers                  *WorkerStore
 	Composer                 *ComposerStore
 	PHP                      *PHPProfileStore
 	Tasks                    *TaskStore
+	APITokens                *apiTokenStore
 	Deployments              *DeploymentStore
 	Resources                *ResourceStore
 	databaseDiagnosticsMu    sync.Mutex
@@ -48,6 +53,7 @@ type App struct {
 }
 
 func main() {
+	workerMode := len(os.Args) == 2 && os.Args[1] == "worker"
 	if len(os.Args) == 2 && (os.Args[1] == "version" || os.Args[1] == "--version") {
 		_, _ = fmt.Fprintf(os.Stdout, "StePanel %s\ncommit: %s\nbuilt: %s\n", Version, Commit, BuildDate)
 		return
@@ -91,6 +97,41 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) == 3 && os.Args[1] == "backup-control-plane" {
+		if err := backupControlPlane(LoadConfig().ControlPlaneDB, os.Args[2]); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Fprintln(os.Stdout, os.Args[2])
+		return
+	}
+	if len(os.Args) == 3 && os.Args[1] == "restore-control-plane" && os.Args[2] == "--dry-run" {
+		log.Fatal("restore-control-plane requires SOURCE --dry-run")
+	}
+	if len(os.Args) == 4 && os.Args[1] == "restore-control-plane" && os.Args[3] == "--dry-run" {
+		if err := verifyControlPlaneBackup(os.Args[2]); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Fprintln(os.Stdout, "control-plane backup verified:", os.Args[2])
+		return
+	}
+	if len(os.Args) == 4 && os.Args[1] == "restore-control-plane" && os.Args[3] == "--replace" {
+		cfg := LoadConfig()
+		panelLock, err := acquireProcessLock(cfg.JobState + ".lock")
+		if err != nil {
+			log.Fatal("stop StePanel before live control-plane restore: ", err)
+		}
+		defer panelLock.Close()
+		workerLock, err := acquireProcessLock(cfg.JobState + ".lock.worker")
+		if err != nil {
+			log.Fatal("stop stepanel-worker before live control-plane restore: ", err)
+		}
+		defer workerLock.Close()
+		if err := restoreControlPlane(os.Args[2], cfg.ControlPlaneDB); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Fprintln(os.Stdout, "control-plane restored:", cfg.ControlPlaneDB)
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "hash-password" {
 		password, err := io.ReadAll(io.LimitReader(os.Stdin, 1025))
 		if err != nil || len(password) == 0 || len(password) > 1024 || strings.ContainsAny(string(password), "\r\n") {
@@ -116,6 +157,9 @@ func main() {
 	if strings.TrimSpace(cfg.AccountState) == "" || strings.ContainsAny(cfg.AccountState, "\x00\r\n") || cfg.Production && !filepath.IsAbs(cfg.AccountState) {
 		log.Fatal("STEPANEL_ACCOUNT_STATE must be a non-empty filesystem path and absolute in production")
 	}
+	if strings.TrimSpace(cfg.ControlPlaneDB) == "" || strings.ContainsAny(cfg.ControlPlaneDB, "\x00\r\n") || cfg.Production && !filepath.IsAbs(cfg.ControlPlaneDB) {
+		log.Fatal("STEPANEL_CONTROL_PLANE_DB must be a non-empty filesystem path and absolute in production")
+	}
 	auth, err := NewAuth(cfg.Production)
 	if err != nil {
 		log.Fatal(err)
@@ -127,22 +171,35 @@ func main() {
 	for _, directory := range []struct {
 		path string
 		mode os.FileMode
-	}{{cfg.ImportRoot, 0700}, {cfg.BackupRoot, 0700}, {filepath.Dir(cfg.JobState), 0750}, {filepath.Dir(cfg.SessionState), 0750}, {filepath.Dir(cfg.AccountState), 0750}, {cfg.RecoveryRoot, 0700}} {
+	}{{cfg.ImportRoot, 0700}, {cfg.BackupRoot, 0700}, {filepath.Dir(cfg.JobState), 0750}, {filepath.Dir(cfg.SessionState), 0750}, {filepath.Dir(cfg.AccountState), 0750}, {filepath.Dir(cfg.ControlPlaneDB), 0750}, {cfg.RecoveryRoot, 0700}} {
 		if err := os.MkdirAll(directory.path, directory.mode); err != nil {
 			log.Fatalf("initialize managed directory %s: %v", directory.path, err)
 		}
 	}
-	processLock, err := acquireProcessLock(cfg.JobState + ".lock")
+	processLockPath := cfg.JobState + ".lock"
+	if workerMode {
+		processLockPath += ".worker"
+	}
+	processLock, err := acquireProcessLock(processLockPath)
 	if err != nil {
 		log.Fatalf("acquire process lock: %v", err)
 	}
 	defer processLock.Close()
-	if err := auth.ConfigureSessionStore(cfg.SessionState); err != nil {
+	controlPlaneDB, err := openControlPlaneDB(cfg.ControlPlaneDB)
+	if err != nil {
+		log.Fatalf("open control-plane database: %v", err)
+	}
+	defer controlPlaneDB.Close()
+	if err := auth.ConfigureSessionStoreDB(controlPlaneDB, cfg.SessionState); err != nil {
 		log.Fatalf("open persistent session state: %v", err)
 	}
-	accounts, err := OpenAccountStore(cfg.AccountState, cfg.AccountKey)
+	auth.apiTokens = &apiTokenStore{db: controlPlaneDB}
+	accounts, err := OpenAccountStoreDB(controlPlaneDB, cfg.AccountState, cfg.AccountKey)
 	if err != nil {
 		log.Fatalf("open persistent shared-hosting account state: %v", err)
+	}
+	if err := accounts.SetAdministratorUsername(auth.Username); err != nil {
+		log.Fatalf("validate administrator/customer identity boundary: %v", err)
 	}
 	auth.Accounts = accounts
 	environments, err := OpenEnvironmentStore(cfg.EnvironmentState, cfg.EnvironmentKey)
@@ -173,7 +230,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open scheduled task state: %v", err)
 	}
-	deployments, err := OpenDeploymentStore(filepath.Join(filepath.Dir(cfg.JobState), "deployments.json"))
+	deployments, err := OpenDeploymentStoreDB(controlPlaneDB, filepath.Join(filepath.Dir(cfg.JobState), "deployments.json"))
 	if err != nil {
 		log.Fatalf("open deployment state: %v", err)
 	}
@@ -181,6 +238,57 @@ func main() {
 	if err != nil {
 		log.Fatalf("open resource profile state: %v", err)
 	}
+	dnsDesired, err := OpenDNSDesiredStore(filepath.Join(filepath.Dir(cfg.JobState), "dns-desired.json"))
+	if err != nil {
+		log.Fatalf("open DNS desired state: %v", err)
+	}
+	routes, err := OpenRouteStore(filepath.Join(filepath.Dir(cfg.JobState), "routes.json"))
+	if err != nil {
+		log.Fatalf("open route desired state: %v", err)
+	}
+	domains, err := OpenDomainClaimStore(filepath.Join(filepath.Dir(cfg.JobState), "domain-claims.json"))
+	if err != nil {
+		log.Fatalf("open domain claim state: %v", err)
+	}
+	bindState := func(store any, name string, target any, persist func() error) {
+		found, bindErr := bindControlPlaneState(store, controlPlaneDB, name, target)
+		if bindErr != nil {
+			log.Fatalf("load control-plane state %s: %v", name, bindErr)
+		}
+		if !found {
+			if err := persist(); err != nil {
+				log.Fatalf("migrate control-plane state %s: %v", name, err)
+			}
+		}
+	}
+	bindState(environments, "environment", &environments.values, environments.persistLocked)
+	if err := environments.decryptLoadedSecrets(); err != nil {
+		log.Fatalf("decrypt control-plane environment state: %v", err)
+	}
+	bindState(redisAllocations, "redis", &redisAllocations.values, redisAllocations.persistLocked)
+	bindState(access, "site-access", &access.values, access.persistLocked)
+	bindState(workers, "workers", &workers.values, workers.persistLocked)
+	bindState(composer, "composer", &composer.latest, func() error {
+		data, err := json.Marshal(composer.latest)
+		if err != nil {
+			return err
+		}
+		_, err = persistBoundControlPlaneState(composer, data)
+		return err
+	})
+	bindState(phpProfiles, "php", &phpProfiles.values, func() error {
+		data, err := json.Marshal(phpProfiles.values)
+		if err != nil {
+			return err
+		}
+		_, err = persistBoundControlPlaneState(phpProfiles, data)
+		return err
+	})
+	bindState(tasks, "tasks", &tasks.values, tasks.persistLocked)
+	bindState(resources, "resources", &resources.values, resources.persistLocked)
+	bindState(dnsDesired, "dns-desired", &dnsDesired.values, dnsDesired.persistLocked)
+	bindState(routes, "routes", &routes.values, routes.persistLocked)
+	bindState(domains, "domain-claims", &domains.values, domains.persistLocked)
 	if cfg.DBCtl != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		output, err := runBoundedCommand(ctx, helperCommandContext(ctx, cfg, cfg.DBCtl, "reconcile"))
@@ -238,15 +346,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("fingerprint embedded static assets: %v", err)
 	}
-	jobs, err := OpenJobs(cfg.JobState, cfg.MaxConcurrentJobs)
+	jobs, err := openDurableJobsDBWithKey(controlPlaneDB, cfg.JobState, cfg.AccountKey, cfg.MaxConcurrentJobs)
 	if err != nil {
-		log.Fatalf("open persistent job state: %v", err)
+		log.Fatalf("open durable control-plane job state: %v", err)
+	}
+	if _, err := jobs.RequeueExpired(); err != nil {
+		log.Fatalf("requeue expired durable jobs: %v", err)
 	}
 	schedules, err := openBackupSchedules(filepath.Join(filepath.Dir(cfg.JobState), "backup-schedules.json"))
 	if err != nil {
 		log.Fatalf("open backup schedules: %v", err)
 	}
-	app := &App{Config: cfg, View: view, AssetVersion: assetVersion, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, Tasks: tasks, Deployments: deployments, Resources: resources, RecoveryError: errors.Join(recoveryFailures...)}
+	bindState(schedules, "backup-schedules", &schedules.items, schedules.persistLocked)
+	app := &App{Config: cfg, View: view, AssetVersion: assetVersion, Auth: auth, Jobs: jobs, Metrics: NewMetrics(), Schedules: schedules, Accounts: accounts, Environments: environments, Redis: redisAllocations, DNSDesired: dnsDesired, Routes: routes, Domains: domains, Access: access, Workers: workers, Composer: composer, PHP: phpProfiles, Tasks: tasks, APITokens: auth.apiTokens, Deployments: deployments, Resources: resources, RecoveryError: errors.Join(recoveryFailures...)}
 	// Reconcile domains independently. A single shared deadline allowed a slow
 	// host/helper operation in an early domain to starve every later domain.
 	// Each domain remains bounded, and failures are retained in its own report.
@@ -258,6 +370,7 @@ func main() {
 			log.Printf("%s reconciliation incomplete: reconciled=%d failed=%d", name, len(reconciled), len(failed))
 		}
 	}
+	reconcile("routes", app.reconcileRoutes)
 	reconcile("SSH access", app.reconcileSiteAccess)
 	reconcile("workers", app.reconcileWorkers)
 	reconcile("PHP profile", app.reconcilePHPProfiles)
@@ -271,11 +384,27 @@ func main() {
 	if err := Audit(cfg.AuditLog, "service.started", "stepanel", "control plane initialized"); err != nil {
 		log.Printf("initialize audit chain: %v", err)
 	}
+	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if workerMode {
+		log.Printf("StePanel durable worker started with pid %d", os.Getpid())
+		err := app.Jobs.RunWorker(runCtx, fmt.Sprintf("worker-%d", os.Getpid()), []string{"cpmove.restore", "site.backup", "certificate.issue", "wordpress.restore", "backup.restore", "cloud.action", "site.terminate"}, 500*time.Millisecond, app.handleDurableJob)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatalf("durable worker stopped: %v", err)
+		}
+		return
+	}
 	if !app.Auth.Enabled {
 		log.Println("warning: authentication is disabled; set STEPANEL_ADMIN_PASSWORD and STEPANEL_SESSION_SECRET")
 	}
-	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	if cfg.WorkerMode != "external" {
+		go func() {
+			err := app.Jobs.RunWorker(runCtx, fmt.Sprintf("panel-%d", os.Getpid()), []string{"cpmove.restore", "site.backup", "certificate.issue", "wordpress.restore", "backup.restore", "cloud.action", "site.terminate"}, 500*time.Millisecond, app.handleDurableJob)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("durable worker stopped: %v", err)
+			}
+		}()
+	}
 	go func() {
 		scheduleTicker := time.NewTicker(time.Minute)
 		cleanupTicker := time.NewTicker(15 * time.Minute)
@@ -319,8 +448,8 @@ func main() {
 	mux.Handle("/api/database/sessions", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseSessions)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/database/sessions/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseSessionTerminate)), http.MethodDelete))
 	mux.Handle("/api/database/settings", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseSettings)), http.MethodGet, http.MethodHead))
-	mux.Handle("/api/databases", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseCollection)), http.MethodGet, http.MethodHead, http.MethodPost))
-	mux.Handle("/api/databases/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.databaseResource)), http.MethodGet, http.MethodHead, http.MethodPatch, http.MethodDelete))
+	mux.Handle("/api/databases", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseCollection)), http.MethodGet, http.MethodHead, http.MethodPost))
+	mux.Handle("/api/databases/", allowMethods(app.Auth.Require(http.HandlerFunc(app.databaseResource)), http.MethodGet, http.MethodHead, http.MethodPatch, http.MethodDelete))
 	mux.Handle("/api/ftp", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.ftpStatus)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/audit", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.securityAudit)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/security/center", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.securityCenter)), http.MethodGet, http.MethodHead))
@@ -372,7 +501,10 @@ func main() {
 	mux.Handle("/api/deployments/run", allowMethods(app.Auth.Require(http.HandlerFunc(app.releasePipeline)), http.MethodPost))
 	mux.Handle("/api/sites/logs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteLogs)), http.MethodGet, http.MethodHead))
 	mux.Handle("/api/sites/deploy", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteDeploy)), http.MethodPost))
-	mux.Handle("/api/sites/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.siteManage)), http.MethodDelete))
+	mux.Handle("/api/sites/domains/claim", allowMethods(app.Auth.Require(http.HandlerFunc(app.domainClaim)), http.MethodPost))
+	mux.Handle("/api/sites/domains/verify", allowMethods(app.Auth.Require(http.HandlerFunc(app.domainVerify)), http.MethodPost))
+	mux.Handle("/api/sites/", allowMethods(app.Auth.Require(http.HandlerFunc(app.siteManage)), http.MethodDelete))
+	mux.Handle("/api/sites/terminate", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.siteTermination)), http.MethodPost))
 	mux.Handle("/api/backups", app.Auth.Require(http.HandlerFunc(app.backups)))
 	mux.Handle("/api/backups/restore-to-staging", allowMethods(app.Auth.Require(http.HandlerFunc(app.backupRestoreToStaging)), http.MethodPost))
 	mux.Handle("/api/backups/restore-offsite-to-staging", allowMethods(app.Auth.Require(http.HandlerFunc(app.backupRestoreOffsiteToStaging)), http.MethodPost))
@@ -400,7 +532,11 @@ func main() {
 	mux.Handle("/api/accounts/", allowMethods(app.Auth.RequireAdministrator(http.HandlerFunc(app.accounts)), http.MethodPatch, http.MethodDelete, http.MethodPost))
 	mux.Handle("/api/account/password", allowMethods(app.Auth.Require(http.HandlerFunc(app.customerPassword)), http.MethodPost))
 	mux.Handle("/api/account/mfa", allowMethods(app.Auth.Require(http.HandlerFunc(app.customerMFA)), http.MethodPost))
-	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead))
+	mux.Handle("/api/account/tokens", allowMethods(app.Auth.Require(http.HandlerFunc(app.apiTokens)), http.MethodGet, http.MethodPost))
+	mux.Handle("/api/account/tokens/", allowMethods(app.Auth.Require(http.HandlerFunc(app.apiTokens)), http.MethodDelete))
+	mux.Handle("/api/admin/tokens", allowMethods(app.Auth.Require(http.HandlerFunc(app.Auth.adminAPITokens)), http.MethodGet, http.MethodPost))
+	mux.Handle("/api/admin/tokens/", allowMethods(app.Auth.Require(http.HandlerFunc(app.Auth.adminAPITokens)), http.MethodDelete))
+	mux.Handle("/api/jobs/", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobStatus)), http.MethodGet, http.MethodHead, http.MethodPost))
 	mux.Handle("/api/jobs", allowMethods(app.Auth.Require(http.HandlerFunc(app.jobList)), http.MethodGet, http.MethodHead))
 	metricsHandler := http.Handler(http.HandlerFunc(app.metrics))
 	if os.Getenv("STEPANEL_METRICS_PUBLIC") != "1" {
@@ -495,6 +631,7 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	a.Metrics.Write(w)
+	writeJobMetrics(w, a.Jobs)
 	writeDatabaseMetrics(w, a.cachedDatabaseDiagnostics(15*time.Second))
 	if a.Schedules != nil {
 		writeBackupScheduleMetrics(w, a.Schedules.list())
@@ -558,6 +695,238 @@ func (a *App) inspect(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, info)
 }
+
+type durableCPMoveRequest struct {
+	TempPath   string `json:"temp_path"`
+	Filename   string `json:"filename"`
+	Size       int64  `json:"size"`
+	User       string `json:"user"`
+	Actor      string `json:"actor"`
+	RestoreDBs bool   `json:"restore_databases"`
+}
+
+type durableBackupRequest struct {
+	Site             string    `json:"site"`
+	IncludeDatabases bool      `json:"include_databases"`
+	Scheduled        bool      `json:"scheduled"`
+	KeepLast         int       `json:"keep_last,omitempty"`
+	Actor            string    `json:"actor"`
+	StartedAt        time.Time `json:"started_at,omitempty"`
+}
+
+type durableCertificateRequest struct {
+	Domain string `json:"domain"`
+	Email  string `json:"email"`
+	Actor  string `json:"actor"`
+}
+
+type durableWPressRequest struct {
+	TempPath     string `json:"temp_path"`
+	Site         string `json:"site"`
+	DBSuffix     string `json:"db_suffix"`
+	DBUserSuffix string `json:"db_user_suffix"`
+	Password     string `json:"password"`
+	SiteURL      string `json:"site_url"`
+	TargetPrefix string `json:"target_prefix"`
+	Force        bool   `json:"force"`
+	Actor        string `json:"actor"`
+}
+
+func (a *App) handleCPMoveJob(ctx context.Context, item Job) ([]byte, error) {
+	var request durableCPMoveRequest
+	if err := json.Unmarshal(item.Payload, &request); err != nil {
+		return nil, fmt.Errorf("decode cpmove job payload: %w", err)
+	}
+	if safeUser(request.User) == "" || request.Filename == "" || request.Size < 0 || ensureInside(a.Config.ImportRoot, request.TempPath) != nil {
+		return nil, errors.New("invalid durable cpmove job payload")
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if a.Jobs.CancellationRequested(item.ID) {
+		return nil, errors.New("cpmove restore cancelled before execution")
+	}
+	staged, err := os.Open(request.TempPath)
+	if err != nil {
+		return nil, fmt.Errorf("open staged cpmove archive: %w", err)
+	}
+	defer staged.Close()
+	removeStaged := false
+	defer func() {
+		if removeStaged {
+			_ = os.Remove(request.TempPath)
+		}
+	}()
+	releaseUnlock := a.siteOperations.Acquire(request.User)
+	defer releaseUnlock()
+	a.Metrics.RestoreStarted()
+	result, restoreErr := RestoreCPMove(a.Config, staged, &multipart.FileHeader{Filename: request.Filename, Size: request.Size}, request.User, request.RestoreDBs)
+	a.Metrics.RestoreFinished(restoreErr)
+	if restoreErr != nil {
+		if auditErr := AuditAs(a.Config.AuditLog, request.Actor, "cpmove.restore.failed", request.User, restoreErr.Error()); auditErr != nil {
+			return nil, fmt.Errorf("%w; audit persistence failed: %v", restoreErr, auditErr)
+		}
+		return nil, restoreErr
+	}
+	if auditErr := AuditAs(a.Config.AuditLog, request.Actor, "cpmove.restore.completed", request.User, result.StagedAt); auditErr != nil {
+		log.Printf("cpmove restore completed but audit persistence is unavailable: %v", auditErr)
+	}
+	removeStaged = true
+	output, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode cpmove result: %w", err)
+	}
+	return output, nil
+}
+
+func (a *App) handleBackupJob(ctx context.Context, item Job) ([]byte, error) {
+	var request durableBackupRequest
+	if err := json.Unmarshal(item.Payload, &request); err != nil {
+		return nil, fmt.Errorf("decode backup job payload: %w", err)
+	}
+	if safeUser(request.Site) == "" || request.Actor == "" || (request.Scheduled && request.KeepLast < 1) {
+		return nil, errors.New("invalid durable backup job payload")
+	}
+	if err := a.authorizeDurableSiteJob(request.Site, request.Actor, request.Scheduled); err != nil {
+		return nil, err
+	}
+	if ctx.Err() != nil || a.Jobs.CancellationRequested(item.ID) {
+		return nil, context.Canceled
+	}
+	releaseUnlock := a.siteOperations.Acquire(request.Site)
+	defer releaseUnlock()
+	result, err := CreateSiteBackup(a.Config, request.Site, request.IncludeDatabases)
+	if err != nil {
+		if auditErr := AuditAs(a.Config.AuditLog, request.Actor, "site.backup.failed", request.Site, err.Error()); auditErr != nil {
+			return nil, fmt.Errorf("%w; audit persistence failed: %v", err, auditErr)
+		}
+		if request.Scheduled {
+			started := request.StartedAt
+			if started.IsZero() {
+				started = time.Now()
+			}
+			a.Schedules.recordResult(request.Site, started, err)
+		}
+		return nil, err
+	}
+	if err = uploadOffsite(a.Config, result); err != nil {
+		_ = AuditAs(a.Config.AuditLog, request.Actor, "site.backup.offsite_failed", request.Site, err.Error())
+		if request.Scheduled {
+			started := request.StartedAt
+			if started.IsZero() {
+				started = time.Now()
+			}
+			a.Schedules.recordResult(request.Site, started, err)
+		}
+		return nil, err
+	}
+	if auditErr := AuditAs(a.Config.AuditLog, request.Actor, "site.backup.completed", request.Site, result.ArchiveSHA256); auditErr != nil {
+		log.Printf("backup completed but audit persistence is unavailable: %v", auditErr)
+	}
+	if request.Scheduled {
+		started := request.StartedAt
+		if started.IsZero() {
+			started = time.Now()
+		}
+		a.Schedules.recordResult(request.Site, started, nil)
+		if err := pruneSiteBackups(a.Config.BackupRoot, request.Site, request.KeepLast); err != nil {
+			_ = AuditAs(a.Config.AuditLog, request.Actor, "backup.retention.failed", request.Site, err.Error())
+		}
+	}
+	output, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode backup result: %w", err)
+	}
+	return output, nil
+}
+
+func (a *App) handleCertificateJob(ctx context.Context, item Job) ([]byte, error) {
+	var request durableCertificateRequest
+	if err := json.Unmarshal(item.Payload, &request); err != nil {
+		return nil, fmt.Errorf("decode certificate job payload: %w", err)
+	}
+	if !domainPattern.MatchString(request.Domain) || request.Email == "" || request.Actor == "" {
+		return nil, errors.New("invalid durable certificate job payload")
+	}
+	certificateCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+	if err := helperCommandContext(certificateCtx, a.Config, a.Config.Certbot, request.Domain, request.Email).Run(); err != nil {
+		return nil, err
+	}
+	if err := AuditAs(a.Config.AuditLog, request.Actor, "certificate.issued", request.Domain, "Let's Encrypt certificate requested"); err != nil {
+		log.Printf("certificate issued but audit persistence is unavailable: %v", err)
+	}
+	output, err := json.Marshal(CertificateResult{Domain: request.Domain, Status: "issued"})
+	if err != nil {
+		return nil, err
+	}
+	return output, nil
+}
+
+func (a *App) handleWPressJob(ctx context.Context, item Job) ([]byte, error) {
+	var request durableWPressRequest
+	if err := json.Unmarshal(item.Payload, &request); err != nil {
+		return nil, fmt.Errorf("decode WordPress job payload: %w", err)
+	}
+	if err := validateWPressInput(request.Site, request.DBSuffix, request.DBUserSuffix, request.Password, request.TargetPrefix, request.SiteURL); err != nil || request.Actor == "" || ensureInside(a.Config.ImportRoot, request.TempPath) != nil {
+		if err == nil {
+			err = errors.New("invalid WordPress job payload")
+		}
+		return nil, err
+	}
+	if ctx.Err() != nil || a.Jobs.CancellationRequested(item.ID) {
+		return nil, context.Canceled
+	}
+	removeStaged := false
+	defer func() {
+		if removeStaged {
+			_ = os.Remove(request.TempPath)
+		}
+	}()
+	releaseUnlock := a.siteOperations.Acquire(request.Site)
+	defer releaseUnlock()
+	a.Metrics.RestoreStarted()
+	result, restoreErr := RestoreWPress(a.Config, request.TempPath, request.Site, request.DBSuffix, request.DBUserSuffix, request.Password, request.SiteURL, request.TargetPrefix, request.Force)
+	a.Metrics.RestoreFinished(restoreErr)
+	if restoreErr != nil {
+		if auditErr := AuditAs(a.Config.AuditLog, request.Actor, "wordpress.restore.failed", request.Site, restoreErr.Error()); auditErr != nil {
+			return nil, fmt.Errorf("%w; audit persistence failed: %v", restoreErr, auditErr)
+		}
+		return nil, restoreErr
+	}
+	detail := fmt.Sprintf("%s; metadata=%t; htaccess=%t", result.StagedAt, result.MetadataApplied, result.HTAccessRestored)
+	if auditErr := AuditAs(a.Config.AuditLog, request.Actor, "wordpress.restore.completed", request.Site, detail); auditErr != nil {
+		log.Printf("WordPress restore completed but audit persistence is unavailable: %v", auditErr)
+	}
+	removeStaged = true
+	output, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode WordPress result: %w", err)
+	}
+	return output, nil
+}
+
+func (a *App) handleDurableJob(ctx context.Context, item Job) ([]byte, error) {
+	switch item.Kind {
+	case "cpmove.restore":
+		return a.handleCPMoveJob(ctx, item)
+	case "site.backup":
+		return a.handleBackupJob(ctx, item)
+	case "certificate.issue":
+		return a.handleCertificateJob(ctx, item)
+	case "wordpress.restore":
+		return a.handleWPressJob(ctx, item)
+	case "backup.restore":
+		return a.handleBackupRestoreJob(ctx, item)
+	case "cloud.action":
+		return a.handleCloudJob(ctx, item)
+	case "site.terminate":
+		return a.handleSiteTermination(ctx, item)
+	default:
+		return nil, fmt.Errorf("no durable worker handler for job kind %q", item.Kind)
+	}
+}
+
 func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", 405)
@@ -630,52 +999,42 @@ func (a *App) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not stage upload", 500)
 		return
 	}
-	jobID, err := newJobID("cpmove")
+	payload, err := json.Marshal(durableCPMoveRequest{TempPath: tempPath, Filename: header.Filename, Size: header.Size, User: user, Actor: a.Auth.UsernameForRequest(r), RestoreDBs: databaseRestore})
 	if err != nil {
 		_ = os.Remove(tempPath)
-		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		http.Error(w, "could not encode restore job", http.StatusInternalServerError)
 		return
 	}
-	queuedID, existing, err := a.Jobs.SubmitIdempotent(jobID, user, operationKey, func() (ImportResult, error) {
-		a.Metrics.RestoreStarted()
-		releaseUnlock := a.siteOperations.Acquire(user)
-		defer releaseUnlock()
-		var restoreErr error
-		defer func() { a.Metrics.RestoreFinished(restoreErr) }()
-		defer os.Remove(tempPath)
-		staged, openErr := os.Open(tempPath)
-		if openErr != nil {
-			restoreErr = openErr
-			return ImportResult{}, openErr
-		}
-		defer staged.Close()
-		result, restoreErr := RestoreCPMove(a.Config, staged, header, user, databaseRestore)
-		if restoreErr != nil {
-			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.failed", user, restoreErr.Error()); auditErr != nil {
-				restoreErr = fmt.Errorf("%w; audit persistence failed: %v", restoreErr, auditErr)
-			}
-		} else {
-			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "cpmove.restore.completed", user, result.StagedAt); auditErr != nil {
-				log.Printf("cpmove restore completed but audit persistence is unavailable: %v", auditErr)
-			}
-		}
-		return result, restoreErr
-	})
+	queued, existing, err := a.Jobs.EnqueueIdempotent("cpmove.restore", user, operationKey, payload, 3)
 	if err != nil {
 		_ = os.Remove(tempPath)
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
-		} else {
-			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
-		}
+		http.Error(w, "could not persist restore job", http.StatusInternalServerError)
 		return
 	}
 	if existing {
 		_ = os.Remove(tempPath)
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": queuedID, "status_url": filepath.Join("/api/jobs", queuedID)})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": queued.ID, "status_url": filepath.Join("/api/jobs", queued.ID)})
 }
 func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/retry") {
+		if r.Method != http.MethodPost || !a.Auth.IsAdministrator(r) || !a.Auth.CSRF(r) {
+			http.Error(w, "administrator dead-letter retry required", http.StatusForbidden)
+			return
+		}
+		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/jobs/"), "/retry")
+		if id == "" || strings.Contains(id, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		if err := a.Jobs.RequeueDeadLetter(id); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "job.dead_letter.requeued", id, "operator-approved retry")
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "requeued", "job_id": id})
+		return
+	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
 	if id == "" || strings.Contains(id, "/") {
 		http.NotFound(w, r)
@@ -688,6 +1047,18 @@ func (a *App) jobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if !a.Auth.IsAdministrator(r) && !a.canAccessSite(r, job.User) {
 		http.Error(w, "job is not assigned to this account", http.StatusForbidden)
+		return
+	}
+	if r.Method == http.MethodPost {
+		if !a.Auth.CSRF(r) {
+			http.Error(w, "invalid request", http.StatusForbidden)
+			return
+		}
+		if err := a.Jobs.RequestCancel(id); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "cancellation-requested"})
 		return
 	}
 	writeJSON(w, http.StatusOK, job)

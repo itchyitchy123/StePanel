@@ -1,13 +1,10 @@
 package main
 
 import (
-	"context"
-	"errors"
-	"log"
+	"encoding/json"
 	"net/http"
 	"net/mail"
 	"strings"
-	"time"
 )
 
 type CertificateResult struct {
@@ -44,28 +41,15 @@ func (a *App) issueCertificate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "certificate helper is not installed", 503)
 		return
 	}
-	jobID, err := newJobID("certificate")
+	payload, err := json.Marshal(durableCertificateRequest{Domain: input.Domain, Email: input.Email, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
-		http.Error(w, "could not create certificate job", http.StatusInternalServerError)
+		http.Error(w, "could not encode certificate job", http.StatusInternalServerError)
 		return
 	}
-	if err := a.Jobs.SubmitCertificate(jobID, input.Domain, func() (CertificateResult, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-		defer cancel()
-		if err := helperCommandContext(ctx, a.Config, a.Config.Certbot, input.Domain, input.Email).Run(); err != nil {
-			return CertificateResult{}, err
-		}
-		if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "certificate.issued", input.Domain, "Let's Encrypt certificate requested"); err != nil {
-			log.Printf("certificate issued but audit persistence is unavailable: %v", err)
-		}
-		return CertificateResult{Domain: input.Domain, Status: "issued"}, nil
-	}); err != nil {
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
-		} else {
-			http.Error(w, "could not persist certificate job", http.StatusInternalServerError)
-		}
+	job, _, err := a.Jobs.EnqueueIdempotent("certificate.issue", input.Domain, "", payload, 3)
+	if err != nil {
+		http.Error(w, "could not persist certificate job", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status": "queued"})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status": "queued"})
 }

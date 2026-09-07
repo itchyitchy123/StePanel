@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
@@ -24,21 +25,25 @@ import (
 )
 
 // HostingPlan contains the assignment and host-enforced application envelope
-// for the built-in plans. Filesystem, bandwidth, database, and Redis limits
-// remain separate provider concerns and are not advertised here.
+// for the built-in plans. Database and logical Redis allocations are admitted
+// against these limits; bandwidth remains a provider-specific concern.
 type HostingPlan struct {
-	Name       string `json:"name"`
-	SiteLimit  int    `json:"site_limit"`
-	CPUPercent int    `json:"cpu_percent"`
-	MemoryMB   int    `json:"memory_mb"`
-	TasksMax   int    `json:"tasks_max"`
-	PHPWorkers int    `json:"php_workers"`
+	Name          string `json:"name"`
+	SiteLimit     int    `json:"site_limit"`
+	CPUPercent    int    `json:"cpu_percent"`
+	MemoryMB      int    `json:"memory_mb"`
+	TasksMax      int    `json:"tasks_max"`
+	PHPWorkers    int    `json:"php_workers"`
+	DiskMB        int    `json:"disk_mb"`
+	Inodes        int    `json:"inodes"`
+	DatabaseLimit int    `json:"database_limit"`
+	RedisMemoryMB int    `json:"redis_memory_mb"`
 }
 
 var hostingPlans = map[string]HostingPlan{
-	"starter":      {Name: "starter", SiteLimit: 1, CPUPercent: 100, MemoryMB: 512, TasksMax: 128, PHPWorkers: 8},
-	"professional": {Name: "professional", SiteLimit: 5, CPUPercent: 200, MemoryMB: 1024, TasksMax: 256, PHPWorkers: 16},
-	"agency":       {Name: "agency", SiteLimit: 25, CPUPercent: 400, MemoryMB: 2048, TasksMax: 512, PHPWorkers: 32},
+	"starter":      {Name: "starter", SiteLimit: 1, CPUPercent: 100, MemoryMB: 512, TasksMax: 128, PHPWorkers: 8, DiskMB: 10240, Inodes: 200000, DatabaseLimit: 1, RedisMemoryMB: 128},
+	"professional": {Name: "professional", SiteLimit: 5, CPUPercent: 200, MemoryMB: 1024, TasksMax: 256, PHPWorkers: 16, DiskMB: 51200, Inodes: 1000000, DatabaseLimit: 10, RedisMemoryMB: 1024},
+	"agency":       {Name: "agency", SiteLimit: 25, CPUPercent: 400, MemoryMB: 2048, TasksMax: 512, PHPWorkers: 32, DiskMB: 204800, Inodes: 5000000, DatabaseLimit: 50, RedisMemoryMB: 4096},
 }
 
 type HostingAccount struct {
@@ -60,14 +65,16 @@ type HostingAccount struct {
 // credentials remain environment-managed and are deliberately never copied to
 // this file.
 type AccountStore struct {
-	mu       sync.RWMutex
-	path     string
-	key      []byte
-	accounts map[string]HostingAccount
+	mu                    sync.RWMutex
+	path                  string
+	db                    *sql.DB
+	key                   []byte
+	accounts              map[string]HostingAccount
+	administratorUsername string
 }
 
 func OpenAccountStore(path string, accountKey ...string) (*AccountStore, error) {
-	store := &AccountStore{path: path, accounts: make(map[string]HostingAccount)}
+	store := &AccountStore{path: path, accounts: make(map[string]HostingAccount), administratorUsername: "admin"}
 	if len(accountKey) > 0 && strings.TrimSpace(accountKey[0]) != "" {
 		h := sha256.Sum256([]byte(accountKey[0]))
 		store.key = h[:]
@@ -86,34 +93,192 @@ func OpenAccountStore(path string, accountKey ...string) (*AccountStore, error) 
 	if err := json.Unmarshal(data, &accounts); err != nil {
 		return nil, fmt.Errorf("decode account state: %w", err)
 	}
-	ownedSites := make(map[string]string)
+	if err := store.loadAccounts(accounts); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+// OpenAccountStoreDB uses the control-plane database as the authoritative
+// account and site-ownership store. legacyPath is imported only when the
+// database has no account rows.
+func OpenAccountStoreDB(db *sql.DB, legacyPath string, accountKey ...string) (*AccountStore, error) {
+	store := &AccountStore{db: db, accounts: make(map[string]HostingAccount), administratorUsername: "admin"}
+	if len(accountKey) > 0 && strings.TrimSpace(accountKey[0]) != "" {
+		h := sha256.Sum256([]byte(accountKey[0]))
+		store.key = h[:]
+	}
+	rows, err := db.Query(`SELECT payload FROM accounts ORDER BY username`)
+	if err != nil {
+		return nil, fmt.Errorf("read durable account state: %w", err)
+	}
+	var payloads [][]byte
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("read durable account row: %w", err)
+		}
+		payloads = append(payloads, payload)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close durable account state: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate durable account state: %w", err)
+	}
+	if len(payloads) == 0 && legacyPath != "" {
+		legacy, legacyErr := OpenAccountStore(legacyPath, accountKey...)
+		if legacyErr != nil && !errors.Is(legacyErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("load legacy account state: %w", legacyErr)
+		}
+		if legacyErr == nil {
+			for username, account := range legacy.accounts {
+				store.accounts[username] = account
+			}
+			if len(store.accounts) > 0 {
+				if err := store.persistLocked(); err != nil {
+					return nil, fmt.Errorf("migrate legacy account state: %w", err)
+				}
+			}
+		}
+	} else {
+		for _, payload := range payloads {
+			if len(payload) > 1<<20 {
+				return nil, errors.New("account payload exceeds 1 MiB")
+			}
+			var account HostingAccount
+			if err := json.Unmarshal(payload, &account); err != nil {
+				return nil, fmt.Errorf("decode durable account state: %w", err)
+			}
+			if account.TOTPEncrypted {
+				if len(store.key) == 0 {
+					return nil, errors.New("encrypted account TOTP requires STEPANEL_ACCOUNT_KEY")
+				}
+				plain, err := decryptAccountTOTP(store.key, account.TOTPSecret)
+				if err != nil {
+					return nil, fmt.Errorf("decrypt account TOTP: %w", err)
+				}
+				account.TOTPSecret, account.TOTPEncrypted = plain, false
+			}
+			if err := store.addLoadedAccount(account); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(store.accounts) > 0 {
+		var ownershipCount int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM tenant_sites`).Scan(&ownershipCount); err != nil {
+			return nil, fmt.Errorf("inspect durable site ownership: %w", err)
+		}
+		if ownershipCount == 0 {
+			if err := store.persistLocked(); err != nil {
+				return nil, fmt.Errorf("migrate durable site ownership: %w", err)
+			}
+		}
+	}
+	return store, nil
+}
+
+func (s *AccountStore) addLoadedAccount(account HostingAccount) error {
+	if err := validateHostingAccount(account, false); err != nil {
+		return fmt.Errorf("invalid account state: %w", err)
+	}
+	for _, assigned := range account.Sites {
+		for username, existing := range s.accounts {
+			for _, site := range existing.Sites {
+				if site == assigned {
+					return fmt.Errorf("invalid account state: site %q is assigned to both %q and %q", site, username, account.Username)
+				}
+			}
+		}
+	}
+	if _, exists := s.accounts[account.Username]; exists {
+		return fmt.Errorf("duplicate account %q", account.Username)
+	}
+	s.accounts[account.Username] = account
+	return nil
+}
+
+func (s *AccountStore) loadAccounts(accounts []HostingAccount) error {
 	for _, account := range accounts {
 		if account.TOTPEncrypted {
-			if len(store.key) == 0 {
-				return nil, errors.New("encrypted account TOTP requires STEPANEL_ACCOUNT_KEY")
+			if len(s.key) == 0 {
+				return errors.New("encrypted account TOTP requires STEPANEL_ACCOUNT_KEY")
 			}
-			plain, err := decryptAccountTOTP(store.key, account.TOTPSecret)
+			plain, err := decryptAccountTOTP(s.key, account.TOTPSecret)
 			if err != nil {
-				return nil, fmt.Errorf("decrypt account TOTP: %w", err)
+				return fmt.Errorf("decrypt account TOTP: %w", err)
 			}
 			account.TOTPSecret = plain
 			account.TOTPEncrypted = false
 		}
 		if err := validateHostingAccount(account, false); err != nil {
-			return nil, fmt.Errorf("invalid account state: %w", err)
+			return fmt.Errorf("invalid account state: %w", err)
 		}
-		for _, site := range account.Sites {
-			if existingUsername, exists := ownedSites[site]; exists {
-				return nil, fmt.Errorf("invalid account state: site %q is assigned to both %q and %q", site, existingUsername, account.Username)
-			}
-			ownedSites[site] = account.Username
+		if err := s.addLoadedAccount(account); err != nil {
+			return err
 		}
-		if _, exists := store.accounts[account.Username]; exists {
-			return nil, fmt.Errorf("duplicate account %q", account.Username)
-		}
-		store.accounts[account.Username] = account
 	}
-	return store, nil
+	return nil
+}
+
+// refreshFromDBLocked makes a mutating operation start from the durable
+// account image. The process-local map is only a cache; trusting it for
+// ownership or plan changes would allow a second panel process to overwrite
+// newer assignments.
+func (s *AccountStore) refreshFromDBLocked() error {
+	if s.db == nil {
+		return nil
+	}
+	rows, err := s.db.Query(`SELECT payload FROM accounts ORDER BY username`)
+	if err != nil {
+		return fmt.Errorf("read durable account state: %w", err)
+	}
+	defer rows.Close()
+	refreshed := make(map[string]HostingAccount)
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return fmt.Errorf("read durable account row: %w", err)
+		}
+		var account HostingAccount
+		if err := json.Unmarshal(payload, &account); err != nil {
+			return fmt.Errorf("decode durable account state: %w", err)
+		}
+		if account.TOTPEncrypted {
+			if len(s.key) == 0 {
+				return errors.New("encrypted account TOTP requires STEPANEL_ACCOUNT_KEY")
+			}
+			plain, err := decryptAccountTOTP(s.key, account.TOTPSecret)
+			if err != nil {
+				return fmt.Errorf("decrypt account TOTP: %w", err)
+			}
+			account.TOTPSecret, account.TOTPEncrypted = plain, false
+		}
+		if err := validateHostingAccount(account, false); err != nil {
+			return fmt.Errorf("invalid durable account state: %w", err)
+		}
+		if _, exists := refreshed[account.Username]; exists {
+			return fmt.Errorf("duplicate durable account %q", account.Username)
+		}
+		refreshed[account.Username] = account
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate durable account state: %w", err)
+	}
+	// Validate ownership uniqueness before replacing the cache.
+	owned := make(map[string]string)
+	for username, account := range refreshed {
+		for _, site := range account.Sites {
+			if previous, exists := owned[site]; exists && previous != username {
+				return fmt.Errorf("durable site %q is assigned to both %q and %q", site, previous, username)
+			}
+			owned[site] = username
+		}
+	}
+	s.accounts = refreshed
+	return nil
 }
 
 func validateHostingAccount(account HostingAccount, requireCreated bool) error {
@@ -146,6 +311,27 @@ func validateHostingAccount(account HostingAccount, requireCreated bool) error {
 func bcryptCost(hash string) (int, error) { return bcrypt.Cost([]byte(hash)) }
 
 func (s *AccountStore) Get(username string) (HostingAccount, bool) {
+	if s.db != nil {
+		var payload []byte
+		if err := s.db.QueryRow(`SELECT payload FROM accounts WHERE username = ?`, username).Scan(&payload); err != nil {
+			return HostingAccount{}, false
+		}
+		var account HostingAccount
+		if err := json.Unmarshal(payload, &account); err != nil {
+			return HostingAccount{}, false
+		}
+		if account.TOTPEncrypted {
+			if len(s.key) == 0 {
+				return HostingAccount{}, false
+			}
+			plain, err := decryptAccountTOTP(s.key, account.TOTPSecret)
+			if err != nil {
+				return HostingAccount{}, false
+			}
+			account.TOTPSecret, account.TOTPEncrypted = plain, false
+		}
+		return account, true
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	account, ok := s.accounts[username]
@@ -153,6 +339,13 @@ func (s *AccountStore) Get(username string) (HostingAccount, bool) {
 }
 
 func (s *AccountStore) OwnsSite(username, site string) bool {
+	if s.db != nil {
+		var owner string
+		if err := s.db.QueryRow(`SELECT username FROM tenant_sites WHERE site = ?`, site).Scan(&owner); err == nil {
+			return owner == username
+		}
+		return false
+	}
 	account, ok := s.Get(username)
 	if !ok {
 		return false
@@ -165,7 +358,44 @@ func (s *AccountStore) OwnsSite(username, site string) bool {
 	return false
 }
 
+// OwnerOfSite reads the durable ownership boundary used by destructive
+// lifecycle operations. An empty owner means the site is not assigned.
+func (s *AccountStore) OwnerOfSite(site string) (string, bool) {
+	if s.db != nil {
+		var username string
+		if err := s.db.QueryRow(`SELECT username FROM tenant_sites WHERE site = ?`, site).Scan(&username); err == nil {
+			return username, true
+		}
+		return "", false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for username, account := range s.accounts {
+		for _, assigned := range account.Sites {
+			if assigned == site {
+				return username, true
+			}
+		}
+	}
+	return "", false
+}
+
 func (s *AccountStore) GetSites(username string) []string {
+	if s.db != nil {
+		rows, err := s.db.Query(`SELECT site FROM tenant_sites WHERE username = ? ORDER BY site`, username)
+		if err != nil {
+			return nil
+		}
+		defer rows.Close()
+		var sites []string
+		for rows.Next() {
+			var site string
+			if rows.Scan(&site) == nil {
+				sites = append(sites, site)
+			}
+		}
+		return sites
+	}
 	account, ok := s.Get(username)
 	if !ok {
 		return nil
@@ -180,6 +410,9 @@ func (s *AccountStore) GetSites(username string) []string {
 func (s *AccountStore) SetSuspended(username string, suspended bool) (HostingAccount, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return HostingAccount{}, err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return HostingAccount{}, errors.New("account not found")
@@ -207,6 +440,9 @@ func (s *AccountStore) SetSuspended(username string, suspended bool) (HostingAcc
 func (s *AccountStore) RemoveLogin(username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return errors.New("account not found")
@@ -225,6 +461,9 @@ func (s *AccountStore) RemoveLogin(username string) error {
 func (s *AccountStore) Update(username, plan string, sites []string) (HostingAccount, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return HostingAccount{}, err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return HostingAccount{}, errors.New("account not found")
@@ -259,6 +498,27 @@ func (s *AccountStore) Update(username, plan string, sites []string) (HostingAcc
 }
 
 func (s *AccountStore) List() []HostingAccount {
+	if s.db != nil {
+		rows, err := s.db.Query(`SELECT username FROM accounts ORDER BY username`)
+		if err != nil {
+			return nil
+		}
+		defer rows.Close()
+		accounts := make([]HostingAccount, 0)
+		for rows.Next() {
+			var username string
+			if rows.Scan(&username) != nil {
+				continue
+			}
+			if account, ok := s.Get(username); ok {
+				account.PasswordHash = ""
+				account.TOTPSecret = ""
+				account.RecoveryCodeHashes = nil
+				accounts = append(accounts, account)
+			}
+		}
+		return accounts
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	accounts := make([]HostingAccount, 0, len(s.accounts))
@@ -296,6 +556,16 @@ func (s *AccountStore) Create(username, password, totpSecret, plan string, sites
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return HostingAccount{}, err
+	}
+	reservedAdministrator := s.administratorUsername
+	if reservedAdministrator == "" {
+		reservedAdministrator = "admin"
+	}
+	if username == reservedAdministrator {
+		return HostingAccount{}, errors.New("customer username is reserved for the administrator")
+	}
 	if _, exists := s.accounts[username]; exists {
 		return HostingAccount{}, errors.New("account already exists")
 	}
@@ -321,6 +591,27 @@ func (s *AccountStore) Create(username, password, totpSecret, plan string, sites
 	return account, nil
 }
 
+// SetAdministratorUsername establishes the identity that must never be
+// represented by a customer account. Startup validates existing durable state
+// before accepting requests, so a configuration change cannot create an
+// administrator/customer identity collision.
+func (s *AccountStore) SetAdministratorUsername(username string) error {
+	username = safeUser(username)
+	if username == "" {
+		return errors.New("administrator username is invalid")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return err
+	}
+	if _, exists := s.accounts[username]; exists {
+		return fmt.Errorf("administrator username %q is already assigned to a customer account", username)
+	}
+	s.administratorUsername = username
+	return nil
+}
+
 func (s *AccountStore) ResetTOTP(username string) (HostingAccount, string, error) {
 	secretBytes := make([]byte, 20)
 	if _, err := io.ReadFull(rand.Reader, secretBytes); err != nil {
@@ -329,6 +620,9 @@ func (s *AccountStore) ResetTOTP(username string) (HostingAccount, string, error
 	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(secretBytes)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return HostingAccount{}, "", err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return HostingAccount{}, "", errors.New("account not found")
@@ -363,6 +657,9 @@ func (s *AccountStore) GenerateRecoveryCodes(username string) (HostingAccount, [
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return HostingAccount{}, nil, err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return HostingAccount{}, nil, errors.New("account not found")
@@ -385,6 +682,9 @@ func (s *AccountStore) ConsumeRecoveryCode(username, code string) (bool, error) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return false, err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return false, nil
@@ -437,6 +737,9 @@ func (s *AccountStore) RecoverCredentials(username string) (HostingAccount, stri
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return HostingAccount{}, "", "", nil, err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return HostingAccount{}, "", "", nil, errors.New("account not found")
@@ -469,6 +772,9 @@ func (s *AccountStore) SetPassword(username, password string) (HostingAccount, e
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return HostingAccount{}, err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return HostingAccount{}, errors.New("account not found")
@@ -491,6 +797,9 @@ func (s *AccountStore) SetTOTP(username, secret string) (HostingAccount, error) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshFromDBLocked(); err != nil {
+		return HostingAccount{}, err
+	}
 	account, ok := s.accounts[username]
 	if !ok {
 		return HostingAccount{}, errors.New("account not found")
@@ -555,6 +864,41 @@ func (s *AccountStore) persistLocked() error {
 		accounts = append(accounts, persisted)
 	}
 	sort.Slice(accounts, func(i, j int) bool { return accounts[i].Username < accounts[j].Username })
+	if s.db != nil {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin durable account transaction: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM accounts`); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("clear durable account state: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM tenant_sites`); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("clear durable site ownership: %w", err)
+		}
+		for _, account := range accounts {
+			data, err := json.Marshal(account)
+			if err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("encode durable account %s: %w", account.Username, err)
+			}
+			if _, err := tx.Exec(`INSERT INTO accounts (username, payload, updated_at) VALUES (?, ?, unixepoch())`, account.Username, data); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("write durable account %s: %w", account.Username, err)
+			}
+			for _, site := range account.Sites {
+				if _, err := tx.Exec(`INSERT INTO tenant_sites (site, username, updated_at) VALUES (?, ?, unixepoch())`, site, account.Username); err != nil {
+					_ = tx.Rollback()
+					return fmt.Errorf("write durable site ownership %s: %w", site, err)
+				}
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit durable account state: %w", err)
+		}
+		return nil
+	}
 	data, err := json.MarshalIndent(accounts, "", "  ")
 	if err != nil {
 		return err
@@ -656,7 +1000,19 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid account", http.StatusBadRequest)
 			return
 		}
+		releaseAccountLock := a.siteOperations.Acquire("account:" + username)
+		defer releaseAccountLock()
 		if r.Method == http.MethodDelete {
+			if account, exists := a.Accounts.Get(username); exists && len(account.Sites) > 0 {
+				http.Error(w, "account still owns managed sites; detach or terminate workloads before removing the login", http.StatusConflict)
+				return
+			}
+			if a.APITokens != nil {
+				if err := a.APITokens.revokeAll(username); err != nil {
+					http.Error(w, "customer API token revocation could not be persisted", http.StatusServiceUnavailable)
+					return
+				}
+			}
 			if err := a.Accounts.RemoveLogin(username); err != nil {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
@@ -664,7 +1020,7 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 			if a.Auth.sessions != nil {
 				_ = a.Auth.sessions.revokeUser(username)
 			}
-			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.login-removed", username, "customer identity removed; workloads are retained")
+			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.login-removed", username, "customer identity removed after site ownership was cleared")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -713,13 +1069,21 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 			}
 			pendingResources, resourceErr := a.reconcileAccountResourcePlan(account, updated)
 			if resourceErr != nil {
+				if _, suspendErr := a.Accounts.SetSuspended(username, true); suspendErr != nil {
+					resourceErr = fmt.Errorf("%w; account suspension failed: %v", resourceErr, suspendErr)
+				}
 				_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.resource-reconciliation-failed", username, resourceErr.Error())
-				http.Error(w, "account updated but resource desired state could not be persisted", http.StatusServiceUnavailable)
+				http.Error(w, "account suspended because resource enforcement could not be persisted", http.StatusServiceUnavailable)
 				return
 			}
 			_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.updated", username, "plan or site assignments changed")
 			if len(pendingResources) > 0 {
-				writeJSON(w, http.StatusAccepted, map[string]any{"account": updated, "resource_reconciliation": "pending", "pending_sites": pendingResources})
+				if _, suspendErr := a.Accounts.SetSuspended(username, true); suspendErr != nil {
+					http.Error(w, "resource enforcement is pending and account suspension could not be persisted", http.StatusServiceUnavailable)
+					return
+				}
+				_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "hosting.account.suspended", username, "resource enforcement pending for: "+strings.Join(pendingResources, ","))
+				http.Error(w, "account suspended until resource enforcement is applied", http.StatusServiceUnavailable)
 				return
 			}
 			writeJSON(w, http.StatusOK, updated)
@@ -795,7 +1159,13 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 			log.Printf("account created but audit persistence is unavailable: %v", err)
 		}
 		if len(pendingResources) > 0 {
-			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "hosting.account.resource-profiles-pending", account.Username, strings.Join(pendingResources, ","))
+			if _, suspendErr := a.Accounts.SetSuspended(account.Username, true); suspendErr != nil {
+				http.Error(w, "resource enforcement is pending and account suspension could not be persisted", http.StatusServiceUnavailable)
+				return
+			}
+			_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "hosting.account.suspended", account.Username, "resource enforcement pending for: "+strings.Join(pendingResources, ","))
+			http.Error(w, "account suspended until resource enforcement is applied", http.StatusServiceUnavailable)
+			return
 		}
 		writeJSON(w, http.StatusCreated, account)
 	default:
@@ -809,7 +1179,7 @@ func (a *App) customerPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := a.Auth.UsernameForRequest(r)
-	if username == "" || a.Auth.IsAdministrator(r) || a.Accounts == nil {
+	if username == "" || a.Auth.IsAdministrator(r) || a.Auth.IsAPITokenRequest(r) || a.Accounts == nil {
 		http.Error(w, "customer account required", http.StatusForbidden)
 		return
 	}
@@ -840,7 +1210,7 @@ func (a *App) customerMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := a.Auth.UsernameForRequest(r)
-	if username == "" || a.Auth.IsAdministrator(r) || a.Accounts == nil {
+	if username == "" || a.Auth.IsAdministrator(r) || a.Auth.IsAPITokenRequest(r) || a.Accounts == nil {
 		http.Error(w, "customer account required", http.StatusForbidden)
 		return
 	}

@@ -133,6 +133,10 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "WPress dependencies are not installed; check /api/wpress/preflight", http.StatusServiceUnavailable)
 		return
 	}
+	if a.Jobs == nil || !a.Jobs.PayloadEncryptionEnabled() {
+		http.Error(w, "WordPress durable jobs require STEPANEL_ACCOUNT_KEY for encrypted credential storage", http.StatusServiceUnavailable)
+		return
+	}
 	if err := restoreCapacity(a.Config); err != nil {
 		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 		return
@@ -195,40 +199,19 @@ func (a *App) wpressImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	force := r.FormValue("overwrite") == "on"
-	jobID, err := newJobID("wpress")
+	payload, err := json.Marshal(durableWPressRequest{TempPath: tempPath, Site: site, DBSuffix: dbSuffix, DBUserSuffix: dbUserSuffix, Password: password, SiteURL: siteURL, TargetPrefix: targetPrefix, Force: force, Actor: a.Auth.UsernameForRequest(r)})
 	if err != nil {
 		_ = os.Remove(tempPath)
-		http.Error(w, "could not create restore job", http.StatusInternalServerError)
+		http.Error(w, "could not encode restore job", http.StatusInternalServerError)
 		return
 	}
-	if err := a.Jobs.SubmitWPress(jobID, site, func() (WPressResult, error) {
-		releaseUnlock := a.siteOperations.Acquire(site)
-		defer releaseUnlock()
-		a.Metrics.RestoreStarted()
-		defer os.Remove(tempPath)
-		result, restoreErr := RestoreWPress(a.Config, tempPath, site, dbSuffix, dbUserSuffix, password, siteURL, targetPrefix, force)
-		a.Metrics.RestoreFinished(restoreErr)
-		if restoreErr != nil {
-			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.failed", site, restoreErr.Error()); auditErr != nil {
-				restoreErr = fmt.Errorf("%w; audit persistence failed: %v", restoreErr, auditErr)
-			}
-		} else {
-			detail := fmt.Sprintf("%s; metadata=%t; htaccess=%t", result.StagedAt, result.MetadataApplied, result.HTAccessRestored)
-			if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "wordpress.restore.completed", site, detail); auditErr != nil {
-				log.Printf("WordPress restore completed but audit persistence is unavailable: %v", auditErr)
-			}
-		}
-		return result, restoreErr
-	}); err != nil {
+	job, _, err := a.Jobs.EnqueueIdempotent("wordpress.restore", site, "", payload, 3)
+	if err != nil {
 		_ = os.Remove(tempPath)
-		if errors.Is(err, ErrJobBusy) {
-			http.Error(w, err.Error(), http.StatusTooManyRequests)
-		} else {
-			http.Error(w, "could not persist restore job", http.StatusInternalServerError)
-		}
+		http.Error(w, "could not persist restore job", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": filepath.Join("/api/jobs", jobID)})
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": filepath.Join("/api/jobs", job.ID)})
 }
 
 func RestoreWPress(cfg Config, archive, site, dbSuffix, dbUserSuffix, dbPassword, siteURL, targetPrefix string, force bool) (WPressResult, error) {

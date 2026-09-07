@@ -1,0 +1,378 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+type durableSiteTerminationRequest struct {
+	Site  string `json:"site"`
+	Actor string `json:"actor"`
+}
+
+// enqueueSiteTermination records a destructive lifecycle operation before any
+// host state is changed. The site is the serialization key, so a retry or a
+// duplicate request cannot run two teardown workflows concurrently.
+func (a *App) enqueueSiteTermination(site, actor string) (Job, error) {
+	payload, err := json.Marshal(durableSiteTerminationRequest{Site: site, Actor: actor})
+	if err != nil {
+		return Job{}, err
+	}
+	job, _, err := a.Jobs.EnqueueIdempotent("site.terminate", site, "", payload, 5)
+	return job, err
+}
+
+func (a *App) siteTermination(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !a.Auth.CSRF(r) || !a.Auth.IsAdministrator(r) {
+		http.Error(w, "administrator CSRF request required", http.StatusForbidden)
+		return
+	}
+	var input struct {
+		Site         string `json:"site"`
+		Confirmation string `json:"confirmation"`
+	}
+	if err := decodeJSON(w, r, 4096, &input); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	input.Site = safeUser(strings.TrimSpace(input.Site))
+	if input.Site == "" || input.Confirmation != "DELETE "+input.Site {
+		http.Error(w, "confirmation must exactly match DELETE "+input.Site, http.StatusUnprocessableEntity)
+		return
+	}
+	root := filepath.Join(a.Config.WebRoot, "sites", input.Site, "public")
+	if err := ensureInside(a.Config.WebRoot, root); err != nil {
+		http.Error(w, "invalid site", http.StatusUnprocessableEntity)
+		return
+	}
+	if _, err := os.Stat(root); err != nil {
+		http.Error(w, "site document root does not exist", http.StatusNotFound)
+		return
+	}
+	job, err := a.enqueueSiteTermination(input.Site, a.Auth.UsernameForRequest(r))
+	if err != nil {
+		http.Error(w, "could not persist site termination job", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": "/api/jobs/" + job.ID})
+}
+
+func (a *App) handleSiteTermination(ctx context.Context, item Job) ([]byte, error) {
+	var request durableSiteTerminationRequest
+	if err := json.Unmarshal(item.Payload, &request); err != nil {
+		return nil, fmt.Errorf("decode site termination payload: %w", err)
+	}
+	if safeUser(request.Site) == "" || request.Actor == "" {
+		return nil, errors.New("site termination requires site and actor")
+	}
+	if a.Jobs.CancellationRequested(item.ID) {
+		return nil, context.Canceled
+	}
+	release := a.siteOperations.Acquire(request.Site)
+	defer release()
+
+	// The backup is the retention and recovery gate. Reuse a verified backup
+	// created after this job started when a prior retry already completed it.
+	backup, err := a.terminationBackup(request.Site, item.StartedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	if a.Config.DBCtl == "" {
+		return nil, errors.New("site termination requires the managed database helper")
+	}
+	databases, err := managedDatabaseInventory(a.Config)
+	if err != nil {
+		return nil, fmt.Errorf("inspect managed databases before termination: %w", err)
+	}
+	for _, database := range databases {
+		if database.Site != request.Site {
+			continue
+		}
+		if err := runDatabaseTermination(ctx, a.Config, database); err != nil {
+			return nil, err
+		}
+	}
+	// Remove route desired state before deleting the host objects. A failed
+	// teardown must never leave startup reconciliation able to recreate a route
+	// for a site whose filesystem is already being removed.
+	if a.Routes != nil {
+		if err := a.Routes.removeSite(request.Site); err != nil {
+			return nil, fmt.Errorf("remove route desired state before termination: %w", err)
+		}
+	}
+	for _, route := range siteRoutesFor(a.Config.VHostRoot, request.Site) {
+		if err := a.deleteManagedRoute(ctx, a.Config.VHostCtl, routeConfigName(a.Config, route)); err != nil {
+			return nil, err
+		}
+	}
+	for _, proxy := range siteProxiesFor(a.Config.ProxyRoot, request.Site) {
+		if err := a.deleteManagedRoute(ctx, a.Config.ProxyCtl, filepath.Base(proxy.Config)); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := a.removeSiteTasks(ctx, request.Site); err != nil {
+		return nil, err
+	}
+	if err := a.removeSiteServices(ctx, request.Site); err != nil {
+		return nil, err
+	}
+	if err := a.removeSiteState(ctx, request.Site); err != nil {
+		return nil, err
+	}
+	if err := a.detachSiteOwnership(request.Site); err != nil {
+		return nil, err
+	}
+
+	_ = AuditAs(a.Config.AuditLog, request.Actor, "site.terminated", request.Site, "verified backup="+backup.Path)
+	return json.Marshal(map[string]any{"site": request.Site, "backup": backup, "completed_at": time.Now().UTC()})
+}
+
+func (a *App) terminationBackup(site string, started time.Time) (BackupResult, error) {
+	items, err := listBackupsPage(a.Config.BackupRoot, site, 500, a.Config.BackupSigningKey)
+	if err != nil {
+		return BackupResult{}, fmt.Errorf("inspect retained site backups: %w", err)
+	}
+	for _, item := range items {
+		if item.VerifiedAt.IsZero() || item.VerifiedAt.Before(started) {
+			continue
+		}
+		return item, nil
+	}
+	result, err := CreateSiteBackup(a.Config, site, true)
+	if err != nil {
+		return BackupResult{}, fmt.Errorf("create verified termination backup: %w", err)
+	}
+	return result, nil
+}
+
+func runDatabaseTermination(ctx context.Context, cfg Config, database DatabaseResource) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	output, err := runDatabaseHelper(cfg, time.Minute, "", "drop-managed", database.Name, database.User)
+	if err != nil {
+		return fmt.Errorf("drop managed database %s: %w: %s", database.Name, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func (a *App) deleteManagedRoute(ctx context.Context, helper, name string) error {
+	if helper == "" {
+		return fmt.Errorf("cannot remove managed route %s: helper is unavailable", name)
+	}
+	if err := runHelperCommand(ctx, a.Config, helper, "delete", name); err != nil {
+		return fmt.Errorf("remove managed route %s: %w", name, err)
+	}
+	return nil
+}
+
+func routeConfigName(cfg Config, route siteRoute) string {
+	return siteVHostConfigName(cfg.WebServer, route.Site, route.Domain)
+}
+
+func (a *App) removeSiteServices(ctx context.Context, site string) error {
+	hasApplication := false
+	for _, app := range managedApps(a.Config.AppRoot) {
+		if app.Site == site {
+			hasApplication = true
+			break
+		}
+	}
+	if hasApplication && a.Config.AppCtl == "" {
+		return errors.New("managed application services exist but the application helper is unavailable")
+	}
+	if a.Config.AppCtl != "" {
+		if err := runHelperCommand(ctx, a.Config, a.Config.AppCtl, "delete", site); err != nil {
+			return fmt.Errorf("remove managed application services for %s: %w", site, err)
+		}
+	}
+	if a.Config.GitCtl != "" {
+		if err := runHelperCommand(ctx, a.Config, a.Config.GitCtl, "delete", site); err != nil {
+			return fmt.Errorf("remove Git deploy key for %s: %w", site, err)
+		}
+	}
+	if a.Config.SiteCtl == "" {
+		return errors.New("site teardown helper is unavailable")
+	}
+	if err := runHelperCommand(ctx, a.Config, a.Config.SiteCtl, "delete", site); err != nil {
+		return fmt.Errorf("remove PHP, SSH, quota, and site filesystem state for %s: %w", site, err)
+	}
+	return nil
+}
+
+func (a *App) removeSiteTasks(ctx context.Context, site string) error {
+	if a.Tasks == nil {
+		return nil
+	}
+	a.Tasks.mu.RLock()
+	tasks := make([]ScheduledTask, 0)
+	for _, task := range a.Tasks.values {
+		if task.Site == site {
+			tasks = append(tasks, task)
+		}
+	}
+	a.Tasks.mu.RUnlock()
+	for _, task := range tasks {
+		if err := runHelperCommand(ctx, a.Config, a.Config.AppCtl, "task-delete", site, task.Name); err != nil {
+			return fmt.Errorf("remove scheduled task %s/%s: %w", site, task.Name, err)
+		}
+	}
+	return nil
+}
+
+func (a *App) removeSiteState(_ context.Context, site string) error {
+	if a.Routes != nil {
+		if err := a.Routes.removeSite(site); err != nil {
+			return fmt.Errorf("remove route desired state: %w", err)
+		}
+	}
+	if a.Domains != nil {
+		if err := a.Domains.removeSite(site); err != nil {
+			return fmt.Errorf("remove domain claim state: %w", err)
+		}
+	}
+	if a.Access != nil {
+		a.Access.mu.Lock()
+		delete(a.Access.values, site)
+		err := a.Access.persistLocked()
+		a.Access.mu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+	if a.Environments != nil {
+		a.Environments.mu.Lock()
+		had := a.Environments.values[site] != nil
+		delete(a.Environments.values, site)
+		err := a.Environments.persistLocked()
+		a.Environments.mu.Unlock()
+		if err != nil && had {
+			return fmt.Errorf("remove site environment state: %w", err)
+		}
+	}
+	if a.Redis != nil {
+		a.Redis.mu.Lock()
+		delete(a.Redis.values, site)
+		err := a.Redis.persistLocked()
+		a.Redis.mu.Unlock()
+		if err != nil {
+			return fmt.Errorf("remove Redis allocation state: %w", err)
+		}
+	}
+	if a.Resources != nil {
+		a.Resources.mu.Lock()
+		delete(a.Resources.values, site)
+		err := a.Resources.persistLocked()
+		a.Resources.mu.Unlock()
+		if err != nil {
+			return fmt.Errorf("remove resource profile state: %w", err)
+		}
+	}
+	if a.PHP != nil {
+		a.PHP.mu.Lock()
+		delete(a.PHP.values, site)
+		err := persistPHPProfilesLocked(a.PHP)
+		a.PHP.mu.Unlock()
+		if err != nil {
+			return fmt.Errorf("remove PHP profile state: %w", err)
+		}
+	}
+	if a.Composer != nil {
+		a.Composer.mu.Lock()
+		delete(a.Composer.latest, site)
+		err := persistComposerLocked(a.Composer)
+		a.Composer.mu.Unlock()
+		if err != nil {
+			return fmt.Errorf("remove Composer state: %w", err)
+		}
+	}
+	if a.Workers != nil {
+		a.Workers.mu.Lock()
+		for key, value := range a.Workers.values {
+			if value.Site == site {
+				delete(a.Workers.values, key)
+			}
+		}
+		err := a.Workers.persistLocked()
+		a.Workers.mu.Unlock()
+		if err != nil {
+			return fmt.Errorf("remove worker state: %w", err)
+		}
+	}
+	if a.Tasks != nil {
+		a.Tasks.mu.Lock()
+		for key, value := range a.Tasks.values {
+			if value.Site == site {
+				delete(a.Tasks.values, key)
+			}
+		}
+		err := a.Tasks.persistLocked()
+		a.Tasks.mu.Unlock()
+		if err != nil {
+			return fmt.Errorf("remove scheduled task state: %w", err)
+		}
+	}
+	return nil
+}
+
+func persistPHPProfilesLocked(store *PHPProfileStore) error {
+	data, err := json.Marshal(store.values)
+	if err != nil {
+		return err
+	}
+	if bound, err := persistBoundControlPlaneState(store, data); bound {
+		return err
+	}
+	return writeAtomic(store.path, append(data, '\n'), 0600)
+}
+
+func persistComposerLocked(store *ComposerStore) error {
+	data, err := json.Marshal(store.latest)
+	if err != nil {
+		return err
+	}
+	if bound, err := persistBoundControlPlaneState(store, data); bound {
+		return err
+	}
+	return writeAtomic(store.path, append(data, '\n'), 0600)
+}
+
+func (a *App) detachSiteOwnership(site string) error {
+	if a.Accounts == nil {
+		return nil
+	}
+	owner, ok := a.Accounts.OwnerOfSite(site)
+	if !ok {
+		return nil
+	}
+	account, ok := a.Accounts.Get(owner)
+	if !ok {
+		return fmt.Errorf("site %s has missing owning account %s", site, owner)
+	}
+	remaining := make([]string, 0, len(account.Sites))
+	for _, assigned := range account.Sites {
+		if assigned != site {
+			remaining = append(remaining, assigned)
+		}
+	}
+	if _, err := a.Accounts.Update(owner, account.Plan, remaining); err != nil {
+		return fmt.Errorf("detach site ownership: %w", err)
+	}
+	if a.Resources != nil && a.Config.AppCtl != "" {
+		if plan, exists := hostingPlans[account.Plan]; exists && remaining != nil {
+			if err := a.applyAccountResourceEnvelope(owner, plan); err != nil {
+				return fmt.Errorf("reconcile remaining account resources: %w", err)
+			}
+		}
+	}
+	return nil
+}

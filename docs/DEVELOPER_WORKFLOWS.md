@@ -124,8 +124,9 @@ application lifecycle helper.
 
 ## Sandboxed builds (Shipped)
 
-`POST /api/runner/build` accepts a site, OCI image, and up to 16 bounded build
-commands. The rootless Podman runner mounts source read-only and artifact output
+`POST /api/runner/build` accepts a site, immutable OCI image digest, and up to 16 bounded build
+commands. Image tags are rejected; use an image reference ending in
+`@sha256:<64 lowercase hex characters>`. The rootless Podman runner mounts source read-only and artifact output
 writable, drops capabilities, uses a read-only container filesystem and a
 separate network namespace. CPU, memory, and PID ceilings are taken from the
 site resource profile (with conservative defaults for legacy sites). It does

@@ -65,6 +65,16 @@ func (s *PHPProfileStore) save(site string, p PHPProfile) error {
 	if e != nil {
 		return e
 	}
+	if bound, err := persistBoundControlPlaneState(s, d); bound {
+		if err != nil {
+			if existed {
+				s.values[site] = previous
+			} else {
+				delete(s.values, site)
+			}
+		}
+		return err
+	}
 	if err := writeAtomic(s.path, append(d, '\n'), 0600); err != nil {
 		if existed {
 			s.values[site] = previous

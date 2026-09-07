@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -195,6 +196,19 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site is not assigned to this account", http.StatusForbidden)
 		return
 	}
+	if !a.Auth.IsAdministrator(r) {
+		if a.Domains == nil {
+			http.Error(w, "domain ownership must be verified before route activation", http.StatusConflict)
+			return
+		}
+		verifyCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		verifyErr := a.verifyCustomerDomain(verifyCtx, input.Site, input.Domain)
+		cancel()
+		if verifyErr != nil {
+			http.Error(w, "domain ownership must be verified before route activation", http.StatusConflict)
+			return
+		}
+	}
 	publicRoot := filepath.Join(a.Config.WebRoot, "sites", input.Site, "public")
 	if err := ensureInside(a.Config.WebRoot, publicRoot); err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
@@ -205,11 +219,32 @@ func (a *App) siteDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := siteVHostConfigName(a.Config.WebServer, input.Site, input.Domain)
+	if a.Routes != nil {
+		route := routeState(name, input.Site, input.Domain, "pending")
+		if err := a.Routes.save(route); err != nil {
+			http.Error(w, "could not persist route desired state", http.StatusServiceUnavailable)
+			return
+		}
+	}
 	releaseUnlock := a.siteOperations.AcquireMany(input.Site, "vhost:"+name)
 	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "apply", input.Site, input.Domain); err != nil {
+		if a.Routes != nil {
+			route := routeState(name, input.Site, input.Domain, "pending")
+			route.LastError = err.Error()
+			if persistErr := a.Routes.save(route); persistErr != nil {
+				log.Printf("route helper failed and desired-state update failed: %v", persistErr)
+			}
+		}
 		http.Error(w, "site helper rejected the route or webserver reload failed", http.StatusServiceUnavailable)
 		return
+	}
+	if a.Routes != nil {
+		route := routeState(name, input.Site, input.Domain, "applied")
+		if err := a.Routes.save(route); err != nil {
+			http.Error(w, "route applied but desired-state persistence failed", http.StatusServiceUnavailable)
+			return
+		}
 	}
 	if err := AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.deployed", input.Site, input.Domain); err != nil {
 		log.Printf("site deployed but audit persistence is unavailable: %v", err)
@@ -240,15 +275,50 @@ func (a *App) siteManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site route not found", http.StatusNotFound)
 		return
 	}
+	var desired RouteDesired
+	hasDesired := false
+	if a.Routes != nil {
+		for _, route := range a.Routes.list() {
+			if route.Name == name {
+				desired, hasDesired = route, true
+				break
+			}
+		}
+		if hasDesired {
+			if !a.Auth.IsAdministrator(r) && !a.canAccessSite(r, desired.Site) {
+				http.Error(w, "site route is not assigned to this account", http.StatusForbidden)
+				return
+			}
+			desired.State, desired.LastError, desired.UpdatedAt = "delete-pending", "", time.Now().UTC()
+			if err := a.Routes.save(desired); err != nil {
+				http.Error(w, "could not persist route deletion state", http.StatusServiceUnavailable)
+				return
+			}
+		}
+	}
+	if !a.Auth.IsAdministrator(r) && (!hasDesired || !a.canAccessSite(r, desired.Site)) {
+		http.Error(w, "site route is not assigned to this account", http.StatusForbidden)
+		return
+	}
 	// Route deletion receives the generated filename rather than a separately
 	// parsed site identifier. Serialize by route identity at this boundary.
 	releaseUnlock := a.siteOperations.Acquire("vhost:" + name)
 	defer releaseUnlock()
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.VHostCtl, "delete", name); err != nil {
+		if hasDesired {
+			desired.LastError = err.Error()
+			_ = a.Routes.save(desired)
+		}
 		http.Error(w, "site route was not removed because validation or webserver reload failed", http.StatusServiceUnavailable)
 		return
 	}
-	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.deleted", name, "managed PHP vhost removed"); err != nil {
+	if hasDesired {
+		if err := a.Routes.remove(name); err != nil {
+			http.Error(w, "site route removed but desired-state cleanup failed", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	if err := AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.deleted", name, "managed PHP vhost removed"); err != nil {
 		log.Printf("site deleted but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": name})

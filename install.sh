@@ -404,8 +404,12 @@ declare -a TXN_TARGETS=() TXN_BACKUPS=() TXN_EXISTED=() TXN_TEMPS=()
 INSTALL_COMMITTED=0
 STEPANEL_WAS_ACTIVE=0
 STEPANEL_WAS_ENABLED=0
+STEPANEL_WORKER_WAS_ACTIVE=0
+STEPANEL_WORKER_WAS_ENABLED=0
 systemctl is-active --quiet stepanel.service 2>/dev/null && STEPANEL_WAS_ACTIVE=1
 systemctl is-enabled --quiet stepanel.service 2>/dev/null && STEPANEL_WAS_ENABLED=1
+systemctl is-active --quiet stepanel-worker.service 2>/dev/null && STEPANEL_WORKER_WAS_ACTIVE=1
+systemctl is-enabled --quiet stepanel-worker.service 2>/dev/null && STEPANEL_WORKER_WAS_ENABLED=1
 
 backup_managed_target() {
   local target=$1 index backup existing=0
@@ -431,6 +435,8 @@ rollback_install() {
   systemctl daemon-reload 2>/dev/null || true
   if (( STEPANEL_WAS_ENABLED )); then systemctl enable stepanel.service 2>/dev/null || true; else systemctl disable stepanel.service 2>/dev/null || true; fi
   if (( STEPANEL_WAS_ACTIVE )); then systemctl restart stepanel.service 2>/dev/null || true; else systemctl stop stepanel.service 2>/dev/null || true; fi
+  if (( STEPANEL_WORKER_WAS_ENABLED )); then systemctl enable stepanel-worker.service 2>/dev/null || true; else systemctl disable stepanel-worker.service 2>/dev/null || true; fi
+  if (( STEPANEL_WORKER_WAS_ACTIVE )); then systemctl restart stepanel-worker.service 2>/dev/null || true; else systemctl stop stepanel-worker.service 2>/dev/null || true; fi
   if command -v apachectl >/dev/null 2>&1 && apachectl -t >/dev/null 2>&1; then systemctl reload "$APACHE_SERVICE" 2>/dev/null || true
   elif command -v httpd >/dev/null 2>&1 && httpd -t >/dev/null 2>&1; then systemctl reload "$APACHE_SERVICE" 2>/dev/null || true
   fi
@@ -463,6 +469,7 @@ managed_targets=(
   "$APP_DIR/web/static/favicon.svg"
   "$ENV_FILE"
   /etc/systemd/system/stepanel.service
+  /etc/systemd/system/stepanel-worker.service
   /etc/logrotate.d/stepanel
   /etc/sudoers.d/stepanel
   /etc/stepanel-audit.key
@@ -484,6 +491,7 @@ if [[ -n "$FPM_LENS_BINARY" ]]; then managed_targets+=(/usr/local/bin/fpm-lens);
 if [[ "$INSTALL_SECURITY" == "1" ]]; then managed_targets+=(/usr/local/sbin/stepanel-malware-guard /etc/systemd/system/stepanel-malware-guard.service); fi
 for managed_target in "${managed_targets[@]}"; do backup_managed_target "$managed_target"; done
 if (( STEPANEL_WAS_ACTIVE )); then systemctl stop stepanel.service; fi
+if (( STEPANEL_WORKER_WAS_ACTIVE )); then systemctl stop stepanel-worker.service; fi
 
 install -d -m 0750 "$APP_DIR" "$DATA_DIR/imports" "$DATA_DIR/mail" "$DATA_DIR/apps" /var/www/sites
 install -d -m 0755 -o root -g root "$PROXY_ROOT" "$VHOST_ROOT"
@@ -629,6 +637,7 @@ TXN_TEMPS+=("$env_tmp")
   if [[ -n "${STEPANEL_CLOUD_PROVIDER:-}" ]]; then write_env STEPANEL_CLOUD_PROVIDER "$STEPANEL_CLOUD_PROVIDER"; fi
   if [[ -n "${STEPANEL_SSH_SERVERS:-}" ]]; then write_env STEPANEL_SSH_SERVERS "$STEPANEL_SSH_SERVERS"; fi
   write_env STEPANEL_JOB_STATE "$DATA_DIR/jobs.json"
+  write_env STEPANEL_CONTROL_PLANE_DB "$DATA_DIR/stepanel-control.db"
   write_env STEPANEL_SESSION_STATE "$DATA_DIR/sessions.json"
   write_env STEPANEL_RECOVERY_ROOT /var/www/sites/.stepanel-recovery
   write_env STEPANEL_WPRESS_EXTRACT "$WPRESS_EXTRACT"
@@ -639,6 +648,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_MAX_UPLOAD_BYTES "$MAX_UPLOAD_BYTES"
   write_env STEPANEL_MAX_ARCHIVE_ENTRIES "$MAX_ARCHIVE_ENTRIES"
   write_env STEPANEL_MAX_CONCURRENT_JOBS "$MAX_CONCURRENT_JOBS"
+  write_env STEPANEL_WORKER_MODE external
   write_env STEPANEL_FTP_PASSIVE_MIN "$FTP_PASSIVE_MIN"
   write_env STEPANEL_FTP_PASSIVE_MAX "$FTP_PASSIVE_MAX"
   if [[ "$WEB_SERVER" == "apache" && ( "$INSTALL_TLS" == "1" || -x /usr/local/sbin/stepanel-certbot ) ]]; then write_env STEPANEL_CERTBOT /usr/local/sbin/stepanel-certbot; fi
@@ -647,6 +657,7 @@ chmod 0600 "$env_tmp"
 mv -f "$env_tmp" "$ENV_FILE"
 unset AUDIT_KEY
 install -m 0644 "$ROOT_DIR/deploy/stepanel.service" /etc/systemd/system/stepanel.service
+install -m 0644 "$ROOT_DIR/deploy/stepanel-worker.service" /etc/systemd/system/stepanel-worker.service
 install -m 0644 "$ROOT_DIR/deploy/stepanel.logrotate" /etc/logrotate.d/stepanel
 sudoers_tmp=$(mktemp)
 TXN_TEMPS+=("$sudoers_tmp")
@@ -679,7 +690,7 @@ elif [[ "$WEB_SERVER" == "openlitespeed" ]]; then
 else
   systemctl reload "$APACHE_SERVICE"
 fi
-systemctl enable --now stepanel.service
+systemctl enable --now stepanel.service stepanel-worker.service
 health_ready=0
 for _ in {1..30}; do
   if curl --fail --silent --max-time 2 http://127.0.0.1:8090/readyz >/dev/null; then health_ready=1; break; fi

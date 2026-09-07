@@ -11,19 +11,40 @@ Run `stepanel dr-check` during change review and after adding an integration:
 sudo -u stepanel /opt/stepanel/stepanel dr-check > /root/stepanel-dr-manifest.json
 ```
 
+Required recovery artifacts, including the control-plane database, audit
+continuity state, and audit key, must not be group- or world-readable; `dr-check`
+fails when those permissions are too broad.
+
 The output is safe to retain as an inventory: it contains paths and statuses,
 not passwords, TOTP seeds, encryption keys, deploy-key contents, or rclone
-credentials. Preserve `/etc/ste-panel.env`, audit log/state/key, job/session,
-account/environment/Redis state, site data, verified backups, and relevant
+credentials. Preserve `/etc/ste-panel.env`, the control-plane database and its
+SQLite WAL/SHM files, audit log/state/key, legacy job/session/account files,
+environment/Redis state, site data, verified backups, and relevant
 encryption/signing keys through the host's encrypted DR system. Git deploy keys
 may be preserved after access review or deliberately regenerated and
 reinstalled at providers. Privileged helpers and systemd units should be
 recreated from the verified release package and installer.
 
-`dr-check` is an inventory and readiness check, not a backup or restore
-operation. Automated `backup-control-plane`, `restore-control-plane --dry-run`,
-and external audit anchoring are planned; until then, perform a documented
-disposable-host recovery drill using the listed materials.
+Production jobs, customer accounts, site ownership, and revocable sessions are
+stored in `STEPANEL_CONTROL_PLANE_DB`; the legacy JSON paths are imported only
+when the corresponding database tables are empty. With the control-plane DB
+configured, the legacy job JSON is optional and is not a DR gate. Create a consistent backup
+and verify it on a disposable host:
+
+```sh
+sudo -u stepanel /opt/stepanel/stepanel backup-control-plane /root/stepanel-control-plane.db
+sudo -u stepanel /opt/stepanel/stepanel restore-control-plane /root/stepanel-control-plane.db --dry-run
+```
+
+The dry-run performs SQLite integrity and schema checks. A live restore remains
+an operator-controlled change. With both services stopped, use
+`stepanel restore-control-plane SOURCE --replace`; it acquires both service
+locks, verifies the source and replacement, atomically publishes the database,
+and preserves the prior database as a `.pre-restore-*` file. Run normal startup
+reconciliation and retain that prior copy until health and job recovery are
+confirmed.
+External audit anchoring and a full disposable-host restore drill remain
+required release gates.
 
 ## Health check
 
@@ -34,9 +55,18 @@ curl -fsS http://127.0.0.1:8090/api/health | jq
 ```
 
 `/livez` reports only that the process can serve HTTP and should be used for
-restart decisions. `/readyz` returns `503` when persistent job state has failed
+restart decisions. `/readyz` returns `503` when the durable SQLite control
+plane fails its integrity check, persistent job state has failed
 or the import, backup, or recovery filesystem is unavailable or below
 `STEPANEL_MIN_FREE_BYTES`; use it for traffic and post-upgrade checks.
+
+Dead-letter jobs intentionally keep readiness failed until reviewed. After
+remediating the underlying fault, an administrator can requeue one with
+`POST /api/jobs/<job-id>/retry`; the action resets its attempt counter, is
+durably compare-and-set against the dead-letter state, and is audit logged.
+`/api/doctor` separately reports pending resource enforcement as a high-severity
+failure; do not unsuspend affected accounts until helper state is applied and
+verified.
 
 ## Logs
 
@@ -89,8 +119,13 @@ job per site is enforced independently of the global limit.
 
 ## Safe maintenance
 
-`systemctl stop stepanel` stops accepting HTTP work and waits for active restore
-and certificate jobs for up to two hours before systemd forces termination.
+`systemctl stop stepanel stepanel-worker` stops accepting HTTP work and durable
+job claims, and waits for active restore and certificate jobs for up to two
+hours before systemd forces termination. Check both units after maintenance:
+`systemctl is-active stepanel stepanel-worker`.
+Readiness is intentionally failed while any durable job is in `dead-letter`
+state. Review the job output and audit trail, then resolve or replay it through
+the operator workflow before treating the host as healthy.
 Check `stepanel_restore_jobs_active` before package upgrades or planned reboots.
 Database monitoring also exports `stepanel_database_diagnostics_up`, connection,
 long-transaction, blocking, deadlock, and allocated-byte gauges. Scheduled
@@ -139,13 +174,12 @@ appears in `/api/sites/overview`, its own backup/job history is visible, and
 `/api/services` returns `403`. Keep a record of the assignment and recovery
 contact outside the panel. Administrators can suspend/unsuspend panel access
 and remove customer login records; suspension revokes active sessions, while
-login removal deliberately retains workloads. Customer credential recovery is
-available through the documented administrator recovery and customer completion
-endpoints. This beta has no hosting-workload suspension/termination, billing,
-or complete customer quota workflow. Built-in plans enforce aggregate
-application CPU, memory, process, and PHP-worker ceilings; disk, inode,
-bandwidth, database, Redis, and backup-storage entitlements still require
-separate provider enforcement.
+login removal deliberately retains workloads. Use the administrator-only
+`POST /api/sites/terminate` workflow to queue confirmation-gated termination
+of a managed site; it retains a verified backup before local cleanup. Customer
+credential recovery is available through the documented administrator recovery
+and customer completion endpoints. Billing, mail, DNS, bandwidth, and external
+provider teardown remain outside this local workflow.
 Do not represent `starter`, `professional`, or `agency` as complete hosting
 resource or support entitlements. They enforce 1, 5, or 25 assigned sites plus
 aggregate account/per-site application CPU, memory, process, and PHP-worker

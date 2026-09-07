@@ -54,6 +54,9 @@ func (s *RedisAllocationStore) persistLocked() error {
 	if err != nil {
 		return err
 	}
+	if bound, err := persistBoundControlPlaneState(s, data); bound {
+		return err
+	}
 	return writeAtomic(s.path, append(data, '\n'), 0600)
 }
 func (a *App) siteRedis(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +71,10 @@ func (a *App) siteRedis(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.Redis == nil {
 		http.Error(w, "Redis allocation state unavailable", 503)
+		return
+	}
+	if r.Method != http.MethodGet && !a.Auth.IsAdministrator(r) {
+		http.Error(w, "customer Redis mutations require a configured runtime isolation adapter", http.StatusServiceUnavailable)
 		return
 	}
 	switch r.Method {
@@ -95,8 +102,33 @@ func (a *App) siteRedis(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 422)
 			return
 		}
-		releaseUnlock := a.siteOperations.Acquire(site)
+		lockKeys := []string{site}
+		if !a.Auth.IsAdministrator(r) {
+			lockKeys = append(lockKeys, "account:"+a.Auth.UsernameForRequest(r))
+		}
+		releaseUnlock := a.siteOperations.AcquireMany(lockKeys...)
 		defer releaseUnlock()
+		if !a.Auth.IsAdministrator(r) {
+			account, ok := a.Accounts.Get(a.Auth.UsernameForRequest(r))
+			plan, planOK := hostingPlans[account.Plan]
+			if !ok || !planOK {
+				http.Error(w, "Redis memory entitlement is unavailable", http.StatusForbidden)
+				return
+			}
+			used := 0
+			a.Redis.mu.RLock()
+			for ownedSite, allocation := range a.Redis.values {
+				if ownedSite == site || !a.Accounts.OwnsSite(account.Username, ownedSite) {
+					continue
+				}
+				used += allocation.MemoryMB
+			}
+			a.Redis.mu.RUnlock()
+			if used+input.MemoryMB > plan.RedisMemoryMB {
+				http.Error(w, "Redis memory exceeds the account plan entitlement", http.StatusConflict)
+				return
+			}
+		}
 		a.Redis.mu.Lock()
 		a.Redis.values[site] = input
 		err := a.Redis.persistLocked()
@@ -112,7 +144,11 @@ func (a *App) siteRedis(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid CSRF token", 403)
 			return
 		}
-		releaseUnlock := a.siteOperations.Acquire(site)
+		lockKeys := []string{site}
+		if !a.Auth.IsAdministrator(r) {
+			lockKeys = append(lockKeys, "account:"+a.Auth.UsernameForRequest(r))
+		}
+		releaseUnlock := a.siteOperations.AcquireMany(lockKeys...)
 		defer releaseUnlock()
 		a.Redis.mu.Lock()
 		delete(a.Redis.values, site)

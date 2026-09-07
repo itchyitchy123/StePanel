@@ -137,6 +137,23 @@ func (s *EnvironmentStore) decrypt(value string) (string, error) {
 	plain, err := gcm.Open(nil, raw[:gcm.NonceSize()], raw[gcm.NonceSize():], nil)
 	return string(plain), err
 }
+
+func (s *EnvironmentStore) decryptLoadedSecrets() error {
+	for site, vars := range s.values {
+		for name, value := range vars {
+			if !value.Secret {
+				continue
+			}
+			plain, err := s.decrypt(value.Value)
+			if err != nil {
+				return fmt.Errorf("decrypt %s/%s: %w", site, name, err)
+			}
+			value.Value = plain
+			vars[name] = value
+		}
+	}
+	return nil
+}
 func (s *EnvironmentStore) persistLocked() error {
 	out := make(map[string]map[string]environmentValue, len(s.values))
 	for site, vars := range s.values {
@@ -154,6 +171,9 @@ func (s *EnvironmentStore) persistLocked() error {
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
+		return err
+	}
+	if bound, err := persistBoundControlPlaneState(s, data); bound {
 		return err
 	}
 	return writeAtomic(s.path, append(data, '\n'), 0600)

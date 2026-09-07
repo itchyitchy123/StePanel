@@ -2,6 +2,7 @@
 package session
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -19,8 +20,54 @@ type Entry struct {
 type Registry struct {
 	mu      sync.RWMutex
 	path    string
+	db      *sql.DB
 	Entries map[string]Entry
 	err     error
+}
+
+// OpenDB loads the session registry from the shared control-plane database.
+func OpenDB(db *sql.DB, legacyPath ...string) (*Registry, error) {
+	registry := &Registry{db: db, Entries: make(map[string]Entry)}
+	rows, err := db.Query(`SELECT id, username, expiry FROM sessions`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id string
+		var entry Entry
+		if err := rows.Scan(&id, &entry.Username, &entry.Expiry); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		registry.Entries[id] = entry
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(registry.Entries) == 0 && len(legacyPath) > 0 && legacyPath[0] != "" {
+		legacy, err := Open(legacyPath[0])
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		if err == nil {
+			for id, entry := range legacy.Entries {
+				registry.Entries[id] = entry
+			}
+		}
+	}
+	now := time.Now().Unix()
+	for id, entry := range registry.Entries {
+		if id == "" || entry.Expiry <= now {
+			delete(registry.Entries, id)
+		}
+	}
+	if err := registry.persistLocked(); err != nil {
+		return nil, err
+	}
+	return registry, nil
 }
 
 // New creates an empty registry. It is useful when the caller needs to build
@@ -143,6 +190,23 @@ func (r *Registry) PersistenceError() error {
 }
 
 func (r *Registry) persistLocked() error {
+	if r.db != nil {
+		tx, err := r.db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM sessions`); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		for id, entry := range r.Entries {
+			if _, err := tx.Exec(`INSERT INTO sessions (id, username, expiry, updated_at) VALUES (?, ?, ?, unixepoch())`, id, entry.Username, entry.Expiry); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+		return tx.Commit()
+	}
 	if r.path == "" {
 		return nil
 	}

@@ -18,6 +18,10 @@ blindly.
   scheduled migration window.
 - Warn when `stepanel_restore_jobs_active > 0` for longer than the expected
   restore duration.
+- Page when `stepanel_jobs_dead_letter > 0`; investigate the payload and
+  operation audit trail before replaying it.
+- Warn when `stepanel_jobs_queued` remains above the worker capacity for 10
+  minutes.
 
 Every alert should link to an incident ticket and one of the runbooks in
 [`INCIDENT_LAB.md`](INCIDENT_LAB.md). Do not put customer names, usernames, or

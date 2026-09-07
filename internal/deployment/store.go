@@ -4,6 +4,7 @@
 package deployment
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	statefile "github.com/itchyitchy123/StePanel/internal/state"
+	_ "modernc.org/sqlite"
 )
 
 type Record struct {
@@ -31,7 +33,36 @@ type Record struct {
 type Store struct {
 	mu     sync.RWMutex
 	path   string
+	db     *sql.DB
 	values []Record
+}
+
+func OpenDB(db *sql.DB, legacyPath string) (*Store, error) {
+	s := &Store{db: db, values: []Record{}}
+	var payload []byte
+	err := db.QueryRow(`SELECT payload FROM state_blobs WHERE name = 'deployments'`).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		if legacyPath != "" {
+			legacy, legacyErr := Open(legacyPath)
+			if legacyErr != nil && !errors.Is(legacyErr, os.ErrNotExist) {
+				return nil, legacyErr
+			}
+			if legacyErr == nil {
+				s.values = legacy.values
+				if err := s.persistDB(); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return s, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(payload, &s.values); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 func Open(path string) (*Store, error) {
@@ -61,11 +92,29 @@ func (s *Store) Add(record Record) error {
 	if err != nil {
 		return err
 	}
-	if err := statefile.WriteAtomic(s.path, append(data, '\n'), 0600); err != nil {
+	if s.db != nil {
+		err = s.persistDBPayload(data)
+	} else {
+		err = statefile.WriteAtomic(s.path, append(data, '\n'), 0600)
+	}
+	if err != nil {
 		s.values = previous
 		return err
 	}
 	return nil
+}
+
+func (s *Store) persistDB() error {
+	data, err := json.MarshalIndent(s.values, "", "  ")
+	if err != nil {
+		return err
+	}
+	return s.persistDBPayload(data)
+}
+
+func (s *Store) persistDBPayload(data []byte) error {
+	_, err := s.db.Exec(`INSERT INTO state_blobs (name, payload, updated_at) VALUES ('deployments', ?, unixepoch()) ON CONFLICT(name) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at`, data)
+	return err
 }
 
 func (s *Store) List(site string) []Record {

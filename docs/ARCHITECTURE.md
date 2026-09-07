@@ -131,12 +131,13 @@ systemd application units cross narrowly validated, root-owned helper
 boundaries; the service account cannot edit active configuration directly.
 Request-facing helper invocations are context-bound with bounded lifetimes and
 output, preventing a wedged service command from exhausting worker capacity.
-The shared-hosting beta adds separately persisted customer credentials with
-customer-specific TOTP and an explicit assignment allowlist. Customer sessions
-may see only their assigned site workspaces, matching backups, and matching job
-records; administrator-only APIs retain the privileged operational boundary.
-This is intentionally single-host authorization, not a replacement for durable
-tenant ownership in a future multi-host control plane.
+The shared-hosting beta adds separately persisted customer credentials,
+relational tenant-site ownership, customer-specific TOTP, and an explicit
+assignment allowlist. Customer sessions may see only their assigned site
+workspaces, matching backups, and matching job records; administrator-only APIs
+retain the privileged operational boundary. The ownership data is durable on
+the single host, but multi-host identity, RBAC, and agent authorization remain
+outside the current contract.
 Cloud CLI children receive a filtered environment so panel session, audit, and
 database secrets are not inherited.
 Local database administration crosses a root-owned helper boundary. Uploaded
@@ -163,8 +164,12 @@ build step by the control plane.
 ## Durable restore state
 
 Restore and certificate jobs are recorded atomically before background work
-starts. A restart preserves completed results and marks work interrupted by an
-unclean shutdown as failed. Site overwrites use a transaction journal on the
+starts. cpmove restores, site backups, certificate issuance, WordPress
+restores, and backup restores use the durable worker path with persisted input
+and output. The durable queue supports row-level upserts, atomic worker claims,
+per-target serialization, leases, renewal, progress, bounded retry, cancellation requests, and
+dead-letter state. A restart preserves completed results and marks work
+interrupted by an unclean shutdown as failed. Site overwrites use a transaction journal on the
 site filesystem: the previous document root is moved into the recovery
 transaction before deployment. Newly created database names and users are
 journaled in the same transaction before provisioning. Startup removes managed

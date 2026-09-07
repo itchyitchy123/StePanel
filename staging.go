@@ -67,6 +67,19 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "site is not assigned to this account", 403)
 		return
 	}
+	if !a.Auth.IsAdministrator(r) {
+		if a.Domains == nil {
+			http.Error(w, "domain ownership must be verified before staging activation", http.StatusConflict)
+			return
+		}
+		verifyCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		verifyErr := a.verifyCustomerDomain(verifyCtx, input.Site, input.Domain)
+		cancel()
+		if verifyErr != nil {
+			http.Error(w, "domain ownership must be verified before staging activation", http.StatusConflict)
+			return
+		}
+	}
 	releaseUnlock := a.siteOperations.Acquire(input.Site)
 	defer releaseUnlock()
 	input.SourceDatabase = strings.ToLower(strings.TrimSpace(input.SourceDatabase))

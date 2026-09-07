@@ -38,13 +38,15 @@ Latest stable release: `v0.6.0`
 - Cloud inventory and audited lifecycle actions for Linode, AWS, and OpenStack, plus Linode DNS, load-balancer, and snapshot operations.
 - Strict-host-key SSH server inventory with allowlisted asynchronous restart and reboot actions.
 - Authenticated security posture endpoint at `/api/security/audit`.
-- Provider-neutral DNS capability contract at `/api/dns/capabilities`; the
-  existing Linode adapter remains available, while zone desired-state,
-  provider adapters, and DNSSEC are not yet production-complete.
+- Provider-neutral DNS capability contract at `/api/dns/capabilities`; Linode
+  record mutations persist desired state and use retryable idempotent jobs.
+  Zone/registrar lifecycle, additional provider adapters, and DNSSEC remain
+  external requirements.
 - Verified, bounded audit-event queries at `/api/audit/events` for deployment and operational history.
 - Prometheus-compatible metrics, Docker packaging, Helm, Kubernetes, and Terraform examples.
-- Secret-safe `stepanel dr-check` control-plane DR inventory; automated
-  control-plane archive/restore and remote audit anchoring remain planned.
+- Secret-safe `stepanel dr-check` control-plane DR inventory plus verified
+  SQLite control-plane backup, dry-run validation, and guarded lock-coordinated
+  live restore. Remote audit anchoring remains planned.
 - Transactional Caddy and Apache PHP vhosts and reverse proxies with
   validation, rollback, and duplicate-domain checks.
 - Fail-closed Apache `.htaccess` preview/import for Caddy, covering common
@@ -54,10 +56,17 @@ Latest stable release: `v0.6.0`
   domains, and verified-backup counts. Site workspaces can queue a verified
   file-and-managed-database backup and connect a validated web route; the UI
   explains the required DNS cutover after a route is created.
+- Domain route desired state is durable in the control plane, reconciles after
+  restart, and supports tenant-scoped route removal for tracked customer
+  routes. Customer route activation requires a durable DNS TXT claim at
+  `_stepanel.<domain>` through `/api/sites/domains/claim` and `/verify`;
+  activation revalidates the TXT record, and administrators have an explicit
+  operator bypass. Registrar ownership, DNS zone lifecycle, DNSSEC, and ACME
+  issuance remain separate provider boundaries.
 - Shared-hosting beta: administrator-provisioned customer accounts with
   independently hashed passwords, encrypted customer TOTP at rest when
   `STEPANEL_ACCOUNT_KEY` is configured, mandatory per-customer TOTP, plan-enforced
-  assigned-site limits, and authorization that scopes customer site workspace,
+  assigned-site limits, reserved administrator identity, and authorization that scopes customer site workspace,
   backup, and job access to their assignments. Provider operations remain
   administrator-only.
 - Account plan and site-assignment updates persist resource desired state and
@@ -66,6 +75,12 @@ Latest stable release: `v0.6.0`
 - Administrator-only customer MFA regeneration through
   `/api/accounts/{username}/mfa`, returning the replacement seed once and
   revoking that customer's sessions.
+- Customer-scoped API tokens are available at `/api/account/tokens`. Secrets
+  are hashed, optionally expire, can be revoked, and are returned only once;
+  token management and password/MFA recovery require the browser session.
+- Administrator API tokens are available at `/api/admin/tokens` with explicit
+  `admin:read` or `admin:operate` scopes. Read tokens cannot mutate state;
+  creation and revocation require the administrator browser session.
 - Administrator customer credential recovery with temporary password,
   regenerated MFA, one-time recovery codes, session revocation, and customer
   password/MFA completion endpoints.
@@ -79,12 +94,12 @@ Latest stable release: `v0.6.0`
   memory, and PID resource envelope; deployment activation remains the existing
   atomic release workflow.
 - Recovery-journaled staging site creation with safe file copies, optional
-  non-secret environment cloning, and verified selected-database restore into a
-  newly provisioned staging database.
-- Site SSH public-key fingerprint/policy lifecycle and audited account
-  suspension, unsuspension, and login-record removal. Suspension immediately
-  revokes panel sessions; neither operation is a hosting-workload suspension
-  or termination.
+  non-secret environment cloning, verified domain ownership before customer
+  route activation, and verified selected-database restore into a newly
+  provisioned staging database.
+- Site SSH public-key fingerprint/policy lifecycle, confirmation-gated durable
+  site termination, and audited account suspension, unsuspension, and
+  login-record removal. Suspension immediately revokes panel sessions.
 - Per-site deploy-key generation/retirement where private key material remains
   root-owned and is never returned by the panel API.
 - Scheduled site tasks backed by hardened systemd services and timers instead
@@ -98,8 +113,9 @@ Latest stable release: `v0.6.0`
   account plan. Optional disk/inode values are enforced with Linux user
   quotas when the filesystem is preconfigured for quotas. Profiles are
   re-applied during startup and through the administrator reconciliation
-  endpoint; bandwidth, database, and Redis enforcement remain
-  provider-specific planned work.
+  endpoint; bandwidth, mail, and Redis runtime enforcement remain
+  provider-specific planned work, while supported local database lifecycle and
+  plan caps are available.
 - Read-only per-database detail at `/api/databases/<name>` for DBA tooling without credential disclosure.
 - Deterministic site identities and isolated PHP-FPM pools for restored sites.
 - Independently verified site and registered-database backups.
@@ -123,9 +139,11 @@ Latest stable release: `v0.6.0`
   customer mail lifecycle support; use external mail or an independently
   managed optional mail module.
 
-- Site deletion currently removes the managed vhost/proxy state; it is not yet
-  a complete customer/account teardown across mail, DNS, databases, quotas,
-  and external providers.
+- Administrator site termination is a confirmation-gated durable job. It
+  retains a verified backup, removes managed databases, routes, application
+  services, SSH/PHP/quota state, durable site state, and tenant ownership.
+  Mail, DNS, registrar, billing, and other external-provider objects remain
+  operator responsibilities and are not silently deleted.
 - Backup verification is available through the CLI and administrator API. Each
   backup records `crash-consistent / logical backup` classification and can be
   authenticated with an external `STEPANEL_BACKUP_SIGNING_KEY`. Administrator
@@ -137,7 +155,7 @@ Latest stable release: `v0.6.0`
   rclone is configured; off-site browsing and full customer self-service
   restore remain deliberately guarded. Schema rollback remains manual.
 - The customer workspace currently authorizes assigned site viewing, verified
-  backup creation, domain routing, and job history only. It is not yet a full
+  backup creation, tracked domain route lifecycle, and job history only. It is not yet a full
   tenant self-service portal.
 - PITR/WAL or binlog management, replication orchestration, configuration
   mutation, and automatic failover remain operator-managed and deliberately
@@ -150,13 +168,15 @@ not yet a cPanel/Plesk-equivalent multi-tenant hosting product. The following
 must be implemented before offering untrusted customer access:
 
 - Durable tenant/account isolation beyond a single host, scoped support and
-  reseller roles, API tokens, OIDC/WebAuthn, and approval/audit workflows.
+  reseller roles, OIDC/WebAuthn,
+  and approval/audit workflows.
 - Durable relational state and a distributed job/agent model for multiple
   servers, retries, cancellation, idempotency, and event delivery.
-- Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, customer quota,
-  and billing lifecycle management. Built-in application resource envelopes
-  are shipped, but complete disk/inode/bandwidth/database/Redis quota
-  enforcement remains unfinished.
+- Complete domain/DNS/SSL, database/user, mail, FTP/SFTP, bandwidth,
+  database/Redis entitlement, and billing lifecycle management. Built-in
+  CPU/memory/process/PHP-worker/disk/inode resource envelopes are now shipped;
+  bandwidth and provider-specific database, mail, and Redis quotas remain
+  unfinished.
 - Customer-facing file manager, Git-provider App/OAuth integrations, database
   promotion, notifications, and self-service
   backup/restore. The shipped deploy-key, resource-profile, Security Center,

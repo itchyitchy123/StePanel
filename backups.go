@@ -148,35 +148,17 @@ func (a *App) backups(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "insufficient free space for backup", http.StatusInsufficientStorage)
 			return
 		}
-		jobID, err := newJobID("backup")
+		payload, err := json.Marshal(durableBackupRequest{Site: input.Site, IncludeDatabases: input.IncludeDatabases, Actor: a.Auth.UsernameForRequest(r)})
 		if err != nil {
-			http.Error(w, "could not create backup job", http.StatusInternalServerError)
+			http.Error(w, "could not encode backup job", http.StatusInternalServerError)
 			return
 		}
-		if err := a.Jobs.SubmitBackup(jobID, input.Site, func() (BackupResult, error) {
-			result, err := CreateSiteBackup(a.Config, input.Site, input.IncludeDatabases)
-			if err != nil {
-				if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.failed", input.Site, err.Error()); auditErr != nil {
-					err = fmt.Errorf("%w; audit persistence failed: %v", err, auditErr)
-				}
-			} else {
-				err = uploadOffsite(a.Config, result)
-				if err != nil {
-					_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.offsite_failed", input.Site, err.Error())
-				} else if auditErr := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.backup.completed", input.Site, result.ArchiveSHA256); auditErr != nil {
-					log.Printf("backup completed but audit persistence is unavailable: %v", auditErr)
-				}
-			}
-			return result, err
-		}); err != nil {
-			if errors.Is(err, ErrJobBusy) {
-				http.Error(w, err.Error(), http.StatusTooManyRequests)
-			} else {
-				http.Error(w, "could not persist backup job", http.StatusInternalServerError)
-			}
+		job, _, err := a.Jobs.EnqueueIdempotent("site.backup", input.Site, "", payload, 3)
+		if err != nil {
+			http.Error(w, "could not persist backup job", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID, "status_url": filepath.Join("/api/jobs", jobID)})
+		writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID, "status_url": filepath.Join("/api/jobs", job.ID)})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

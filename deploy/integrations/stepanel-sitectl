@@ -7,7 +7,7 @@ if [[ $EUID -ne 0 ]]; then echo 'must run as root' >&2; exit 1; fi
 action=$1
 site=$2
 [[ $site =~ ^[a-z0-9_-]{1,32}$ ]] || { echo 'invalid site' >&2; exit 1; }
-[[ $action == prepare || $action == seal || $action == runtime || $action == resources || $action == quota || $action == quota-clear || $action == access ]] || { echo 'invalid action' >&2; exit 64; }
+[[ $action == prepare || $action == seal || $action == delete || $action == runtime || $action == resources || $action == quota || $action == quota-clear || $action == access ]] || { echo 'invalid action' >&2; exit 64; }
 
 if getent group www-data >/dev/null; then
   web_group=www-data
@@ -28,6 +28,26 @@ site_user="sp-${prefix}-${hash:0:8}"
 site_root="/var/www/sites/$site"
 public_root="$site_root/public"
 php_state="$site_root/.php"
+
+if [[ $action == delete ]]; then
+  [[ $# == 2 ]] || { echo 'usage: stepanel-sitectl delete SITE' >&2; exit 64; }
+  if id "$site_user" >/dev/null 2>&1; then
+    for pool in /etc/php/*/fpm/pool.d/stepanel-"$site".conf /etc/php-fpm.d/stepanel-"$site".conf; do
+      [[ -e $pool && ! -L $pool ]] || continue
+      rm -f "$pool"
+    done
+    rm -f "/etc/stepanel/ssh/authorized_keys/$site_user" "/etc/ssh/sshd_config.d/stepanel-$site_user.conf"
+    for unit in $(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 'php-fpm.service' 2>/dev/null | awk '{print $1}'); do
+      systemctl reload "$unit" 2>/dev/null || true
+    done
+    if [[ -d $site_root && ! -L $site_root ]]; then
+      rm -rf --one-file-system -- "$site_root"
+    fi
+    userdel "$site_user" 2>/dev/null || true
+  fi
+  systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+  exit 0
+fi
 
 if ! id "$site_user" >/dev/null 2>&1; then
   useradd --system --home-dir "$site_root" --shell /usr/sbin/nologin --user-group "$site_user"

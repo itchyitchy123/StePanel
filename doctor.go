@@ -134,6 +134,21 @@ func (a *App) productionReadinessChecks() []DoctorCheck {
 	} else {
 		checks = append(checks, DoctorCheck{"audit-persistence", "pass", "low", "audit chain is writable"})
 	}
+	if a.Resources != nil {
+		pending := 0
+		a.Resources.mu.RLock()
+		for _, profile := range a.Resources.values {
+			if profile.State != "applied" || profile.FilesystemQuotaState == "apply-pending" || profile.FilesystemQuotaState == "clear-pending" {
+				pending++
+			}
+		}
+		a.Resources.mu.RUnlock()
+		if pending > 0 {
+			checks = append(checks, DoctorCheck{"resource-enforcement", "fail", "high", fmt.Sprintf("%d site resource profiles require reconciliation; affected accounts remain suspended", pending)})
+		} else {
+			checks = append(checks, DoctorCheck{"resource-enforcement", "pass", "low", "all persisted site resource profiles are applied"})
+		}
+	}
 	return checks
 }
 

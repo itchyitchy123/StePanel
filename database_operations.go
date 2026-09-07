@@ -138,6 +138,15 @@ func (a *App) databaseCollection(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "managed database inventory is unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		if a.Accounts != nil && !a.Auth.IsAdministrator(r) {
+			filtered := items[:0]
+			for _, item := range items {
+				if a.canAccessSite(r, item.Site) {
+					filtered = append(filtered, item)
+				}
+			}
+			items = filtered
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"databases": items, "engine": a.Config.DBEngine})
 	case http.MethodPost:
 		if !a.Auth.CSRF(r) {
@@ -160,6 +169,39 @@ func (a *App) databaseCollection(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "owning site document root does not exist", http.StatusUnprocessableEntity)
 			return
 		}
+		lockKeys := []string{in.Site, "database:" + in.Name}
+		if !a.Auth.IsAdministrator(r) {
+			lockKeys = append(lockKeys, "account:"+a.Auth.UsernameForRequest(r))
+		}
+		releaseUnlock := a.siteOperations.AcquireMany(lockKeys...)
+		defer releaseUnlock()
+		if a.Accounts != nil && !a.Auth.IsAdministrator(r) {
+			if !a.canAccessSite(r, in.Site) {
+				http.Error(w, "site is not assigned to this account", http.StatusForbidden)
+				return
+			}
+			account, ok := a.Accounts.Get(a.Auth.UsernameForRequest(r))
+			plan := hostingPlans[account.Plan]
+			if !ok || plan.DatabaseLimit < 1 {
+				http.Error(w, "database entitlement is unavailable", http.StatusForbidden)
+				return
+			}
+			current, inventoryErr := managedDatabaseInventory(a.Config)
+			if inventoryErr != nil {
+				http.Error(w, "managed database inventory is unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			count := 0
+			for _, item := range current {
+				if a.canAccessSite(r, item.Site) {
+					count++
+				}
+			}
+			if count >= plan.DatabaseLimit {
+				http.Error(w, "database plan limit reached", http.StatusConflict)
+				return
+			}
+		}
 		if in.Encoding == "" {
 			if a.Config.DBEngine == "postgresql" {
 				in.Encoding = "UTF8"
@@ -171,14 +213,12 @@ func (a *App) databaseCollection(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "encoding must be UTF8 for PostgreSQL or utf8mb4 for MySQL/MariaDB", http.StatusUnprocessableEntity)
 			return
 		}
-		releaseUnlock := a.siteOperations.AcquireMany(in.Site, "database:"+in.Name)
-		defer releaseUnlock()
 		if _, err := runDatabaseHelper(a.Config, time.Minute, in.Password, "provision", in.Name, in.User, in.Site, in.Encoding); err != nil {
 			log.Printf("database provision rejected for %s: %v", in.Name, err)
 			http.Error(w, "database or user already exists, or provisioning failed", http.StatusConflict)
 			return
 		}
-		_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "database.provisioned", in.Name, fmt.Sprintf("site=%s user=%s encoding=%s", in.Site, in.User, in.Encoding))
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "database.provisioned", in.Name, fmt.Sprintf("site=%s user=%s encoding=%s", in.Site, in.User, in.Encoding))
 		writeJSON(w, http.StatusCreated, DatabaseResource{Name: in.Name, Site: in.Site, User: in.User, Encoding: in.Encoding})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -238,12 +278,29 @@ func (a *App) databaseResource(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid database", http.StatusUnprocessableEntity)
 		return
 	}
-	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && !credentialRotation {
-		items, err := managedDatabaseInventory(a.Config)
-		if err != nil {
-			http.Error(w, "managed database inventory is unavailable", http.StatusServiceUnavailable)
-			return
+	items, inventoryErr := managedDatabaseInventory(a.Config)
+	customerRequest := a.Accounts != nil && !a.Auth.IsAdministrator(r)
+	if inventoryErr != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead || customerRequest || a.Accounts != nil) {
+		http.Error(w, "managed database inventory is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var owned DatabaseResource
+	found := false
+	for _, item := range items {
+		if item.Name == name {
+			owned, found = item, true
+			break
 		}
+	}
+	if !found && inventoryErr == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if customerRequest && !a.canAccessSite(r, owned.Site) {
+		http.Error(w, "database is not assigned to this account", http.StatusForbidden)
+		return
+	}
+	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && !credentialRotation {
 		for _, item := range items {
 			if item.Name == name {
 				writeJSON(w, http.StatusOK, map[string]any{"database": item, "engine": a.Config.DBEngine})
@@ -279,7 +336,7 @@ func (a *App) databaseResource(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "credential rotation failed", http.StatusConflict)
 			return
 		}
-		_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "database.credentials_rotated", name, "user="+in.User)
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "database.credentials_rotated", name, "user="+in.User)
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodDelete && !credentialRotation:
 		if in.Confirm != "DROP "+name {
@@ -298,7 +355,7 @@ func (a *App) databaseResource(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "database deletion failed", http.StatusConflict)
 			return
 		}
-		_ = AuditAs(a.Config.AuditLog, a.Auth.Username, "database.deleted", name, "user="+in.User+" safety_backup="+safetyBackup.Path+" sha256="+safetyBackup.SHA256)
+		_ = AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "database.deleted", name, "user="+in.User+" safety_backup="+safetyBackup.Path+" sha256="+safetyBackup.SHA256)
 		writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "safety_backup": safetyBackup})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

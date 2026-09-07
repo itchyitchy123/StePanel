@@ -101,6 +101,22 @@ func (m *Metrics) Write(w io.Writer) {
 	_, _ = fmt.Fprintf(w, "stepanel_http_request_duration_seconds_count %d\n", m.httpRequests.Load())
 }
 
+func writeJobMetrics(w io.Writer, jobs *Jobs) {
+	stats := JobQueueStats{}
+	if jobs != nil {
+		stats, _ = jobs.QueueStats()
+	}
+	_, _ = fmt.Fprintln(w, "# HELP stepanel_jobs_queued Current durable jobs waiting for a worker")
+	_, _ = fmt.Fprintln(w, "# TYPE stepanel_jobs_queued gauge")
+	_, _ = fmt.Fprintf(w, "stepanel_jobs_queued %d\n", stats.Queued)
+	_, _ = fmt.Fprintln(w, "# HELP stepanel_jobs_running Current durable jobs held by workers")
+	_, _ = fmt.Fprintln(w, "# TYPE stepanel_jobs_running gauge")
+	_, _ = fmt.Fprintf(w, "stepanel_jobs_running %d\n", stats.Running)
+	_, _ = fmt.Fprintln(w, "# HELP stepanel_jobs_dead_letter Jobs requiring operator review")
+	_, _ = fmt.Fprintln(w, "# TYPE stepanel_jobs_dead_letter gauge")
+	_, _ = fmt.Fprintf(w, "stepanel_jobs_dead_letter %d\n", stats.DeadLetter)
+}
+
 func writeDatabaseMetrics(w io.Writer, diagnostics DatabaseDiagnostics) {
 	up := 0
 	if diagnostics.Available {

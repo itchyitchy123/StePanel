@@ -44,7 +44,7 @@ func resourceProfileForPlan(account, site string, plan HostingPlan) ResourceProf
 	if high < 64 {
 		high = 64
 	}
-	return ResourceProfile{Account: account, Site: site, CPUPercent: plan.CPUPercent, CPUWeight: 100, MemoryHighMB: high, MemoryMB: plan.MemoryMB, IOWeight: 100, TasksMax: plan.TasksMax, PHPWorkers: plan.PHPWorkers, State: "pending", FilesystemQuotaState: "none"}
+	return ResourceProfile{Account: account, Site: site, CPUPercent: plan.CPUPercent, CPUWeight: 100, MemoryHighMB: high, MemoryMB: plan.MemoryMB, IOWeight: 100, TasksMax: plan.TasksMax, PHPWorkers: plan.PHPWorkers, DiskMB: plan.DiskMB, Inodes: plan.Inodes, State: "pending", FilesystemQuotaState: "apply-pending"}
 }
 
 func clampResourceProfileToPlan(profile ResourceProfile, plan HostingPlan) ResourceProfile {
@@ -53,6 +53,12 @@ func clampResourceProfileToPlan(profile ResourceProfile, plan HostingPlan) Resou
 	profile.MemoryMB = minInt(profile.MemoryMB, plan.MemoryMB)
 	profile.TasksMax = minInt(profile.TasksMax, plan.TasksMax)
 	profile.PHPWorkers = minInt(profile.PHPWorkers, plan.PHPWorkers)
+	if plan.DiskMB > 0 {
+		profile.DiskMB = minInt(profile.DiskMB, plan.DiskMB)
+	}
+	if plan.Inodes > 0 {
+		profile.Inodes = minInt(profile.Inodes, plan.Inodes)
+	}
 	if profile.MemoryHighMB > profile.MemoryMB {
 		profile.MemoryHighMB = profile.MemoryMB
 	}
@@ -100,6 +106,11 @@ func (a *App) ensurePlanResources(account HostingAccount) ([]string, error) {
 			continue
 		}
 		profile.State = "applied"
+		if profile.hasFilesystemQuota() {
+			profile.FilesystemQuotaState = "enforced"
+		} else {
+			profile.FilesystemQuotaState = "none"
+		}
 		a.Resources.mu.Lock()
 		a.Resources.values[profile.Site] = profile
 		err = a.Resources.persistLocked()
@@ -201,6 +212,11 @@ func (a *App) reconcileAccountResourcePlan(previous, account HostingAccount) ([]
 			continue
 		}
 		profile.State = "applied"
+		if profile.hasFilesystemQuota() {
+			profile.FilesystemQuotaState = "enforced"
+		} else {
+			profile.FilesystemQuotaState = "none"
+		}
 		profile.AppliedAt = time.Now().UTC()
 		a.Resources.mu.Lock()
 		a.Resources.values[profile.Site] = profile
@@ -267,6 +283,9 @@ func (s *ResourceStore) persistLocked() error {
 	d, e := json.MarshalIndent(s.values, "", "  ")
 	if e != nil {
 		return e
+	}
+	if bound, err := persistBoundControlPlaneState(s, d); bound {
+		return err
 	}
 	return writeAtomic(s.path, append(d, '\n'), 0600)
 }
@@ -487,7 +506,7 @@ func (a *App) reconcileResourceProfiles(ctx context.Context) (reconciled []strin
 
 	pending := make([]ResourceProfile, 0, len(profiles))
 	for _, p := range profiles {
-		if p.State != "applied" || a.resourceObserved(ctx, p.Site)["state"] != "active" {
+		if p.State != "applied" || p.FilesystemQuotaState == "apply-pending" || p.FilesystemQuotaState == "clear-pending" || a.resourceObserved(ctx, p.Site)["state"] != "active" {
 			pending = append(pending, p)
 		}
 	}
@@ -496,6 +515,11 @@ func (a *App) reconcileResourceProfiles(ctx context.Context) (reconciled []strin
 		err := a.applyResourceProfile(ctx, p, p.FilesystemQuotaState == "clear-pending")
 		if err != nil {
 			failed[p.Site] = "apply failed"
+			if p.Account != "" && a.Accounts != nil {
+				if _, suspendErr := a.Accounts.SetSuspended(p.Account, true); suspendErr != nil {
+					failed[p.Site] = "apply failed and account suspension failed: " + suspendErr.Error()
+				}
+			}
 			releaseUnlock()
 			continue
 		}

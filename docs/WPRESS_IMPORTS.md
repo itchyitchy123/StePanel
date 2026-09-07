@@ -14,6 +14,9 @@ Install these commands on the destination host:
 
 Override executable paths with `STEPANEL_WPRESS_EXTRACT` and `STEPANEL_WPCLI`.
 Production configurations must use absolute executable paths.
+Set `STEPANEL_ACCOUNT_KEY` before enabling imports: the database password is
+held in an encrypted durable job payload and is never returned by job-status
+APIs. Preserve this key with the control-plane database during recovery.
 Use `/api/wpress/preflight` to verify availability.
 
 ## Restore procedure

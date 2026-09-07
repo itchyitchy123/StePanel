@@ -64,6 +64,9 @@ func (s *backupSchedules) persistLocked() error {
 	if err != nil {
 		return err
 	}
+	if bound, err := persistBoundControlPlaneState(s, b); bound {
+		return err
+	}
 	return writeAtomic(s.path, append(b, '\n'), 0600)
 }
 func (s *backupSchedules) list() []BackupSchedule {
@@ -171,32 +174,15 @@ func (a *App) runDueBackups() {
 		if !s.Enabled || s.NextRun.After(now) {
 			continue
 		}
-		id, err := newJobID("scheduled-backup")
-		if err != nil {
-			continue
-		}
+		operationKey := fmt.Sprintf("schedule:%s:%d", site, s.NextRun.UnixNano())
 		s.LastRun = &now
 		s.NextRun = now.Add(time.Duration(s.IntervalMinutes) * time.Minute)
-		err = a.Jobs.SubmitBackup(id, site, func() (BackupResult, error) {
-			started := time.Now()
-			result, err := CreateSiteBackup(a.Config, site, s.IncludeDatabases)
-			if err == nil {
-				err = uploadOffsite(a.Config, result)
-			}
-			if err != nil {
-				_ = AuditAs(a.Config.AuditLog, "scheduler", "site.backup.failed", site, err.Error())
-			} else if auditErr := AuditAs(a.Config.AuditLog, "scheduler", "site.backup.completed", site, result.ArchiveSHA256); auditErr != nil {
-				log.Printf("scheduled backup completed but audit persistence is unavailable: %v", auditErr)
-			}
-			a.Schedules.recordResult(site, started, err)
-			if err == nil {
-				if pruneErr := pruneSiteBackups(a.Config.BackupRoot, site, s.KeepLast); pruneErr != nil {
-					_ = AuditAs(a.Config.AuditLog, "scheduler", "backup.retention.failed", site, pruneErr.Error())
-				}
-			}
-			return result, err
-		})
-		if err != nil {
+		payload, marshalErr := json.Marshal(durableBackupRequest{Site: site, IncludeDatabases: s.IncludeDatabases, Scheduled: true, KeepLast: s.KeepLast, Actor: "scheduler", StartedAt: now})
+		if marshalErr != nil {
+			continue
+		}
+		_, _, enqueueErr := a.Jobs.EnqueueIdempotent("site.backup", site, operationKey, payload, 3)
+		if enqueueErr != nil {
 			continue
 		}
 		a.Schedules.items[site] = s

@@ -61,8 +61,26 @@ func readinessChecks(cfg Config, jobs *Jobs) map[string]ReadinessCheck {
 		checks["job_state"] = ReadinessCheck{Ready: false, Detail: "job store is not initialized"}
 	} else if err := jobs.PersistenceError(); err != nil {
 		checks["job_state"] = ReadinessCheck{Ready: false, Detail: err.Error()}
+	} else if jobs.db != nil {
+		if err := jobs.IntegrityCheck(); err != nil {
+			checks["control_plane_integrity"] = ReadinessCheck{Ready: false, Detail: err.Error()}
+		} else {
+			checks["control_plane_integrity"] = ReadinessCheck{Ready: true}
+		}
+		stats, err := jobs.QueueStats()
+		if err != nil {
+			checks["job_state"] = ReadinessCheck{Ready: false, Detail: fmt.Sprintf("durable queue unavailable: %v", err)}
+		} else {
+			checks["job_state"] = ReadinessCheck{Ready: true}
+			if stats.DeadLetter > 0 {
+				checks["dead_letter_jobs"] = ReadinessCheck{Ready: false, Detail: fmt.Sprintf("%d durable jobs require operator review", stats.DeadLetter)}
+			} else {
+				checks["dead_letter_jobs"] = ReadinessCheck{Ready: true}
+			}
+		}
 	} else {
 		checks["job_state"] = ReadinessCheck{Ready: true}
+		checks["dead_letter_jobs"] = ReadinessCheck{Ready: true}
 	}
 	roots := map[string]string{
 		"backup_capacity":   cfg.BackupRoot,

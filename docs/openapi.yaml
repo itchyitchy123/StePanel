@@ -272,7 +272,8 @@ paths:
       parameters:
         - {name: username, in: path, required: true, schema: {type: string}}
       responses:
-        '204': {description: Customer login removed; hosting workloads are retained}
+        '204': {description: Customer login removed after all managed sites are detached}
+        '409': {description: Account still owns managed sites}
   /api/accounts/{username}/mfa:
     post:
       summary: Regenerate a customer's TOTP secret and revoke sessions (administrator only)
@@ -304,6 +305,53 @@ paths:
       summary: Complete the authenticated customer's required MFA enrollment
       responses:
         '204': {description: TOTP enrollment saved and session revoked}
+  /api/account/tokens:
+    get:
+      summary: List the authenticated customer's API token metadata
+      responses:
+        '200': {description: Token metadata without secrets}
+    post:
+      summary: Create a customer-scoped API token; the secret is returned once
+      responses:
+        '201': {description: Token secret and metadata}
+  /api/account/tokens/{id}:
+    delete:
+      summary: Revoke one customer API token
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Token revoked}
+  /api/admin/tokens:
+    get:
+      summary: List administrator API token metadata
+      description: Browser administrator session only; bearer tokens cannot manage credentials.
+      responses:
+        '200': {description: Administrator token metadata}
+    post:
+      summary: Create a scoped administrator API token; the secret is returned once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scopes]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 80}
+                expires_at: {type: integer, format: int64}
+                scopes:
+                  type: array
+                  minItems: 1
+                  items: {type: string, enum: [admin:read, admin:operate]}
+      responses:
+        '201': {description: Token secret and metadata}
+  /api/admin/tokens/{id}:
+    delete:
+      summary: Revoke one administrator API token
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Token revoked}
   /api/security/scan:
     post:
       summary: Scan a managed site for suspicious PHP
@@ -619,12 +667,63 @@ paths:
         '409': {description: No valid previous release is available}
   /api/sites/{name}:
     delete:
-      summary: Remove a managed PHP site route
+      summary: Remove a managed PHP site route owned by the customer or administrator
       parameters:
         - {name: name, in: path, required: true, schema: {type: string}}
       responses:
-        '200': {description: Vhost removed and Apache reloaded}
+        '200': {description: Vhost removed and the configured webserver reloaded}
         '404': {description: Managed route not found}
+  /api/sites/domains/claim:
+    post:
+      summary: Create or return the DNS TXT claim needed for customer route activation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site, domain]
+              properties:
+                site: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}
+                domain: {type: string, format: hostname}
+      responses:
+        '201': {description: TXT record name and value to publish}
+        '403': {description: Site is not assigned to the authenticated customer}
+        '409': {description: Domain is already claimed by another site}
+  /api/sites/domains/verify:
+    post:
+      summary: Verify the customer DNS TXT claim for a domain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site, domain]
+              properties:
+                site: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}
+                domain: {type: string, format: hostname}
+      responses:
+        '200': {description: Domain ownership verified}
+        '409': {description: TXT record is missing or does not match}
+  /api/sites/terminate:
+    post:
+      summary: Queue a confirmed administrator site termination
+      description: Creates and verifies a retained backup, removes managed databases, routes, application services, SSH/PHP/quota state, durable site state, and tenant ownership. The confirmation must exactly match DELETE plus the site name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site, confirmation]
+              properties:
+                site: {type: string, pattern: '^[a-z0-9_-]{1,32}$'}
+                confirmation: {type: string, example: 'DELETE example'}
+      responses:
+        '202': {description: Durable termination job queued}
+        '404': {description: Site document root not found}
+        '503': {description: Termination cannot proceed because a required helper or backup is unavailable}
   /api/backups:
     get:
       summary: List published site backup summaries
@@ -731,6 +830,23 @@ paths:
       responses:
         '200': {description: Job state}
         '404': {description: Job not found}
+    post:
+      summary: Request cancellation of a background job
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '202': {description: Cancellation requested}
+        '409': {description: Job is no longer cancellable}
+  /api/jobs/{id}/retry:
+    post:
+      summary: Requeue one dead-letter job after operator remediation
+      description: Administrator-only recovery action. The dead-letter state is changed to queued and the attempt counter is reset.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '202': {description: Job requeued}
+        '403': {description: Administrator authentication and CSRF validation required}
+        '409': {description: Job is not a dead-letter record}
   /api/jobs:
     get:
       summary: List recent persistent jobs

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
@@ -34,6 +36,7 @@ type Auth struct {
 	loginLimiter                             *authpolicy.Limiter
 	sessions                                 *sessionRegistry
 	Accounts                                 *AccountStore
+	apiTokens                                *apiTokenStore
 }
 
 type sessionRegistry struct {
@@ -100,6 +103,18 @@ func (a *Auth) ConfigureSessionStore(path string) error {
 	registry, err := sessionstate.Open(path)
 	if err != nil {
 		return fmt.Errorf("open session state: %w", err)
+	}
+	a.sessions = &sessionRegistry{inner: registry}
+	return nil
+}
+
+func (a *Auth) ConfigureSessionStoreDB(db *sql.DB, legacyPath string) error {
+	if !a.Enabled {
+		return nil
+	}
+	registry, err := sessionstate.OpenDB(db, legacyPath)
+	if err != nil {
+		return fmt.Errorf("open durable session state: %w", err)
 	}
 	a.sessions = &sessionRegistry{inner: registry}
 	return nil
@@ -257,6 +272,22 @@ func (a Auth) Require(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if username, scopes, ok := a.validAPITokenWithScopes(r); ok {
+			r = r.WithContext(context.WithValue(r.Context(), apiTokenUsernameKey{}, username))
+			r = r.WithContext(context.WithValue(r.Context(), apiTokenScopesKey{}, scopes))
+			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+				if err := AuditAs(a.AuditLog, username, "http.request", r.URL.Path, authpolicy.ClientIP(r)); err != nil {
+					http.Error(w, "audit persistence is unavailable", 503)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Authorization"))), "bearer ") {
+			http.Error(w, "invalid API token", http.StatusUnauthorized)
+			return
+		}
 		if a.validSession(r) {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
 				if err := AuditAs(a.AuditLog, a.UsernameForRequest(r), "http.request", r.URL.Path, authpolicy.ClientIP(r)); err != nil {
@@ -276,6 +307,9 @@ func (a Auth) Require(next http.Handler) http.Handler {
 }
 func (a Auth) CSRF(r *http.Request) bool {
 	if !a.Enabled {
+		return true
+	}
+	if _, ok := a.validAPIToken(r); ok {
 		return true
 	}
 	cookie, err := r.Cookie("stepanel_csrf")
@@ -375,6 +409,9 @@ func (a Auth) passwordHashFor(username string) (string, bool) {
 }
 
 func (a Auth) UsernameForRequest(r *http.Request) string {
+	if username, ok := r.Context().Value(apiTokenUsernameKey{}).(string); ok {
+		return username
+	}
 	if !a.validSession(r) {
 		return ""
 	}
@@ -393,6 +430,51 @@ func (a Auth) UsernameForRequest(r *http.Request) string {
 	return parts[0]
 }
 
+func (a Auth) IsAPITokenRequest(r *http.Request) bool {
+	_, ok := r.Context().Value(apiTokenUsernameKey{}).(string)
+	return ok
+}
+
+type apiTokenUsernameKey struct{}
+type apiTokenScopesKey struct{}
+
+func (a Auth) validAPIToken(r *http.Request) (string, bool) {
+	username, _, ok := a.validAPITokenWithScopes(r)
+	return username, ok
+}
+
+func (a Auth) validAPITokenWithScopes(r *http.Request) (string, []string, bool) {
+	value := strings.TrimSpace(r.Header.Get("Authorization"))
+	if len(value) < 8 || !strings.EqualFold(value[:7], "Bearer ") {
+		return "", nil, false
+	}
+	username, scopes, ok := a.apiTokens.authenticateWithScopes(strings.TrimSpace(value[7:]))
+	if !ok {
+		return "", nil, false
+	}
+	if subtle.ConstantTimeCompare([]byte(username), []byte(a.Username)) == 1 {
+		return username, scopes, true
+	}
+	if a.Accounts == nil {
+		return "", nil, false
+	}
+	account, exists := a.Accounts.Get(username)
+	return username, scopes, exists && !account.Suspended
+}
+
+func (a Auth) HasAPIScope(r *http.Request, scope string) bool {
+	if !a.IsAPITokenRequest(r) {
+		return false
+	}
+	scopes, _ := r.Context().Value(apiTokenScopesKey{}).([]string)
+	for _, candidate := range scopes {
+		if candidate == scope {
+			return true
+		}
+	}
+	return false
+}
+
 func (a Auth) IsAdministrator(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(a.UsernameForRequest(r)), []byte(a.Username)) == 1
 }
@@ -402,6 +484,16 @@ func (a Auth) RequireAdministrator(next http.Handler) http.Handler {
 		if !a.IsAdministrator(r) {
 			http.Error(w, "administrator access required", http.StatusForbidden)
 			return
+		}
+		if a.IsAPITokenRequest(r) {
+			scope := "admin:operate"
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				scope = "admin:read"
+			}
+			if !a.HasAPIScope(r, scope) && !(scope == "admin:read" && a.HasAPIScope(r, "admin:operate")) {
+				http.Error(w, "administrator API token lacks the required scope", http.StatusForbidden)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	}))

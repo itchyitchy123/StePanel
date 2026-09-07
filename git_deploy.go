@@ -124,6 +124,10 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid site or Git ref", http.StatusUnprocessableEntity)
 		return
 	}
+	if r.Context().Value(gitWebhookContextKey{}) != true && !a.canAccessSite(r, input.Site) {
+		http.Error(w, "site is not assigned to this account", http.StatusForbidden)
+		return
+	}
 	releaseUnlock := a.siteOperations.Acquire(input.Site)
 	defer releaseUnlock()
 	repository, err := parseGitRepository(input.Repository, a.Config.GitAllowedHosts)
@@ -217,7 +221,7 @@ func (a *App) gitDeploy(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Git release retention for %s: %v", input.Site, err)
 	}
 	a.recordDeployment(input.Site, "activation", "completed", "atomic Git release activated", result, "")
-	if err := AuditAs(a.Config.AuditLog, a.Auth.Username, "site.git-deployed", input.Site, input.Repository+"@"+commit); err != nil {
+	if err := AuditAs(a.Config.AuditLog, a.Auth.UsernameForRequest(r), "site.git-deployed", input.Site, input.Repository+"@"+commit); err != nil {
 		log.Printf("Git release activated but audit persistence is unavailable: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, result)

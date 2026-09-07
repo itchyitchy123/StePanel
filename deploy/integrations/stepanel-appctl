@@ -10,6 +10,16 @@ unit="stepanel-app-${site}.service"
 hash=$(printf '%s' "$site" | sha256sum); hash=${hash%% *}
 prefix=${site:0:18}; prefix=${prefix//_/-}
 site_user="sp-${prefix}-${hash:0:8}"
+if [[ $action == delete ]]; then
+  (( $# == 2 )) || { echo 'usage: stepanel-appctl delete SITE' >&2; exit 64; }
+  systemctl disable --now "stepanel-app-${site}.service" "stepanel-app-${site}-python.service" 2>/dev/null || true
+  rm -f "/etc/systemd/system/stepanel-app-${site}.service" "/etc/systemd/system/stepanel-app-${site}-python.service"
+  mapfile -t worker_units < <(systemctl list-unit-files --type=service --no-legend "stepanel-worker-$site-*.service" 2>/dev/null | awk '{print $1}')
+  if (( ${#worker_units[@]} > 0 )); then systemctl disable --now "${worker_units[@]}" 2>/dev/null || true; fi
+  for unit in "${worker_units[@]}"; do rm -f "/etc/systemd/system/$unit"; done
+  systemctl daemon-reload
+  exit 0
+fi
 id "$site_user" >/dev/null 2>&1 || { echo 'isolated site user does not exist' >&2; exit 1; }
 case "$action" in
   apply)

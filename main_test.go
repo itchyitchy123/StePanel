@@ -210,6 +210,25 @@ func TestProductionDoctorRejectsUnreadableTLSPair(t *testing.T) {
 	t.Fatal("transport-security check was not returned")
 }
 
+func TestProductionDoctorReportsPendingResourceEnforcement(t *testing.T) {
+	app := &App{
+		Config: Config{Production: true},
+		Auth:   Auth{TOTPEnabled: true},
+		Resources: &ResourceStore{values: map[string]ResourceProfile{
+			"site": {Site: "site", State: "pending", FilesystemQuotaState: "apply-pending"},
+		}},
+	}
+	for _, check := range app.productionReadinessChecks() {
+		if check.Name == "resource-enforcement" {
+			if check.Status != "fail" {
+				t.Fatalf("resource check = %#v, want fail", check)
+			}
+			return
+		}
+	}
+	t.Fatal("resource-enforcement check was not returned")
+}
+
 func TestAuthRequireProtectsAPI(t *testing.T) {
 	auth := Auth{Enabled: true, Username: "admin", Secret: "12345678901234567890123456789012"}
 	handler := auth.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))

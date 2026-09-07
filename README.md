@@ -49,7 +49,7 @@ constraints, off-site backups, and operational configuration, see the
 [integration guide](docs/INTEGRATIONS.md), [installation guide](docs/INSTALLATION.md),
 and [operations runbook](docs/OPERATIONS.md).
 
-> **Status:** StePanel includes a constrained single-host shared-hosting beta. It is not yet a complete multi-tenant hosting platform: plans enforce aggregate account and per-site application CPU, memory, process, and PHP-worker ceilings, while disk/inode, bandwidth, database, Redis, mail, file, and full-restore lifecycle remain provider/operator boundaries. Administrator resource profiles, security posture, verified restores, and restore-to-staging are available with explicit beta/operator boundaries. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
+> **Status:** StePanel includes a constrained single-host shared-hosting beta. It is not yet a complete multi-tenant hosting platform: plans enforce aggregate account and per-site application CPU, memory, process, PHP-worker, disk, and inode ceilings when the host quota prerequisites are available. Bandwidth, mail, file, external-provider teardown, and Redis runtime enforcement remain provider/operator boundaries; database lifecycle, local site termination, and plan caps are available on supported local engines. Administrator resource profiles, security posture, verified restores, and restore-to-staging are available with explicit beta/operator boundaries. Run it behind authenticated HTTPS and test restores against a disposable server before using production data.
 
 ## Architecture at a glance
 
@@ -142,8 +142,10 @@ After installation, inspect the running binary and build provenance with:
 Run `stepanel dr-check` on a host to emit a secret-safe control-plane disaster
 recovery manifest. It inventories state files, keys, Git trust material,
 external rclone dependencies, site data, and regeneration-only helpers without
-copying secret values. It does not yet create or restore a control-plane
-archive; those operations remain planned.
+copying secret values. Use `stepanel backup-control-plane DEST` to create a
+verified SQLite backup, and `stepanel restore-control-plane SOURCE --dry-run`
+to validate a candidate before the guarded maintenance-window restore:
+`stepanel restore-control-plane SOURCE --replace`.
 
 ## Quick workflows
 

@@ -1,0 +1,42 @@
+[Unit]
+Description=StePanel durable job worker
+After=network-online.target stepanel.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stepanel
+Group=stepanel
+WorkingDirectory=/opt/stepanel
+EnvironmentFile=/etc/ste-panel.env
+LoadCredential=db-password:/etc/stepanel-db.password
+Environment=STEPANEL_DB_PASSWORD_FILE=%d/db-password
+ExecStart=/opt/stepanel/stepanel worker
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=2h5min
+UMask=0027
+LimitNOFILE=65536
+TasksMax=512
+PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+LockPersonality=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/ste-panel /var/backups/stepanel /var/www/sites -/var/lib/stepanel-privileged -/etc/systemd/system -/etc/letsencrypt -/etc/apache2 -/etc/httpd -/etc/caddy -/usr/local/lsws/conf/vhosts/stepanel -/etc/php -/etc/php-fpm.d -/var/lib/letsencrypt -/var/log/letsencrypt -/run/sudo
+
+[Install]
+WantedBy=multi-user.target

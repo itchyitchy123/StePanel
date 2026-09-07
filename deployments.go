@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +21,14 @@ type DeploymentStore struct {
 
 func OpenDeploymentStore(path string) (*DeploymentStore, error) {
 	inner, err := deploymentstate.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return &DeploymentStore{inner: inner}, nil
+}
+
+func OpenDeploymentStoreDB(db *sql.DB, legacyPath string) (*DeploymentStore, error) {
+	inner, err := deploymentstate.OpenDB(db, legacyPath)
 	if err != nil {
 		return nil, err
 	}

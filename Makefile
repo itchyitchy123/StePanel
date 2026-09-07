@@ -2,7 +2,7 @@ APP := stepanel
 GO ?= go
 LDFLAGS := -s -w -X main.Commit=$${GIT_COMMIT:-dev} -X main.BuildDate=$$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: all build test test-race fmt fmt-check vet coverage check audit release-check clean
+.PHONY: all build test test-race fmt fmt-check vet coverage check recovery-drill audit release-check clean
 
 all: check build
 
@@ -29,7 +29,10 @@ vet:
 
 check: fmt-check vet test
 
-audit: fmt-check vet test test-race release-check
+recovery-drill:
+	bash deploy/lab/run-recovery-drills.sh "$${RECOVERY_DRILL_OUTPUT:-/tmp/stepanel-recovery-drills.md}"
+
+audit: fmt-check vet test test-race recovery-drill release-check
 
 release-check:
 	./scripts/check-release.sh
