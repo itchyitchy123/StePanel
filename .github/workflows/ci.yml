@@ -17,6 +17,12 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # Keep package and runtime concurrency bounded. The test suite exercises
+      # helper subprocesses and SQLite workers; unbounded fan-out can exhaust
+      # the runner task budget before the recovery and race gates execute.
+      GOMAXPROCS: 2
+      GOFLAGS: -p=1
     strategy:
       matrix:
         # Keep CI on the currently released toolchain. Add a newer entry only
@@ -31,8 +37,8 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: make release-check
       - run: go vet ./...
-      - run: go test ./... -coverprofile=coverage.out -covermode=atomic
-      - run: go test -race ./...
+      - run: go test -p 1 ./... -coverprofile=coverage.out -covermode=atomic
+      - run: go test -p 1 -race ./...
       - name: Recovery drills
         run: bash deploy/lab/run-recovery-drills.sh /tmp/stepanel-recovery-drills.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
