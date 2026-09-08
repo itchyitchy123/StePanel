@@ -172,9 +172,10 @@ project history and version-specific material.
 
 ## API reference
 
-The landing page keeps the operator workflow concise. See the versioned
-[OpenAPI contract](docs/openapi.yaml) for the complete endpoint, request,
-response, and authorization reference.
+The [API guide](docs/API_GUIDE.md) explains authentication, permissions,
+copyable `curl` workflows, asynchronous jobs, backups, migrations, databases,
+and customer scope. Use the versioned [OpenAPI contract](docs/openapi.yaml) as
+the machine-readable endpoint, schema, response, and authorization reference.
 
 ## Configuration
 
