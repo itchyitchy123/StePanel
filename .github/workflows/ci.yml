@@ -38,7 +38,12 @@ jobs:
       - run: make release-check
       - run: go vet ./...
       - run: go test -p 1 ./... -coverprofile=coverage.out -covermode=atomic
-      - run: go test -p 1 -race ./...
+      - name: Race tests
+        env:
+          # The race runtime creates additional threads; keep this gate below
+          # the hosted runner task budget while retaining all packages.
+          GOMAXPROCS: 1
+        run: go test -p 1 -race ./...
       - name: Recovery drills
         run: bash deploy/lab/run-recovery-drills.sh /tmp/stepanel-recovery-drills.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
