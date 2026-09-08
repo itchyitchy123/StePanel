@@ -1288,10 +1288,10 @@ func (j *Jobs) loadDurableJob(id string) (Job, bool, error) {
 func (j *Jobs) Get(id string) (Job, bool) {
 	if j.db != nil {
 		if item, ok, err := j.loadDurableJob(id); err == nil && ok {
+			materializeJobOutput(&item)
 			j.mu.Lock()
 			j.items[id] = &item
 			j.mu.Unlock()
-			materializeJobOutput(&item)
 			return item, true
 		}
 	}
@@ -1379,10 +1379,10 @@ func (j *Jobs) List(limit int) []Job {
 				items := make([]Job, 0, limit)
 				for _, id := range ids {
 					if item, ok, loadErr := j.loadDurableJob(id); loadErr == nil && ok {
+						materializeJobOutput(&item)
 						j.mu.Lock()
 						j.items[id] = &item
 						j.mu.Unlock()
-						materializeJobOutput(&item)
 						items = append(items, item)
 					}
 				}
