@@ -262,6 +262,11 @@ func TestJobsCompleteAndCleanup(t *testing.T) {
 	if job.State != "completed" {
 		t.Fatalf("job state = %q, want completed", job.State)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := jobs.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := jobs.Get("missing"); ok {
 		t.Fatal("missing job unexpectedly found")
 	}
