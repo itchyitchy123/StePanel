@@ -99,7 +99,7 @@ jobs:
       - name: Build container
         run: docker build --tag stepanel:ci .
       - name: Install Helm
-        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: v3.16.4
       - name: Lint Helm chart
@@ -122,7 +122,7 @@ jobs:
         working-directory: deploy/terraform
         run: terraform fmt -check -recursive && terraform init -backend=false && terraform validate
       - name: Scan container
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: stepanel:ci
           format: table
