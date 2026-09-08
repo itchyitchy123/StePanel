@@ -1289,8 +1289,9 @@ func (j *Jobs) Get(id string) (Job, bool) {
 	if j.db != nil {
 		if item, ok, err := j.loadDurableJob(id); err == nil && ok {
 			materializeJobOutput(&item)
+			stored := item
 			j.mu.Lock()
-			j.items[id] = &item
+			j.items[id] = &stored
 			j.mu.Unlock()
 			return item, true
 		}
@@ -1380,8 +1381,9 @@ func (j *Jobs) List(limit int) []Job {
 				for _, id := range ids {
 					if item, ok, loadErr := j.loadDurableJob(id); loadErr == nil && ok {
 						materializeJobOutput(&item)
+						stored := item
 						j.mu.Lock()
-						j.items[id] = &item
+						j.items[id] = &stored
 						j.mu.Unlock()
 						items = append(items, item)
 					}
