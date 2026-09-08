@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"html/template"
 	"net/http"
@@ -294,6 +295,11 @@ func TestJobsRejectConcurrentRestoresForSameSite(t *testing.T) {
 		t.Fatalf("concurrent restore error = %v, want ErrJobBusy", err)
 	}
 	close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := jobs.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestJobsEnforceConfiguredGlobalCapacity(t *testing.T) {
@@ -312,4 +318,9 @@ func TestJobsEnforceConfiguredGlobalCapacity(t *testing.T) {
 		t.Fatalf("capacity error = %v, want ErrJobBusy", err)
 	}
 	close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := jobs.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
 }
