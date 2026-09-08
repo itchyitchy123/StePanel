@@ -83,6 +83,7 @@ jobs:
           STEPANEL_AUDIT_LOG="$smoke_root/audit.jsonl" \
           STEPANEL_JOB_STATE="$smoke_root/jobs.json" \
           STEPANEL_SESSION_STATE="$smoke_root/sessions.json" \
+          STEPANEL_CONTROL_PLANE_DB="$smoke_root/control-plane.db" \
           STEPANEL_RECOVERY_ROOT="$smoke_root/recovery" \
           ./stepanel >"$smoke_root/service.log" 2>&1 &
           smoke_pid=$!
