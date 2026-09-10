@@ -213,3 +213,37 @@ func TestValidateConfigRejectsUnsafeDatabaseAdminPath(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateProductionExecutablePathAllowsMissingOptionalIntegration(t *testing.T) {
+	if err := validateProductionExecutablePath(filepath.Join(t.TempDir(), "not-installed")); err != nil {
+		t.Fatalf("missing optional integration rejected: %v", err)
+	}
+}
+
+func TestValidateProductionExecutablePathRejectsSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "directory-target")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProductionExecutablePath(link); err == nil || !strings.Contains(err.Error(), "regular file") {
+		t.Fatalf("expected unsafe symlink target rejection, got %v", err)
+	}
+}
+
+func TestValidateProductionExecutablePathRejectsWritableHelper(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "helper")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProductionExecutablePath(path); err == nil || !strings.Contains(err.Error(), "writable") {
+		t.Fatalf("expected writable helper rejection, got %v", err)
+	}
+}

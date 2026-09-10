@@ -13,6 +13,18 @@ make check
 go run .
 ```
 
+The Make targets intentionally bound Go package and runtime concurrency because
+the test suite starts SQLite workers and helper subprocesses. This keeps local
+validation usable on small VMs, containers, and hosts with a low process
+limit. The defaults are equivalent to `GOMAXPROCS=2` and `go test -p 1`;
+override them only when the host has sufficient capacity:
+
+```sh
+make check TEST_PROCS=4 TEST_PARALLELISM=2
+```
+
+For the most constrained environments, use `make check TEST_PROCS=1`.
+
 For the full pre-review gate, run `make audit`. It adds race detection and
 release-metadata validation to the normal formatting, vet, and test checks.
 

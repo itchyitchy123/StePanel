@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 var dbVersionPattern = regexp.MustCompile(`^(default|[0-9][0-9A-Za-z.+:~-]*)$`)
@@ -368,11 +369,17 @@ func ValidateConfig(c Config) error {
 		for name, path := range map[string]string{"STEPANEL_APPCTL": c.AppCtl, "STEPANEL_PROXYCTL": c.ProxyCtl, "STEPANEL_SITECTL": c.SiteCtl, "STEPANEL_VHOSTCTL": c.VHostCtl, "STEPANEL_DBCTL": c.DBCtl, "STEPANEL_CERTBOT": c.Certbot, "STEPANEL_RUNNERCTL": c.RunnerCtl, "STEPANEL_GITCTL": c.GitCtl, "STEPANEL_SUDO": c.Sudo} {
 			if path != "" && (!filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n")) {
 				problems = append(problems, fmt.Errorf("%s must be an absolute executable path in production", name))
+			} else if path != "" {
+				if err := validateProductionExecutablePath(path); err != nil {
+					problems = append(problems, fmt.Errorf("%s: %w", name, err))
+				}
 			}
 		}
 		for name, path := range map[string]string{"STEPANEL_WPRESS_EXTRACT": c.WPressExtract, "STEPANEL_WPCLI": c.WPCLI} {
 			if path == "" || !filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n") {
 				problems = append(problems, fmt.Errorf("%s must be an absolute executable path in production", name))
+			} else if err := validateProductionExecutablePath(path); err != nil {
+				problems = append(problems, fmt.Errorf("%s: %w", name, err))
 			}
 		}
 	}
@@ -394,6 +401,65 @@ func ValidateConfig(c Config) error {
 		}
 	}
 	return errors.Join(problems...)
+}
+
+// validateProductionExecutablePath protects the root-helper trust boundary.
+// Optional integrations may be absent, so a missing path is allowed here and
+// reported by the capability/doctor checks. If a configured path exists,
+// however, it must be a root-owned executable regular file and must not be
+// replaceable by the service account or another unprivileged user.
+func validateProductionExecutablePath(path string) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("cannot inspect executable: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		// Distribution-installed tools are sometimes symlinks (for example a
+		// version-selected PHP or WP-CLI binary). Permit that only when every
+		// link in the chain is root-owned and not writable by non-root users.
+		for depth := 0; info.Mode()&os.ModeSymlink != 0; depth++ {
+			if depth >= 8 {
+				return errors.New("contains too many symlink levels")
+			}
+			if err := validateRootOwner(info); err != nil {
+				return fmt.Errorf("symlink %w", err)
+			}
+			target, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return fmt.Errorf("cannot resolve symlink: %w", err)
+			}
+			path = target
+			info, err = os.Lstat(path)
+			if err != nil {
+				return fmt.Errorf("cannot inspect symlink target: %w", err)
+			}
+		}
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("must be a regular file")
+	}
+	if info.Mode().Perm()&0111 == 0 {
+		return errors.New("must be executable")
+	}
+	return validateRootOwnedMode(info)
+}
+
+func validateRootOwnedMode(info os.FileInfo) error {
+	if info.Mode().Perm()&022 != 0 {
+		return errors.New("must not be group- or world-writable")
+	}
+	return validateRootOwner(info)
+}
+
+func validateRootOwner(info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != 0 {
+		return errors.New("must be root-owned")
+	}
+	return nil
 }
 
 func validDBAdminURL(value string) bool {

@@ -14,9 +14,9 @@ match the source version.
    repository recovery drills, and release metadata validation. `make
    recovery-drill` can be run separately and writes evidence to
    `/tmp/stepanel-recovery-drills.md`. `make release-check` separately verifies that
-   the Go version, Helm chart, OpenAPI document, and changelog agree. Then run
-   `GOCACHE=/tmp/stepanel-go-cache GOFLAGS=-p=1 make check` locally when
-   working on a constrained machine.
+   the Go version, Helm chart, OpenAPI document, and changelog agree. The Make
+   targets use bounded Go concurrency by default so the gate is safe on modest
+   hosts. For a severely constrained machine, run `make audit TEST_PROCS=1`.
    The recovery runner sets `GOFLAGS=-p=1` by default and executes each drill
    group serially. A host that is near its process/task limit can still fail
    subprocess-heavy drills; treat that as an infrastructure gate failure and

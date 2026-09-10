@@ -4,16 +4,24 @@ LDFLAGS := -s -w -X main.Commit=$${GIT_COMMIT:-dev} -X main.BuildDate=$$(date -u
 
 .PHONY: all build test test-race fmt fmt-check vet coverage check recovery-drill audit release-check clean
 
+# The test suite exercises SQLite workers and helper subprocesses. Keep the
+# default local targets within a modest process budget so a developer's host
+# does not fail before the actual tests run. Override these variables only when
+# deliberately testing with more concurrency.
+TEST_PARALLELISM ?= 1
+TEST_PROCS ?= 2
+RACE_PROCS ?= 1
+
 all: check build
 
 build:
 	$(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(APP) .
 
 test:
-	$(GO) test ./...
+	GOMAXPROCS=$(TEST_PROCS) $(GO) test -p $(TEST_PARALLELISM) ./...
 
 test-race:
-	$(GO) test -race ./...
+	GOMAXPROCS=$(RACE_PROCS) $(GO) test -p $(TEST_PARALLELISM) -race ./...
 
 fmt:
 	$(GO) fmt ./...
@@ -22,7 +30,7 @@ fmt-check:
 	@test -z "$$($(GO)fmt -l .)"
 
 coverage:
-	$(GO) test ./... -coverprofile=coverage.out -covermode=atomic
+	GOMAXPROCS=$(TEST_PROCS) $(GO) test -p $(TEST_PARALLELISM) ./... -coverprofile=coverage.out -covermode=atomic
 
 vet:
 	$(GO) vet ./...
