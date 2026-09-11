@@ -46,6 +46,7 @@ type sessionRegistry struct {
 type totpReplayState struct {
 	mu          sync.Mutex
 	lastCounter map[string]uint64
+	db          *sql.DB
 }
 
 func NewAuth(secureCookies bool) (Auth, error) {
@@ -117,6 +118,26 @@ func (a *Auth) ConfigureSessionStoreDB(db *sql.DB, legacyPath string) error {
 		return fmt.Errorf("open durable session state: %w", err)
 	}
 	a.sessions = &sessionRegistry{inner: registry}
+	return nil
+}
+
+// ConfigureTOTPReplayDB makes accepted TOTP counters durable across process
+// restarts. The in-memory map remains the fallback for isolated unit tests and
+// development callers that do not configure the control-plane database.
+func (a *Auth) ConfigureTOTPReplayDB(db *sql.DB) error {
+	if !a.Enabled || !a.TOTPEnabled {
+		return nil
+	}
+	if db == nil {
+		return errors.New("TOTP replay database is nil")
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS totp_replay (username TEXT PRIMARY KEY, last_counter INTEGER NOT NULL, updated_at INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("create TOTP replay state: %w", err)
+	}
+	if a.totpReplay == nil {
+		a.totpReplay = &totpReplayState{lastCounter: make(map[string]uint64)}
+	}
+	a.totpReplay.db = db
 	return nil
 }
 
@@ -536,6 +557,14 @@ func (a Auth) consumeTOTPFor(username string, secret []byte, code string, now ti
 		}
 		a.totpReplay.mu.Lock()
 		defer a.totpReplay.mu.Unlock()
+		if a.totpReplay.db != nil {
+			result, err := a.totpReplay.db.Exec(`INSERT INTO totp_replay (username, last_counter, updated_at) VALUES (?, ?, unixepoch()) ON CONFLICT(username) DO UPDATE SET last_counter=excluded.last_counter, updated_at=excluded.updated_at WHERE excluded.last_counter > totp_replay.last_counter`, username, candidate)
+			if err != nil {
+				return false
+			}
+			changed, err := result.RowsAffected()
+			return err == nil && changed == 1
+		}
 		if candidate <= a.totpReplay.lastCounter[username] {
 			return false
 		}

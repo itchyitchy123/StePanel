@@ -193,6 +193,9 @@ func main() {
 	if err := auth.ConfigureSessionStoreDB(controlPlaneDB, cfg.SessionState); err != nil {
 		log.Fatalf("open persistent session state: %v", err)
 	}
+	if err := auth.ConfigureTOTPReplayDB(controlPlaneDB); err != nil {
+		log.Fatalf("open persistent TOTP replay state: %v", err)
+	}
 	auth.apiTokens = &apiTokenStore{db: controlPlaneDB}
 	accounts, err := OpenAccountStoreDB(controlPlaneDB, cfg.AccountState, cfg.AccountKey)
 	if err != nil {

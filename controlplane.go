@@ -72,6 +72,11 @@ CREATE TABLE IF NOT EXISTS state_blobs (
     payload BLOB NOT NULL,
     updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS totp_replay (
+    username TEXT PRIMARY KEY,
+    last_counter INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 `
 
 type controlPlaneStateBinding struct {

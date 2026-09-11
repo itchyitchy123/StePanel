@@ -22,8 +22,9 @@
   Customer credential, MFA, and suspension changes increment a durable session
   generation; this invalidates existing customer sessions even if registry
   revocation cannot be persisted at the same moment.
-- Optional TOTP adds replay-resistant second-factor validation; accepted codes
-  cannot be reused within the process lifetime. Customer TOTP material is
+- TOTP adds replay-resistant second-factor validation; accepted counters are
+  persisted in the control-plane database when the production database is
+  configured. Customer TOTP material is
   AES-GCM encrypted at rest when `STEPANEL_ACCOUNT_KEY` is configured.
 - Login attempts are rate-limited.
 - Uploads are size-limited and staged privately.

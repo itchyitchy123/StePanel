@@ -38,6 +38,8 @@ jobs:
       - run: make release-check
       - run: go vet ./...
       - run: go test -p 1 -timeout 10m ./... -coverprofile=coverage.out -covermode=atomic
+      - name: Enforce coverage floor
+        run: bash scripts/check-coverage.sh coverage.out
       - name: Race tests
         env:
           # The race runtime creates additional threads; keep this gate below

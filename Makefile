@@ -2,7 +2,7 @@ APP := stepanel
 GO ?= go
 LDFLAGS := -s -w -X main.Commit=$${GIT_COMMIT:-dev} -X main.BuildDate=$$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: all build test test-race fmt fmt-check vet coverage check recovery-drill audit release-check clean
+.PHONY: all build test test-race fmt fmt-check vet coverage coverage-check fuzz-smoke check recovery-drill audit release-check clean
 
 # The test suite exercises SQLite workers and helper subprocesses. Keep the
 # default local targets within a modest process budget so a developer's host
@@ -32,6 +32,14 @@ fmt-check:
 
 coverage:
 	GOMAXPROCS=$(TEST_PROCS) $(GO) test -p $(TEST_PARALLELISM) -timeout $(TEST_TIMEOUT) ./... -coverprofile=coverage.out -covermode=atomic
+
+coverage-check: coverage
+	bash scripts/check-coverage.sh coverage.out
+
+fuzz-smoke:
+	GOMAXPROCS=1 GOFLAGS=-p=1 $(GO) test -run=^$$ -fuzz=FuzzSafeUser -fuzztime=10s .
+	GOMAXPROCS=1 GOFLAGS=-p=1 $(GO) test -run=^$$ -fuzz=FuzzValidBackupName -fuzztime=10s .
+	GOMAXPROCS=1 GOFLAGS=-p=1 $(GO) test -run=^$$ -fuzz=FuzzManagedDatabaseIdentifier -fuzztime=10s .
 
 vet:
 	$(GO) vet ./...

@@ -42,6 +42,7 @@ curl --fail --silent --max-time 5 http://127.0.0.1:8090/livez >/dev/null
 systemctl restart stepanel.service
 systemctl is-active --quiet stepanel.service
 curl --fail --silent --max-time 5 http://127.0.0.1:8090/readyz >/dev/null
+systemd-analyze security stepanel.service stepanel-worker.service
 
 # Exercise the installed site helpers and selected webserver configuration,
 # not just the panel daemon. This is intentionally a synthetic site.

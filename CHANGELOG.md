@@ -6,7 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Future changes will be documented here.
+- Added the canonical [`STATE.md`](docs/STATE.md) disaster-recovery inventory,
+  including control-plane SQLite, TOTP replay, audit, key, journal, and
+  provider state.
+- Persisted accepted TOTP replay counters in the control-plane database so
+  restart does not reopen the active replay window.
+- Added validator fuzz targets and a coverage-floor gate; `make fuzz-smoke`
+  provides a short local fuzzing pass.
+- Added disposable-host `systemd-analyze security` checks for the panel and
+  worker services and clarified OpenLiteSpeed's Tier 2 operator-integrated
+  support boundary.
 
 ## [0.7.0] - 2026-09-10
 

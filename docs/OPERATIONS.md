@@ -5,6 +5,9 @@ operating a version older than the current branch.
 
 ## Control-plane disaster recovery
 
+See [`STATE.md`](STATE.md) for the authoritative state inventory and recovery
+contract used by `dr-check` and the release acceptance process.
+
 Run `stepanel dr-check` during change review and after adding an integration:
 
 ```sh

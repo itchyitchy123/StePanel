@@ -187,6 +187,40 @@ func TestTOTPValidationRejectsReplay(t *testing.T) {
 	}
 }
 
+func TestTOTPReplayPersistsAcrossAuthInstances(t *testing.T) {
+	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
+	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")
+	t.Setenv("STEPANEL_SESSION_SECRET", "12345678901234567890123456789012")
+	t.Setenv("STEPANEL_ADMIN_TOTP_SECRET", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+	db, err := openControlPlaneDB(filepath.Join(t.TempDir(), "control-plane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	first, err := NewAuth(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.ConfigureTOTPReplayDB(db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1234567890, 0)
+	code := totpCode([]byte("12345678901234567890"), uint64(now.Unix()/30))
+	if !first.consumeTOTP(code, now) {
+		t.Fatal("valid TOTP was rejected")
+	}
+	second, err := NewAuth(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := second.ConfigureTOTPReplayDB(db); err != nil {
+		t.Fatal(err)
+	}
+	if second.consumeTOTP(code, now) {
+		t.Fatal("TOTP replay survived a new Auth instance")
+	}
+}
+
 func TestAuthRejectsInvalidTOTPSecret(t *testing.T) {
 	t.Setenv("STEPANEL_ADMIN_PASSWORD", "correct horse battery staple")
 	t.Setenv("STEPANEL_ADMIN_PASSWORD_HASH", "")

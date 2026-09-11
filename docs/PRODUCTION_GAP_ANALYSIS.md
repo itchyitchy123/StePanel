@@ -33,6 +33,11 @@ platform.
   deployment with atomic file rollback, and credential-safe database detail.
 - Privileged helper calls are bounded by context and output limits, and
   background scheduling is cancelled during graceful shutdown.
+- High-risk identifier and archive-path validators have native Go fuzz targets;
+  CI enforces a repository coverage floor and the local `make fuzz-smoke` target
+  provides a short repeatable fuzz pass.
+- TOTP replay counters are persisted in the control-plane database, so a panel
+  restart cannot re-accept a code already consumed in the active time window.
 - Recovery journals are processed independently; malformed entries are
   quarantined and incomplete database cleanup prevents unsafe site rollback.
 - Repository rollback and pending-reconciliation drills are now a named Make/CI

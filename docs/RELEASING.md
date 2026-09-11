@@ -18,6 +18,9 @@ for that version. Release tags must match the version recorded in `version.go`.
    group serially. A host that is near its process/task limit can still fail
    subprocess-heavy drills; treat that as an infrastructure gate failure and
    rerun on a disposable host with capacity before accepting the release.
+   The release must also pass the N-1 upgrade/rollback lab and the destructive
+   host-recovery acceptance described in [`STATE.md`](STATE.md); repository
+   unit drills alone are insufficient.
 3. Review the generated release notes and confirm the supported upgrade path.
    Release automation rejects tags that do not match `version.go`.
 4. Create and push an annotated tag:
