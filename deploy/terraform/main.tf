@@ -131,6 +131,10 @@ resource "kubernetes_deployment" "stepanel" {
             value = "/var/lib/ste-panel/sessions.json"
           }
           env {
+            name  = "STEPANEL_CONTROL_PLANE_DB"
+            value = "/var/lib/ste-panel/control-plane.db"
+          }
+          env {
             name  = "STEPANEL_RECOVERY_ROOT"
             value = "/var/www/sites/.stepanel-recovery"
           }
@@ -167,6 +171,15 @@ resource "kubernetes_deployment" "stepanel" {
               secret_key_ref {
                 name = "stepanel-secrets"
                 key  = "admin-totp-secret"
+              }
+            }
+          }
+          env {
+            name = "STEPANEL_ACCOUNT_KEY"
+            value_from {
+              secret_key_ref {
+                name = "stepanel-secrets"
+                key  = "account-key"
               }
             }
           }

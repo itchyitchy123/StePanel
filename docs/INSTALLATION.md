@@ -137,7 +137,8 @@ environment. Preserve both in the host's secret backup.
 
 Production validation also requires `STEPANEL_REQUIRE_OFFSITE_BACKUP=1` and a
 valid `STEPANEL_OFFSITE_TARGET` (for example `s3:my-bucket/stepanel`). Configure
-and test the rclone destination before starting production; provider-side
+and test the rclone destination before running the installer; rclone must be
+installed and available on `PATH`. Provider-side
 retention lock/immutability remains an operator responsibility.
 
 FTP is opt-in. Installation alone leaves a newly installed vsftpd service

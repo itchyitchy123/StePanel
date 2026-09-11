@@ -75,6 +75,7 @@ spec:
             {{- end }}
             - {name: STEPANEL_REQUIRE_OFFSITE_BACKUP, value: "1"}
             - {name: STEPANEL_SESSION_STATE, value: "/var/lib/ste-panel/sessions.json"}
+            - {name: STEPANEL_CONTROL_PLANE_DB, value: "/var/lib/ste-panel/control-plane.db"}
             - {name: STEPANEL_IMPORT_ROOT, value: "/var/lib/ste-panel/imports"}
             - {name: STEPANEL_BACKUP_ROOT, value: "/var/lib/ste-panel/backups"}
             - {name: STEPANEL_WEB_ROOT, value: "/var/www"}
@@ -95,6 +96,8 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: audit-key}}
             - name: STEPANEL_ADMIN_TOTP_SECRET
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: admin-totp-secret}}
+            - name: STEPANEL_ACCOUNT_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: account-key}}
             - name: STEPANEL_OFFSITE_TARGET
               valueFrom: {secretKeyRef: {name: {{ .Values.secrets.existingSecret }}, key: offsite-target}}
           readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}

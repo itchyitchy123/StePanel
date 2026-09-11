@@ -9,7 +9,7 @@ helm upgrade --install stepanel deploy/helm/stepanel \
 ```
 
 Create `stepanel-secrets` separately with `admin-password`, `session-secret`,
-an independent `audit-key`, mandatory `admin-totp-secret`, and an
+an independent `audit-key`, mandatory `admin-totp-secret`, `account-key`, and an
 `offsite-target` (for example `rclone:remote/stepanel`). Production installations should pin an
 image digest in `values.yaml`, select an appropriate persistent storage class, enable and
 configure the ingress with TLS, and add a network policy appropriate to the

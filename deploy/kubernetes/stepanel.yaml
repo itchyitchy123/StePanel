@@ -98,6 +98,8 @@ spec:
                   key: offsite-target
             - name: STEPANEL_SESSION_STATE
               value: "/var/lib/ste-panel/sessions.json"
+            - name: STEPANEL_CONTROL_PLANE_DB
+              value: "/var/lib/ste-panel/control-plane.db"
             - name: STEPANEL_IMPORT_ROOT
               value: "/var/lib/ste-panel/imports"
             - name: STEPANEL_BACKUP_ROOT
@@ -142,6 +144,11 @@ spec:
                 secretKeyRef:
                   name: stepanel-secrets
                   key: admin-totp-secret
+            - name: STEPANEL_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stepanel-secrets
+                  key: account-key
           readinessProbe:
             httpGet:
               path: /readyz

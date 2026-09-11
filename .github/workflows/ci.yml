@@ -37,13 +37,13 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: make release-check
       - run: go vet ./...
-      - run: go test -p 1 ./... -coverprofile=coverage.out -covermode=atomic
+      - run: go test -p 1 -timeout 10m ./... -coverprofile=coverage.out -covermode=atomic
       - name: Race tests
         env:
           # The race runtime creates additional threads; keep this gate below
           # the hosted runner task budget while retaining all packages.
           GOMAXPROCS: 1
-        run: go test -p 1 -race ./...
+        run: go test -p 1 -race -timeout 10m ./...
       - name: Recovery drills
         run: bash deploy/lab/run-recovery-drills.sh /tmp/stepanel-recovery-drills.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -104,6 +104,30 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
       - name: Build container
         run: docker build --tag stepanel:ci .
+      - name: Production container smoke test
+        run: |
+          set -eu
+          cleanup() { docker rm -f stepanel-container-smoke >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run -d --name stepanel-container-smoke -p 18091:8080 \
+            -e STEPANEL_TLS_TERMINATED=1 \
+            -e STEPANEL_ADMIN_PASSWORD=ci-only-password \
+            -e STEPANEL_ADMIN_TOTP_SECRET=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP \
+            -e STEPANEL_ACCOUNT_KEY=ci-account-key-012345678901234567890123456789 \
+            -e STEPANEL_SESSION_SECRET=ci-session-secret-012345678901234567890123 \
+            -e STEPANEL_AUDIT_KEY=ci-audit-key-012345678901234567890123456789 \
+            -e STEPANEL_OFFSITE_TARGET=local:/tmp/stepanel-offsite \
+            stepanel:ci
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl --fail --silent --max-time 1 http://127.0.0.1:18091/livez >/dev/null && \
+               curl --fail --silent --max-time 1 http://127.0.0.1:18091/readyz >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:

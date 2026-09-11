@@ -152,6 +152,10 @@ if [[ ! $MAX_CONCURRENT_JOBS =~ ^[1-9][0-9]*$ ]] || (( MAX_CONCURRENT_JOBS > 32 
 if [[ "$REQUIRE_OFFSITE_BACKUP" != "0" && "$REQUIRE_OFFSITE_BACKUP" != "1" ]]; then echo 'STEPANEL_REQUIRE_OFFSITE_BACKUP must be 0 or 1.' >&2; exit 1; fi
 if [[ "$REQUIRE_OFFSITE_BACKUP" != "1" ]]; then echo 'Production installations require STEPANEL_REQUIRE_OFFSITE_BACKUP=1.' >&2; exit 1; fi
 if [[ "$REQUIRE_OFFSITE_BACKUP" == "1" && -z "${STEPANEL_OFFSITE_TARGET:-}" ]]; then echo 'STEPANEL_REQUIRE_OFFSITE_BACKUP=1 requires STEPANEL_OFFSITE_TARGET.' >&2; exit 1; fi
+if [[ "$REQUIRE_OFFSITE_BACKUP" == "1" ]] && ! command -v rclone >/dev/null 2>&1; then
+  echo 'rclone is required before installing production StePanel with offsite backups enabled; install and configure it first.' >&2
+  exit 1
+fi
 if [[ "$INSTALL_DB_ADMIN" != "0" && "$INSTALL_DB_ADMIN" != "1" ]]; then echo 'STEPANEL_INSTALL_DB_ADMIN must be 0 or 1.' >&2; exit 1; fi
 [[ "$NODE_VERSIONS" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(,v?[0-9]+\.[0-9]+\.[0-9]+)*$ ]] || { echo "Invalid STEPANEL_NODE_VERSIONS." >&2; exit 1; }
 

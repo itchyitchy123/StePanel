@@ -8,6 +8,7 @@ kubectl -n stepanel create secret generic stepanel-secrets \
   --from-literal=session-secret="$(openssl rand -hex 32)" \
   --from-literal=audit-key="$(openssl rand -hex 32)" \
   --from-literal=admin-totp-secret='BASE32_SECRET' \
+  --from-literal=account-key="$(openssl rand -hex 32)" \
   --from-literal=offsite-target='rclone:remote/stepanel'
 kubectl apply -f deploy/kubernetes/stepanel.yaml
 ```
@@ -17,6 +18,11 @@ the example values before applying. Configure an HTTPS ingress in a namespace
 labelled `stepanel.ingress=true`; the manifest sets
 `STEPANEL_TLS_TERMINATED=1` because ingress traffic is the only allowed pod
 ingress path.
+
+The account key encrypts customer TOTP secrets and sensitive durable job
+payloads. Back it up separately from the PVC. The image includes the rclone
+client but no provider credentials; provide the rclone configuration through
+your cluster secret-management system.
 
 The manifest creates two 50Gi persistent volume claims for control-plane data
 and site files. Adjust their size and storage class for the environment. It

@@ -6,8 +6,10 @@ namespace and workload manifest.
 
 Before applying, pin `var.image` to a reviewed digest and create the
 `stepanel-secrets` secret with `admin-password`, `session-secret`, independent
-`audit-key`, mandatory `admin-totp-secret`, and `offsite-target` entries in the
+`audit-key`, mandatory `admin-totp-secret`, `account-key`, and `offsite-target` entries in the
 target namespace. The offsite target must be a validated rclone destination.
+The image includes the rclone client; provide its provider configuration and
+credentials through the cluster's secret-management mechanism.
 Then run:
 
 ```sh

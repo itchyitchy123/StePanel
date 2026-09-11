@@ -11,6 +11,7 @@ LDFLAGS := -s -w -X main.Commit=$${GIT_COMMIT:-dev} -X main.BuildDate=$$(date -u
 TEST_PARALLELISM ?= 1
 TEST_PROCS ?= 2
 RACE_PROCS ?= 1
+TEST_TIMEOUT ?= 10m
 
 all: check build
 
@@ -18,10 +19,10 @@ build:
 	$(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(APP) .
 
 test:
-	GOMAXPROCS=$(TEST_PROCS) $(GO) test -p $(TEST_PARALLELISM) ./...
+	GOMAXPROCS=$(TEST_PROCS) $(GO) test -p $(TEST_PARALLELISM) -timeout $(TEST_TIMEOUT) ./...
 
 test-race:
-	GOMAXPROCS=$(RACE_PROCS) $(GO) test -p $(TEST_PARALLELISM) -race ./...
+	GOMAXPROCS=$(RACE_PROCS) $(GO) test -p $(TEST_PARALLELISM) -race -timeout $(TEST_TIMEOUT) ./...
 
 fmt:
 	$(GO) fmt ./...
@@ -30,7 +31,7 @@ fmt-check:
 	@test -z "$$($(GO)fmt -l .)"
 
 coverage:
-	GOMAXPROCS=$(TEST_PROCS) $(GO) test -p $(TEST_PARALLELISM) ./... -coverprofile=coverage.out -covermode=atomic
+	GOMAXPROCS=$(TEST_PROCS) $(GO) test -p $(TEST_PARALLELISM) -timeout $(TEST_TIMEOUT) ./... -coverprofile=coverage.out -covermode=atomic
 
 vet:
 	$(GO) vet ./...
