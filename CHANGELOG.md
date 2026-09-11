@@ -16,6 +16,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added disposable-host `systemd-analyze security` checks for the panel and
   worker services and clarified OpenLiteSpeed's Tier 2 operator-integrated
   support boundary.
+- Reconciled the operations and installation runbooks with the authoritative
+  SQLite control-plane state model, and added a weekly/manual fuzzing workflow
+  for privileged-input and archive validators.
+- Added a release-acceptance destructive recovery lab covering process kills,
+  reboots, storage exhaustion, database loss, lease recovery, offsite-transfer
+  interruption, corrupted control-plane state, and blank-host restoration.
+- Corrected shared-hosting operations guidance to describe existing
+  fail-closed disk/inode quota enforcement accurately.
+- Added a scheduled N-1 (`v0.6.0` to candidate) disposable-host upgrade smoke
+  test with control-plane backup and restore verification.
 
 ## [0.7.0] - 2026-09-10
 

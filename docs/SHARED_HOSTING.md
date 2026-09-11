@@ -81,12 +81,13 @@ claims to terminate the associated hosting workloads.
 Account creation also requires each assigned site document root to already
 exist, and a site can be assigned to only one customer account. This prevents
 two customer identities from receiving authorization to the same site.
-Account data is stored in `STEPANEL_ACCOUNT_STATE`, mode `0600`, and must be
-included in host backups. With `STEPANEL_ACCOUNT_KEY`, customer TOTP secrets
-are AES-GCM encrypted at rest and never serialized as plaintext. Existing
-legacy plaintext records can be loaded for migration and are encrypted on the
-next account write. The production default is beside the session state as
-`accounts.json`; configure a dedicated absolute path when needed. Administrators
+Account data is authoritative in `STEPANEL_CONTROL_PLANE_DB` and must be
+included in host backups with `STEPANEL_ACCOUNT_KEY`. With that key, customer
+TOTP secrets are AES-GCM encrypted at rest and never serialized as plaintext.
+`STEPANEL_ACCOUNT_STATE` is a mode-`0600` legacy import source; existing
+plaintext records are imported and encrypted on the next account write. The
+default legacy path is beside the session state as `accounts.json`.
+Administrators
 can regenerate a customer's MFA secret with `POST
 /api/accounts/{username}/mfa`; the new seed is returned once, existing sessions
 are revoked, and the seed must be delivered through a secure channel.

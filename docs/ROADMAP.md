@@ -33,6 +33,8 @@
 - Durable job state, lease/retry/cancellation semantics, and worker health
 - Import progress, cancellation, and retry
 - Docker and distribution integration tests
+- Durable SQLite control-plane state, leases, worker supervision, and recovery
+  reconciliation (shipped in 0.7)
 
 ## 0.7 — Stability and internal package boundaries
 
@@ -62,7 +64,7 @@ and installation evidence before the version is tagged.
 - Tenant/account model with quotas, service plans, scoped RBAC, customer API
   tokens,
   OIDC, and phishing-resistant MFA
-- Durable relational control-plane state and multi-host agent orchestration
+- Multi-host agent orchestration with scoped worker credentials
 - Complete domain, DNS, TLS, database, mail, FTP/SFTP, cron, SSH, and billing
   lifecycle
 - Database PITR/WAL or binlog orchestration, replication topology, controlled

@@ -136,9 +136,10 @@ Customer accounts are provisioned after installation by an authenticated
 administrator, not by installer variables. They require their own TOTP seed
 and explicit site assignments. Set `STEPANEL_ACCOUNT_KEY` before enabling
 customer accounts; it encrypts their TOTP secrets at rest. The service stores
-their private account state as `/var/lib/ste-panel/accounts.json` by default,
-beside the durable session state. Back up the account key and state together,
-and never expose either through a site or support archive. See
+their authoritative private account state in the SQLite control-plane database.
+`STEPANEL_ACCOUNT_STATE` remains a one-time legacy import source, defaulting to
+`/var/lib/ste-panel/accounts.json`. Back up the account key and control-plane
+state together, and never expose either through a site or support archive. See
 [`SHARED_HOSTING.md`](SHARED_HOSTING.md) for the enforced beta scope and
 limitations.
 
@@ -226,7 +227,7 @@ outbound-network policy.
 | `/etc/apache2/stepanel-sites` or `/etc/httpd/conf.d/stepanel-sites` | Optional root-owned managed Apache PHP site vhosts |
 | `/var/lib/ste-panel/apps` | Managed Node application manifests |
 | `/var/lib/ste-panel/quarantine` | Recoverable malware quarantine |
-| `/var/lib/ste-panel/accounts.json` | Private shared-hosting customer account state when enabled |
+| `STEPANEL_CONTROL_PLANE_DB` (default `/var/lib/ste-panel/stepanel-control.db`) | Authoritative SQLite control-plane state; legacy JSON paths are import-only |
 | `/var/www/sites/.stepanel-recovery` | Journaled site rollback data |
 | `/etc/ste-panel.env` | Runtime configuration |
 | `/etc/stepanel-audit.key` | Root-only HMAC key for audit verification |

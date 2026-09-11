@@ -11,7 +11,7 @@ contract used by `dr-check` and the release acceptance process.
 Run `stepanel dr-check` during change review and after adding an integration:
 
 ```sh
-sudo -u stepanel /opt/stepanel/stepanel dr-check > /root/stepanel-dr-manifest.json
+sudo bash -c 'set -a; . /etc/ste-panel.env; set +a; exec /opt/stepanel/stepanel dr-check' > /root/stepanel-dr-manifest.json
 ```
 
 Required recovery artifacts, including the control-plane database, audit
@@ -20,11 +20,12 @@ fails when those permissions are too broad.
 
 The output is safe to retain as an inventory: it contains paths and statuses,
 not passwords, TOTP seeds, encryption keys, deploy-key contents, or rclone
-credentials. Preserve `/etc/ste-panel.env`, the control-plane database and its
-SQLite WAL/SHM files, audit log/state/key, legacy job/session/account files,
-environment/Redis state, site data, verified backups, and relevant
-encryption/signing keys through the host's encrypted DR system. Git deploy keys
-may be preserved after access review or deliberately regenerated and
+credentials. Preserve the artifacts enumerated in [`STATE.md`](STATE.md):
+`/etc/ste-panel.env`, the control-plane database and its SQLite WAL/SHM files,
+audit log/state/key, recovery journals, site data, verified backups, and
+relevant encryption/signing keys through the host's encrypted DR system. Legacy
+JSON files are migration inputs, not authoritative production state. Git deploy
+keys may be preserved after access review or deliberately regenerated and
 reinstalled at providers. Privileged helpers and systemd units should be
 recreated from the verified release package and installer.
 
@@ -35,8 +36,8 @@ configured, the legacy job JSON is optional and is not a DR gate. Create a consi
 and verify it on a disposable host:
 
 ```sh
-sudo -u stepanel /opt/stepanel/stepanel backup-control-plane /root/stepanel-control-plane.db
-sudo -u stepanel /opt/stepanel/stepanel restore-control-plane /root/stepanel-control-plane.db --dry-run
+sudo bash -c 'set -a; . /etc/ste-panel.env; set +a; exec /opt/stepanel/stepanel backup-control-plane /root/stepanel-control-plane.db'
+sudo bash -c 'set -a; . /etc/ste-panel.env; set +a; exec /opt/stepanel/stepanel restore-control-plane /root/stepanel-control-plane.db --dry-run'
 ```
 
 The dry-run performs SQLite integrity and schema checks. A live restore remains
@@ -135,13 +136,12 @@ long-transaction, blocking, deadlock, and allocated-byte gauges. Scheduled
 backup RPO signals are available as `stepanel_backup_oldest_age_seconds`,
 `stepanel_backup_schedules_without_success`, and
 `stepanel_backup_consecutive_failures`.
-Back up `/etc/ste-panel.env`, the database server, `/var/www/sites`, and
-`/var/lib/ste-panel` before upgrading. If shared-hosting accounts are enabled,
-that state directory includes `accounts.json` by default. It contains customer
-password hashes and encrypted TOTP material when `STEPANEL_ACCOUNT_KEY` is
-configured; keep it mode `0600`, include the account key only in encrypted
-control-plane backups, and never place either in support bundles or public
-backup artifacts.
+Before upgrading, back up `/etc/ste-panel.env`, the database server,
+`/var/www/sites`, and the complete state inventory in [`STATE.md`](STATE.md).
+Customer credentials and encrypted TOTP material are stored in the
+control-plane database when configured; keep the database and
+`STEPANEL_ACCOUNT_KEY` only in encrypted control-plane backups and never place
+either in support bundles or public backup artifacts.
 
 For an in-place upgrade, build the candidate binary, ensure no restore or backup
 job is active, then run `install.sh` without re-supplying secrets. The installer
@@ -186,15 +186,16 @@ provider teardown remain outside this local workflow.
 Do not represent `starter`, `professional`, or `agency` as complete hosting
 resource or support entitlements. They enforce 1, 5, or 25 assigned sites plus
 aggregate account/per-site application CPU, memory, process, and PHP-worker
-ceilings. Disk, inode, bandwidth, database, Redis, and backup-storage limits
-remain unavailable as plan entitlements.
+ceilings. Disk and inode ceilings are enforced when the site filesystem is
+mounted with the required quota support; otherwise the account remains pending
+and fails closed. Bandwidth, database, Redis, and backup-storage limits remain
+unavailable as plan entitlements.
 
-`STEPANEL_ACCOUNT_STATE` selects the account-state file. In production it
-defaults beside `STEPANEL_SESSION_STATE` as `accounts.json`; use a dedicated
-absolute, root/service-account-only path if operational policy requires it.
-Restore it together with session and site state during disaster recovery, and
-revoke sessions or rotate credentials if its confidentiality may have been
-lost.
+`STEPANEL_ACCOUNT_STATE` names the legacy one-time account import source. With
+the control-plane database configured, customer accounts, session generations,
+and encrypted TOTP material are authoritative in SQLite. Preserve the database
+and account key according to [`STATE.md`](STATE.md); revoke sessions or rotate
+credentials if their confidentiality may have been lost.
 
 ## Verified site backups
 
@@ -273,11 +274,11 @@ Session output deliberately excludes SQL text and termination requires an exact
 confirmation phrase. Use an engine-native DBA client when query text or plans
 are necessary, and apply the normal sensitive-data handling policy.
 
-Job records are persisted in `/var/lib/ste-panel/jobs.json`. Revocable administrator
-and customer sessions are persisted in `/var/lib/ste-panel/sessions.json`.
-Customer account credentials are persisted separately in
-`/var/lib/ste-panel/accounts.json` by default. Include both files in protected
-control-plane state backups and never publish them. Site overwrites
+Job records, sessions, customer accounts, API tokens, resource profiles, and
+other control-plane state are persisted in `STEPANEL_CONTROL_PLANE_DB`. Legacy
+`jobs.json`, `sessions.json`, and `accounts.json` paths are imported only for
+migration and are not the live source of truth. Back up the complete inventory
+in [`STATE.md`](STATE.md) and never publish secret-bearing artifacts. Site overwrites
 move the previous document root into a journaled transaction under
 `/var/www/sites/.stepanel-recovery`. On startup, StePanel marks interrupted jobs
 failed, removes databases recorded by uncommitted restore transactions, and

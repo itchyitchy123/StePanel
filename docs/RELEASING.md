@@ -19,7 +19,8 @@ for that version. Release tags must match the version recorded in `version.go`.
    subprocess-heavy drills; treat that as an infrastructure gate failure and
    rerun on a disposable host with capacity before accepting the release.
    The release must also pass the N-1 upgrade/rollback lab and the destructive
-   host-recovery acceptance described in [`STATE.md`](STATE.md); repository
+   host-recovery acceptance described in [`STATE.md`](STATE.md) and
+   [`DESTRUCTIVE_RECOVERY_LAB.md`](DESTRUCTIVE_RECOVERY_LAB.md); repository
    unit drills alone are insufficient.
 3. Review the generated release notes and confirm the supported upgrade path.
    Release automation rejects tags that do not match `version.go`.

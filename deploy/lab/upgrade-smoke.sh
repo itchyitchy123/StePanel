@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+[[ $EUID -eq 0 ]] || { echo 'upgrade smoke must run as root' >&2; exit 1; }
+previous_root=${1:?previous release tree is required}
+candidate_root=${2:?candidate release tree is required}
+
+for root in "$previous_root" "$candidate_root"; do
+  [[ -x "$root/install.sh" && -x "$root/stepanel" ]] || { echo "invalid release tree: $root" >&2; exit 1; }
+done
+if [[ ! -f /sys/fs/cgroup/cgroup.controllers && ! -d /sys/fs/cgroup/systemd ]]; then
+  echo 'upgrade smoke requires a systemd-compatible cgroup hierarchy' >&2
+  exit 77
+fi
+
+export STEPANEL_ENV=production
+export STEPANEL_LISTEN=127.0.0.1:8090
+export STEPANEL_TLS_TERMINATED=1
+export STEPANEL_ADMIN_PASSWORD=ci-upgrade-only-password
+export STEPANEL_ADMIN_TOTP_SECRET=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP
+export STEPANEL_SESSION_SECRET=ci-upgrade-session-secret-012345678901234567890123
+export STEPANEL_AUDIT_KEY=ci-upgrade-audit-key-012345678901234567890123456789
+export STEPANEL_ACCOUNT_KEY=ci-upgrade-account-key-012345678901234567890123456
+export STEPANEL_DB_ENGINE=${STEPANEL_DB_ENGINE:-mariadb}
+export STEPANEL_WEBSERVER=${STEPANEL_WEBSERVER:-caddy}
+export STEPANEL_DB_VERSION=default
+export STEPANEL_PANEL_HOSTNAME=panel.example.test
+export STEPANEL_INSTALL_DB_ADMIN=0
+export STEPANEL_INSTALL_MAIL=0
+export STEPANEL_INSTALL_FTP=0
+export STEPANEL_INSTALL_NODE=0
+export STEPANEL_INSTALL_SECURITY=0
+export STEPANEL_REQUIRE_OFFSITE_BACKUP=1
+export STEPANEL_OFFSITE_TARGET=local:/tmp/stepanel-offsite
+
+if command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y rclone
+else
+  dnf install -y rclone
+fi
+
+cd "$previous_root"
+./install.sh
+systemctl is-active --quiet stepanel.service
+"/opt/stepanel/stepanel" version | grep -F '0.6.0'
+curl --fail --silent --max-time 5 http://127.0.0.1:8090/readyz >/dev/null
+
+# Exercise the N-1 state path before the candidate opens the durable database.
+install -d -m 0750 -o stepanel -g stepanel /var/lib/ste-panel
+printf '%s\n' '[]' > /var/lib/ste-panel/jobs.json
+chown stepanel:stepanel /var/lib/ste-panel/jobs.json
+chmod 0600 /var/lib/ste-panel/jobs.json
+
+cd "$candidate_root"
+./install.sh
+systemctl is-active --quiet stepanel.service stepanel-worker.service
+curl --fail --silent --max-time 5 http://127.0.0.1:8090/readyz >/dev/null
+test -s /var/lib/ste-panel/stepanel-control.db
+
+# The installed service environment is root-owned. Load it for the CLI so the
+# commands examine the production paths rather than development defaults.
+set -a
+# shellcheck disable=SC1091
+. /etc/ste-panel.env
+set +a
+/opt/stepanel/stepanel dr-check >/tmp/stepanel-upgrade-dr.json
+/opt/stepanel/stepanel backup-control-plane /tmp/stepanel-upgrade-control.db
+/opt/stepanel/stepanel restore-control-plane /tmp/stepanel-upgrade-control.db --dry-run

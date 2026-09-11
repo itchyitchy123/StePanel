@@ -37,6 +37,8 @@ backward-compatible tooling. New production mutations use the SQLite database.
 an inventory gate, not proof that a blank host has been recovered. Production
 acceptance additionally requires destructive power-loss, disk-exhaustion,
 database-failure, offsite-transfer, and blank-host restore drills.
+The required fault matrix and assertions are defined in
+[`DESTRUCTIVE_RECOVERY_LAB.md`](DESTRUCTIVE_RECOVERY_LAB.md).
 
 ## Restore contract
 

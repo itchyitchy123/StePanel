@@ -1,0 +1,43 @@
+name: N-1 upgrade smoke
+
+on:
+  schedule:
+    - cron: '11 5 * * 5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Build N-1 and candidate installer trees
+        run: |
+          set -eu
+          mkdir -p /tmp/stepanel-v0.6.0 /tmp/stepanel-candidate
+          git archive v0.6.0 | tar -x -C /tmp/stepanel-v0.6.0
+          tar -C "$GITHUB_WORKSPACE" --exclude=.git -cf - . | tar -x -C /tmp/stepanel-candidate
+          (cd /tmp/stepanel-v0.6.0 && go build -trimpath -ldflags='-s -w' -o stepanel .)
+          (cd /tmp/stepanel-candidate && go build -trimpath -ldflags='-s -w' -o stepanel .)
+      - name: Upgrade v0.6.0 on a disposable systemd host
+        run: |
+          set -eu
+          docker run -d --privileged --name stepanel-upgrade \
+            --tmpfs /run --tmpfs /run/lock \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -v /tmp/stepanel-v0.6.0:/work/previous:ro \
+            -v /tmp/stepanel-candidate:/work/candidate:ro \
+            ubuntu:24.04 /sbin/init
+          cleanup() { docker rm -f stepanel-upgrade >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          for _ in $(seq 1 30); do docker exec stepanel-upgrade systemctl is-system-running >/dev/null 2>&1 && break; sleep 2; done
+          docker exec stepanel-upgrade /work/candidate/deploy/lab/upgrade-smoke.sh /work/previous /work/candidate
