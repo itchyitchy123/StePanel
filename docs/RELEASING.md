@@ -21,7 +21,8 @@ for that version. Release tags must match the version recorded in `version.go`.
    The release must also pass the N-1 upgrade/rollback lab and the destructive
    host-recovery acceptance described in [`STATE.md`](STATE.md) and
    [`DESTRUCTIVE_RECOVERY_LAB.md`](DESTRUCTIVE_RECOVERY_LAB.md); repository
-   unit drills alone are insufficient.
+   unit drills alone are insufficient. Record achieved recovery times against
+   [`DR_OBJECTIVES.md`](DR_OBJECTIVES.md).
 3. Review the generated release notes and confirm the supported upgrade path.
    Release automation rejects tags that do not match `version.go`.
 4. Create and push an annotated tag:

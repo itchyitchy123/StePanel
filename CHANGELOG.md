@@ -26,6 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   fail-closed disk/inode quota enforcement accurately.
 - Added a scheduled N-1 (`v0.6.0` to candidate) disposable-host upgrade smoke
   test with control-plane backup and restore verification.
+- Published measurable controlled-single-host RPO/RTO objectives and linked
+  them to backup-alerting and destructive recovery release evidence.
 
 ## [0.7.0] - 2026-09-10
 

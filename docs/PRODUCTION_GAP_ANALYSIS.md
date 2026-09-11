@@ -152,6 +152,6 @@ idempotent and explain what changed.
 
 Before a shared-hosting launch, require an external security review, tenant
 isolation tests, restore drills, upgrade/rollback drills, load and failure
-testing, documented RPO/RTO, on-call ownership, data-retention policy, and a
+testing, the documented RPO/RTO contract in [`DR_OBJECTIVES.md`](DR_OBJECTIVES.md), on-call ownership, data-retention policy, and a
 support/compatibility policy. A deployment is not production-ready merely
 because its container starts or its health endpoint is green.
