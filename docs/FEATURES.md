@@ -11,8 +11,8 @@ to administrators but not exposed as a tenant entitlement; **Experimental**
 means the interface may change; **Planned** means not implemented. Release-tag
 documentation must be read from the matching release tag, not from `main`.
 
-Documentation version: `main / unreleased`
-Latest stable release: `v0.6.0`
+Documentation version: `v0.7.0 release preparation`
+Latest stable release: `v0.6.0`; pending release: `v0.7.0`
 
 ## Available now
 

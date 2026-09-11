@@ -50,6 +50,7 @@ ADMIN_USERNAME="${STEPANEL_ADMIN_USERNAME:-admin}"; ADMIN_PASSWORD="${STEPANEL_A
 EXISTING_ADMIN_PASSWORD_HASH="${STEPANEL_ADMIN_PASSWORD_HASH:-}"
 AUDIT_KEY="${STEPANEL_AUDIT_KEY:-}"
 ADMIN_TOTP_SECRET="${STEPANEL_ADMIN_TOTP_SECRET:-}"
+ACCOUNT_KEY="${STEPANEL_ACCOUNT_KEY:-}"
 DB_ENGINE="${STEPANEL_DB_ENGINE:-}"; DB_VERSION="${STEPANEL_DB_VERSION:-default}"
 INSTALL_DB_ADMIN="${STEPANEL_INSTALL_DB_ADMIN:-0}"
 DB_ADMIN_URL="${STEPANEL_DB_ADMIN_URL:-}"
@@ -100,6 +101,7 @@ ADMIN_TOTP_SECRET=${ADMIN_TOTP_SECRET^^}
 totp_remainder=$(( ${#ADMIN_TOTP_SECRET} % 8 ))
 if [[ -n $ADMIN_TOTP_SECRET && ( ! $ADMIN_TOTP_SECRET =~ ^[A-Z2-7]{32,}$ || ! $totp_remainder =~ ^(0|2|4|5|7)$ ) ]]; then echo 'STEPANEL_ADMIN_TOTP_SECRET must be an unpadded base32 secret of at least 160 bits.' >&2; exit 1; fi
 if [[ -z $ADMIN_TOTP_SECRET ]]; then echo 'Production installations require STEPANEL_ADMIN_TOTP_SECRET for administrator MFA.' >&2; exit 1; fi
+if [[ ${#ACCOUNT_KEY} -lt 32 || "$ACCOUNT_KEY" == *$'\n'* || "$ACCOUNT_KEY" == *$'\r'* ]]; then echo 'Production installations require STEPANEL_ACCOUNT_KEY of at least 32 characters and no newlines.' >&2; exit 1; fi
 if [[ ! "$ADMIN_USERNAME" =~ ^[a-zA-Z0-9._-]{1,64}$ || "$ADMIN_USERNAME" == *$'\n'* || "$ADMIN_USERNAME" == *$'\r'* ]]; then echo "Invalid admin username." >&2; exit 1; fi
 if [[ -z "$PANEL_HOSTNAME" ]]; then
   for panel_config in /etc/apache2/sites-available/stepanel.conf /etc/httpd/conf.d/stepanel.conf /etc/caddy/stepanel.d/panel.caddy; do
@@ -612,6 +614,7 @@ TXN_TEMPS+=("$env_tmp")
   write_env STEPANEL_ADMIN_PASSWORD_HASH "$ADMIN_PASSWORD_HASH"
   if [[ -n $ADMIN_TOTP_SECRET ]]; then write_env STEPANEL_ADMIN_TOTP_SECRET "$ADMIN_TOTP_SECRET"; fi
   write_env STEPANEL_SESSION_SECRET "$SESSION_SECRET"
+  write_env STEPANEL_ACCOUNT_KEY "$ACCOUNT_KEY"
   write_env STEPANEL_PANEL_HOSTNAME "$PANEL_HOSTNAME"
   write_env STEPANEL_DB_ENGINE "$DB_ENGINE"
   write_env STEPANEL_DB_VERSION "$DB_VERSION"

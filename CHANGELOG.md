@@ -6,11 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-The unreleased work is being prepared as the `v0.7.0` stabilization milestone:
-isolation, recovery, and operational consistency.
+Future changes will be documented here.
 
-This checkpoint is committed in the production-architecture pass and remains
-unreleased until the version metadata and release gates are advanced.
+## [0.7.0] - 2026-09-10
+
+The stabilization release focuses on isolation, recovery, and operational
+consistency. It is intended for controlled single-host operator deployments;
+the shared-hosting beta remains explicitly limited and is not a complete
+multi-tenant hosting platform.
 
 ### Production architecture checkpoint
 

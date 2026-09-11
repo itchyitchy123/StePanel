@@ -1,11 +1,8 @@
 # Releasing StePanel
 
-The latest stable release is `v0.6.0`; the repository's documentation on
-`main` is explicitly unreleased. The next planned stabilization milestone is
-`v0.7.0`, focused on isolation, recovery, and operational consistency. The first public release uses the version
-already recorded in `version.go`; do not retag it as
-`v0.1.0`, because the release workflow intentionally rejects tags that do not
-match the source version.
+The next release is `v0.7.0`, focused on isolation, recovery, and operational
+consistency. The repository's documentation on `main` is release preparation
+for that version. Release tags must match the version recorded in `version.go`.
 
 1. Update `version.go`, `CHANGELOG.md`, and any migration notes. Keep the
    Helm, Kubernetes, Terraform, and OpenAPI versions synchronized with

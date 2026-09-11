@@ -30,13 +30,17 @@ certificates automatically. Apache `.htaccess` migrations are described in
 For production, use a verified tagged release archive:
 
 ```sh
-release=v0.6.0
+release=v0.7.0
 arch=amd64 # use arm64 on aarch64 hosts
 curl -fsSLO "https://github.com/itchyitchy123/StePanel/releases/download/${release}/stepanel_${release#v}_linux_${arch}.tar.gz"
 curl -fsSLO "https://github.com/itchyitchy123/StePanel/releases/download/${release}/SHA256SUMS"
 grep "stepanel_${release#v}_linux_${arch}.tar.gz" SHA256SUMS | sha256sum -c -
 tar -xzf "stepanel_${release#v}_linux_${arch}.tar.gz"
 sudo STEPANEL_ADMIN_PASSWORD='use-a-password-manager' \
+  STEPANEL_ADMIN_TOTP_SECRET='BASE32_SECRET' \
+  STEPANEL_ACCOUNT_KEY='another-high-entropy-secret' \
+  STEPANEL_REQUIRE_OFFSITE_BACKUP=1 \
+  STEPANEL_OFFSITE_TARGET='s3:bucket/stepanel' \
   STEPANEL_PANEL_HOSTNAME=panel.example.com \
   STEPANEL_DB_ENGINE=mariadb \
   STEPANEL_DB_VERSION=default ./install.sh
