@@ -28,6 +28,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   test with control-plane backup and restore verification.
 - Published measurable controlled-single-host RPO/RTO objectives and linked
   them to backup-alerting and destructive recovery release evidence.
+- Added a process-death site-transaction recovery test and extended N-1
+  upgrade smoke coverage to prove installer rollback after a failed candidate.
 
 ## [0.7.0] - 2026-09-10
 

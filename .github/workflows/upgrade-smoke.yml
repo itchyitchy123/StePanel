@@ -23,11 +23,13 @@ jobs:
       - name: Build N-1 and candidate installer trees
         run: |
           set -eu
-          mkdir -p /tmp/stepanel-v0.6.0 /tmp/stepanel-candidate
+          mkdir -p /tmp/stepanel-v0.6.0 /tmp/stepanel-candidate /tmp/stepanel-broken
           git archive v0.6.0 | tar -x -C /tmp/stepanel-v0.6.0
           tar -C "$GITHUB_WORKSPACE" --exclude=.git -cf - . | tar -x -C /tmp/stepanel-candidate
           (cd /tmp/stepanel-v0.6.0 && go build -trimpath -ldflags='-s -w' -o stepanel .)
           (cd /tmp/stepanel-candidate && go build -trimpath -ldflags='-s -w' -o stepanel .)
+          cp -a /tmp/stepanel-candidate/. /tmp/stepanel-broken/
+          install -m 0755 /usr/bin/false /tmp/stepanel-broken/stepanel
       - name: Upgrade v0.6.0 on a disposable systemd host
         run: |
           set -eu
@@ -36,8 +38,9 @@ jobs:
             -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
             -v /tmp/stepanel-v0.6.0:/work/previous:ro \
             -v /tmp/stepanel-candidate:/work/candidate:ro \
+            -v /tmp/stepanel-broken:/work/broken:ro \
             ubuntu:24.04 /sbin/init
           cleanup() { docker rm -f stepanel-upgrade >/dev/null 2>&1 || true; }
           trap cleanup EXIT
           for _ in $(seq 1 30); do docker exec stepanel-upgrade systemctl is-system-running >/dev/null 2>&1 && break; sleep 2; done
-          docker exec stepanel-upgrade /work/candidate/deploy/lab/upgrade-smoke.sh /work/previous /work/candidate
+          docker exec stepanel-upgrade /work/candidate/deploy/lab/upgrade-smoke.sh /work/previous /work/candidate /work/broken

@@ -49,3 +49,8 @@ artifact version, elapsed recovery time, and any manual steps.
 Release acceptance requires zero unrecoverable states in the exercised matrix.
 An untested scenario is a release exception that must be recorded in the
 release notes and support contract.
+
+The repository additionally executes a child-process termination test for a
+site transaction and a deliberately broken installer-candidate rollback test.
+Those gates exercise the same persistence and installer transaction boundaries,
+but do not replace the host, provider, or storage fault scenarios above.

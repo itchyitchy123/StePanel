@@ -2,11 +2,46 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestRecoverSiteTransactionAfterProcessDeath(t *testing.T) {
+	if os.Getenv("STEPANEL_PROCESS_DEATH_CHILD") == "1" {
+		recovery := os.Getenv("STEPANEL_PROCESS_DEATH_RECOVERY")
+		home := os.Getenv("STEPANEL_PROCESS_DEATH_HOME")
+		txn, err := BeginSiteTransaction(recovery, home, "test.process-death", "site")
+		if err != nil {
+			os.Exit(2)
+		}
+		if err := os.MkdirAll(home, 0700); err != nil {
+			os.Exit(3)
+		}
+		if err := os.WriteFile(filepath.Join(home, "index.html"), []byte("partial"), 0600); err != nil {
+			os.Exit(4)
+		}
+		// Deliberately bypass all deferred cleanup, as a SIGKILL/power loss would.
+		_ = txn
+		os.Exit(137)
+	}
+
+	root := t.TempDir()
+	recovery := filepath.Join(root, ".stepanel-recovery")
+	home := filepath.Join(root, "site", "public")
+	writeTestFile(t, filepath.Join(home, "index.html"), "old")
+	child := exec.Command(os.Args[0], "-test.run=^TestRecoverSiteTransactionAfterProcessDeath$")
+	child.Env = append(os.Environ(), "STEPANEL_PROCESS_DEATH_CHILD=1", "STEPANEL_PROCESS_DEATH_RECOVERY="+recovery, "STEPANEL_PROCESS_DEATH_HOME="+home)
+	if err := child.Run(); err == nil {
+		t.Fatal("process-death child unexpectedly exited successfully")
+	}
+	if _, err := RecoverSiteTransactions(recovery); err != nil {
+		t.Fatal(err)
+	}
+	assertTestFile(t, filepath.Join(home, "index.html"), "old")
+}
 
 func TestRecoverTransactionDatabasesCleansJournalBeforeSiteRollback(t *testing.T) {
 	root := t.TempDir()

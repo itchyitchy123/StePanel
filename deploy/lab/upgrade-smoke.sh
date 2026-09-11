@@ -4,10 +4,15 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo 'upgrade smoke must run as root' >&2; exit 1; }
 previous_root=${1:?previous release tree is required}
 candidate_root=${2:?candidate release tree is required}
+broken_root=${3:-}
 
 for root in "$previous_root" "$candidate_root"; do
   [[ -x "$root/install.sh" && -x "$root/stepanel" ]] || { echo "invalid release tree: $root" >&2; exit 1; }
 done
+if [[ -n "$broken_root" && ( ! -x "$broken_root/install.sh" || ! -x "$broken_root/stepanel" ) ]]; then
+  echo "invalid deliberately broken release tree: $broken_root" >&2
+  exit 1
+fi
 if [[ ! -f /sys/fs/cgroup/cgroup.controllers && ! -d /sys/fs/cgroup/systemd ]]; then
   echo 'upgrade smoke requires a systemd-compatible cgroup hierarchy' >&2
   exit 77
@@ -68,3 +73,17 @@ set +a
 /opt/stepanel/stepanel dr-check >/tmp/stepanel-upgrade-dr.json
 /opt/stepanel/stepanel backup-control-plane /tmp/stepanel-upgrade-control.db
 /opt/stepanel/stepanel restore-control-plane /tmp/stepanel-upgrade-control.db --dry-run
+
+# Exercise the installer's transaction rollback using a release tree whose
+# binary always fails its post-install health check. The previously upgraded
+# candidate must remain active and ready after the failed replacement.
+if [[ -n "$broken_root" ]]; then
+  candidate_version=$("$candidate_root/stepanel" version | awk 'NR == 1 { print $2 }')
+  if (cd "$broken_root" && ./install.sh); then
+    echo 'broken candidate unexpectedly installed successfully' >&2
+    exit 1
+  fi
+  systemctl is-active --quiet stepanel.service stepanel-worker.service
+  /opt/stepanel/stepanel version | grep -Fx "StePanel $candidate_version"
+  curl --fail --silent --max-time 5 http://127.0.0.1:8090/readyz >/dev/null
+fi
