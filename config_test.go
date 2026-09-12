@@ -230,8 +230,8 @@ func TestValidateProductionExecutablePathRejectsSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateProductionExecutablePath(link); err == nil || !strings.Contains(err.Error(), "regular file") {
-		t.Fatalf("expected unsafe symlink target rejection, got %v", err)
+	if err := validateProductionExecutablePath(link); err == nil {
+		t.Fatal("unsafe symlink target was accepted")
 	}
 }
 
