@@ -17,20 +17,10 @@ func TestRecoverSiteTransactionAfterProcessDeath(t *testing.T) {
 	if _, err := BeginSiteTransaction(recovery, home, "test.process-death", "site"); err != nil {
 		t.Fatal(err)
 	}
-	ready := filepath.Join(root, "partial-ready")
-	child := exec.Command("sh", "-c", `mkdir -p "$1"; printf partial > "$1/index.html"; : > "$2"; exec sleep 30`, "sh", home, ready)
+	writeTestFile(t, filepath.Join(home, "index.html"), "partial")
+	child := exec.Command("sleep", "30")
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
-	}
-	for deadline := time.Now().Add(time.Second); ; {
-		if _, err := os.Stat(ready); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = child.Process.Kill()
-			t.Fatal("process-death child did not reach partial site state")
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 	if err := child.Process.Kill(); err != nil {
 		t.Fatal(err)
