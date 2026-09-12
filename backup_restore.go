@@ -139,13 +139,13 @@ func (a *App) backupVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Site = safeUser(input.Site)
-	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
-	if input.Site == "" || input.Backup == "" || input.Backup == "." || !a.canAccessSite(r, input.Site) {
+	input.Backup = strings.TrimSpace(input.Backup)
+	if input.Site == "" || !validBackupName(input.Backup) || !a.canAccessSite(r, input.Site) {
 		http.Error(w, "invalid backup", http.StatusUnprocessableEntity)
 		return
 	}
-	path := filepath.Join(a.Config.BackupRoot, input.Backup)
-	if filepath.Dir(path) != filepath.Clean(a.Config.BackupRoot) {
+	path, err := safePath(a.Config.BackupRoot, input.Backup)
+	if err != nil {
 		http.Error(w, "invalid backup", http.StatusUnprocessableEntity)
 		return
 	}
@@ -173,10 +173,10 @@ func (a *App) backupRestoreToStaging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Site = safeUser(input.Site)
-	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	input.Backup = strings.TrimSpace(input.Backup)
 	input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
-	backup := filepath.Join(a.Config.BackupRoot, input.Backup)
-	if filepath.Dir(backup) != filepath.Clean(a.Config.BackupRoot) {
+	backup, err := safePath(a.Config.BackupRoot, input.Backup)
+	if !validBackupName(input.Backup) || err != nil {
 		http.Error(w, "invalid backup", 422)
 		return
 	}
@@ -195,9 +195,9 @@ func (a *App) backupRestoreOffsiteToStaging(w http.ResponseWriter, r *http.Reque
 	}
 	input.SourceSite = safeUser(input.SourceSite)
 	input.Site = safeUser(input.Site)
-	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	input.Backup = strings.TrimSpace(input.Backup)
 	input.Domain = strings.ToLower(strings.TrimSpace(input.Domain))
-	if input.SourceSite == "" || input.Backup == "." || input.Backup == "" || !a.canAccessSite(r, input.SourceSite) {
+	if input.SourceSite == "" || !validBackupName(input.Backup) || !a.canAccessSite(r, input.SourceSite) {
 		http.Error(w, "invalid or inaccessible source site", http.StatusForbidden)
 		return
 	}
@@ -236,8 +236,8 @@ func (a *App) backupRestoreToStagingPath(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
-	dest := filepath.Join(a.Config.WebRoot, "sites", input.Site, "public")
-	if e = ensureInside(a.Config.WebRoot, dest); e != nil {
+	dest, e := safePath(a.Config.WebRoot, "sites", input.Site, "public")
+	if e != nil {
 		http.Error(w, "invalid destination", 422)
 		return
 	}
@@ -251,12 +251,17 @@ func (a *App) backupRestoreToStagingPath(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	defer os.RemoveAll(stage)
-	if e = extractArchive(filepath.Join(backup, manifest.Archive), stage); e != nil {
+	archivePath, archiveErr := safePath(backup, manifest.Archive)
+	if archiveErr != nil {
+		http.Error(w, "invalid verified backup path", 422)
+		return
+	}
+	if e = extractArchive(archivePath, stage); e != nil {
 		http.Error(w, "could not extract verified backup", 502)
 		return
 	}
-	source := filepath.Join(stage, "site", "public")
-	if e = ensureInside(stage, source); e != nil {
+	source, e := safePath(stage, "site", "public")
+	if e != nil {
 		http.Error(w, "invalid backup layout", 422)
 		return
 	}
@@ -268,7 +273,12 @@ func (a *App) backupRestoreToStagingPath(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "could not prepare isolated staging site", 502)
 		return
 	}
-	if e = writeAtomic(filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex"), []byte("managed restore staging noindex\n"), 0600); e != nil {
+	marker, markerErr := safePath(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex")
+	if markerErr != nil {
+		http.Error(w, "invalid staging marker path", 422)
+		return
+	}
+	if e = writeAtomic(marker, []byte("managed restore staging noindex\n"), 0600); e != nil {
 		http.Error(w, "could not apply restore indexing protection", 503)
 		return
 	}
@@ -320,8 +330,11 @@ func (a *App) backupRestoreToStagingPath(w http.ResponseWriter, r *http.Request,
 }
 
 func restoreDatabaseIntoStaging(cfg Config, stage string, input RestoreToStagingRequest) (bool, error) {
-	dump := filepath.Join(stage, "databases", input.Database+".sql")
-	if err := ensureInside(stage, dump); err != nil {
+	if !validManagedDatabaseIdentifier(input.Database, databaseNameLimit(cfg)) {
+		return false, errors.New("invalid staging database name")
+	}
+	dump, err := safePath(stage, "databases", input.Database+".sql")
+	if err != nil {
 		return false, err
 	}
 	info, err := os.Stat(dump)
@@ -355,9 +368,12 @@ func restoreDatabaseIntoStaging(cfg Config, stage string, input RestoreToStaging
 // leaves databases untouched and uses the normal site recovery journal so an
 // interrupted extraction can be resumed or rolled back by the operator.
 func backupRestoreFiles(cfg Config, backupName, site string) (BackupRestoreResult, error) {
-	backup := filepath.Join(cfg.BackupRoot, filepath.Base(backupName))
-	if filepath.Dir(backup) != filepath.Clean(cfg.BackupRoot) {
+	if !validBackupName(backupName) {
 		return BackupRestoreResult{}, errors.New("invalid backup path")
+	}
+	backup, err := safePath(cfg.BackupRoot, backupName)
+	if err != nil {
+		return BackupRestoreResult{}, err
 	}
 	manifest, err := VerifySiteBackup(backup, cfg.BackupSigningKey)
 	if err != nil {
@@ -374,18 +390,22 @@ func backupRestoreFiles(cfg Config, backupName, site string) (BackupRestoreResul
 		return BackupRestoreResult{}, err
 	}
 	defer os.RemoveAll(stage)
-	if err := extractArchive(filepath.Join(backup, manifest.Archive), stage); err != nil {
+	archivePath, err := safePath(backup, manifest.Archive)
+	if err != nil {
+		return BackupRestoreResult{}, err
+	}
+	if err := extractArchive(archivePath, stage); err != nil {
 		return BackupRestoreResult{}, fmt.Errorf("extract verified backup: %w", err)
 	}
-	source := filepath.Join(stage, "site", "public")
-	if err := ensureInside(stage, source); err != nil {
+	source, err := safePath(stage, "site", "public")
+	if err != nil {
 		return BackupRestoreResult{}, fmt.Errorf("invalid backup layout: %w", err)
 	}
 	if info, err := os.Stat(source); err != nil || !info.IsDir() {
 		return BackupRestoreResult{}, errors.New("backup has no site files")
 	}
-	dest := filepath.Join(cfg.WebRoot, "sites", site, "public")
-	if err := ensureInside(cfg.WebRoot, dest); err != nil {
+	dest, err := safePath(cfg.WebRoot, "sites", site, "public")
+	if err != nil {
 		return BackupRestoreResult{}, err
 	}
 	txn, err := BeginSiteTransaction(cfg.RecoveryRoot, dest, "backup.restore-files", site)
@@ -429,8 +449,8 @@ func (a *App) backupRestoreFilesHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Site = safeUser(input.Site)
-	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
-	if input.Site == "" || input.Backup == "" || input.Backup == "." || input.Confirm != "RESTORE_FILES" {
+	input.Backup = strings.TrimSpace(input.Backup)
+	if input.Site == "" || !validBackupName(input.Backup) || input.Confirm != "RESTORE_FILES" {
 		http.Error(w, "site, backup, and confirm=RESTORE_FILES are required", http.StatusUnprocessableEntity)
 		return
 	}
@@ -438,7 +458,12 @@ func (a *App) backupRestoreFilesHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job system unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if _, err := VerifySiteBackup(filepath.Join(a.Config.BackupRoot, input.Backup), a.Config.BackupSigningKey); err != nil {
+	backup, err := safePath(a.Config.BackupRoot, input.Backup)
+	if err != nil {
+		http.Error(w, "invalid backup", http.StatusUnprocessableEntity)
+		return
+	}
+	if _, err := VerifySiteBackup(backup, a.Config.BackupSigningKey); err != nil {
 		http.Error(w, "backup verification failed", http.StatusUnprocessableEntity)
 		return
 	}
@@ -460,9 +485,12 @@ func backupContainsDatabase(manifest BackupManifest, database string) bool {
 }
 
 func restoreManagedDatabase(cfg Config, backupName, site, database string) (BackupRestoreResult, error) {
-	backup := filepath.Join(cfg.BackupRoot, filepath.Base(backupName))
-	if filepath.Dir(backup) != filepath.Clean(cfg.BackupRoot) {
+	if !validBackupName(backupName) || !validManagedDatabaseIdentifier(database, databaseNameLimit(cfg)) {
 		return BackupRestoreResult{}, errors.New("invalid backup path")
+	}
+	backup, err := safePath(cfg.BackupRoot, backupName)
+	if err != nil {
+		return BackupRestoreResult{}, err
 	}
 	manifest, err := VerifySiteBackup(backup, cfg.BackupSigningKey)
 	if err != nil {
@@ -482,11 +510,15 @@ func restoreManagedDatabase(cfg Config, backupName, site, database string) (Back
 		return BackupRestoreResult{}, err
 	}
 	defer os.RemoveAll(stage)
-	if err := extractArchive(filepath.Join(backup, manifest.Archive), stage); err != nil {
+	archivePath, err := safePath(backup, manifest.Archive)
+	if err != nil {
+		return BackupRestoreResult{}, err
+	}
+	if err := extractArchive(archivePath, stage); err != nil {
 		return BackupRestoreResult{}, fmt.Errorf("extract verified backup: %w", err)
 	}
-	dump := filepath.Join(stage, "databases", database+".sql")
-	if err := ensureInside(stage, dump); err != nil {
+	dump, err := safePath(stage, "databases", database+".sql")
+	if err != nil {
 		return BackupRestoreResult{}, err
 	}
 	info, err := os.Stat(dump)
@@ -525,8 +557,8 @@ func (a *App) backupRestoreDatabaseHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	input.Site = safeUser(input.Site)
-	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
-	if input.Site == "" || input.Backup == "" || input.Backup == "." || !validManagedDatabaseIdentifier(input.Database, 64) || input.Confirm != "RESTORE_DATABASE" {
+	input.Backup = strings.TrimSpace(input.Backup)
+	if input.Site == "" || !validBackupName(input.Backup) || !validManagedDatabaseIdentifier(input.Database, 64) || input.Confirm != "RESTORE_DATABASE" {
 		http.Error(w, "site, backup, database, and confirm=RESTORE_DATABASE are required", http.StatusUnprocessableEntity)
 		return
 	}
@@ -534,7 +566,12 @@ func (a *App) backupRestoreDatabaseHTTP(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "managed database restore is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	manifest, err := VerifySiteBackup(filepath.Join(a.Config.BackupRoot, input.Backup), a.Config.BackupSigningKey)
+	backup, err := safePath(a.Config.BackupRoot, input.Backup)
+	if err != nil {
+		http.Error(w, "invalid backup", http.StatusUnprocessableEntity)
+		return
+	}
+	manifest, err := VerifySiteBackup(backup, a.Config.BackupSigningKey)
 	if err != nil || manifest.Site != input.Site || !backupContainsDatabase(manifest, input.Database) {
 		http.Error(w, "verified backup does not contain the selected site database", http.StatusUnprocessableEntity)
 		return
@@ -562,7 +599,7 @@ func (a *App) backupRestoreOffsiteFilesHTTP(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	input.Site = safeUser(input.Site)
-	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	input.Backup = strings.TrimSpace(input.Backup)
 	if input.Site == "" || !validBackupName(input.Backup) || input.Confirm != "RESTORE_OFFSITE_FILES" {
 		http.Error(w, "site, backup, and confirm=RESTORE_OFFSITE_FILES are required", http.StatusUnprocessableEntity)
 		return
@@ -595,7 +632,7 @@ func (a *App) backupRestoreOffsiteDatabaseHTTP(w http.ResponseWriter, r *http.Re
 		return
 	}
 	input.Site = safeUser(input.Site)
-	input.Backup = filepath.Base(strings.TrimSpace(input.Backup))
+	input.Backup = strings.TrimSpace(input.Backup)
 	if input.Site == "" || !validBackupName(input.Backup) || !validManagedDatabaseIdentifier(input.Database, 64) || input.Confirm != "RESTORE_OFFSITE_DATABASE" {
 		http.Error(w, "site, backup, database, and confirm=RESTORE_OFFSITE_DATABASE are required", http.StatusUnprocessableEntity)
 		return

@@ -107,17 +107,25 @@ func (a *App) stagingCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	source := filepath.Join(a.Config.WebRoot, "sites", input.Source, "public")
-	dest := filepath.Join(a.Config.WebRoot, "sites", input.Site, "public")
-	if err := ensureInside(a.Config.WebRoot, source); err != nil {
+	source, err := safePath(a.Config.WebRoot, "sites", input.Source, "public")
+	if err != nil {
 		http.Error(w, "invalid source", 422)
+		return
+	}
+	dest, err := safePath(a.Config.WebRoot, "sites", input.Site, "public")
+	if err != nil {
+		http.Error(w, "invalid destination", 422)
 		return
 	}
 	if _, err := os.Stat(source); err != nil {
 		http.Error(w, "source site does not exist", 422)
 		return
 	}
-	marker := filepath.Join(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex")
+	marker, err := safePath(a.Config.WebRoot, "sites", input.Site, ".stepanel-staging-noindex")
+	if err != nil {
+		http.Error(w, "invalid staging marker path", 422)
+		return
+	}
 	previousMarker, markerErr := os.ReadFile(marker)
 	if markerErr != nil && !errors.Is(markerErr, os.ErrNotExist) {
 		http.Error(w, "could not inspect staging indexing protection", 503)

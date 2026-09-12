@@ -328,11 +328,15 @@ func pruneGitReleasesWithPolicy(siteRoot string, retain int, maxAge time.Duratio
 		if err != nil {
 			return err
 		}
-		size, err := gitReleaseSize(filepath.Join(siteRoot, entry.Name()))
+		releasePath, err := safePath(siteRoot, entry.Name())
 		if err != nil {
 			return err
 		}
-		items = append(items, candidate{filepath.Join(siteRoot, entry.Name()), info.ModTime(), size})
+		size, err := gitReleaseSize(releasePath)
+		if err != nil {
+			return err
+		}
+		items = append(items, candidate{releasePath, info.ModTime(), size})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].modified.After(items[j].modified) })
 	if len(items) == 0 {

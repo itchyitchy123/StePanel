@@ -15,7 +15,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -1052,8 +1051,9 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 				sites = input.Sites
 			}
 			for _, site := range sites {
-				root := filepath.Join(a.Config.WebRoot, "sites", safeUser(site), "public")
-				if safeUser(site) == "" || ensureInside(a.Config.WebRoot, root) != nil {
+				site = safeUser(site)
+				root, pathErr := safePath(a.Config.WebRoot, "sites", site, "public")
+				if site == "" || pathErr != nil {
 					http.Error(w, "invalid assigned site", http.StatusUnprocessableEntity)
 					return
 				}
@@ -1131,8 +1131,9 @@ func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, site := range input.Sites {
-			root := filepath.Join(a.Config.WebRoot, "sites", safeUser(site), "public")
-			if safeUser(site) == "" || ensureInside(a.Config.WebRoot, root) != nil {
+			site = safeUser(site)
+			root, pathErr := safePath(a.Config.WebRoot, "sites", site, "public")
+			if site == "" || pathErr != nil {
 				http.Error(w, "invalid assigned site", http.StatusUnprocessableEntity)
 				return
 			}

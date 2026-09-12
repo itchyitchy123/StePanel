@@ -581,7 +581,10 @@ func syncDirectory(path string) error {
 }
 
 func readBackupManifest(root string) (BackupManifest, error) {
-	path := filepath.Join(root, "manifest.json")
+	path, err := safePath(root, "manifest.json")
+	if err != nil {
+		return BackupManifest{}, err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return BackupManifest{}, err
@@ -600,7 +603,11 @@ func readBackupManifest(root string) (BackupManifest, error) {
 	if _, err := hex.DecodeString(manifest.ArchiveSHA256); err != nil {
 		return BackupManifest{}, errors.New("invalid backup archive checksum")
 	}
-	archiveInfo, err := os.Stat(filepath.Join(root, manifest.Archive))
+	archivePath, err := safePath(root, manifest.Archive)
+	if err != nil {
+		return BackupManifest{}, errors.New("backup archive path escapes backup root")
+	}
+	archiveInfo, err := os.Stat(archivePath)
 	if err != nil || !archiveInfo.Mode().IsRegular() || archiveInfo.Size() != manifest.Bytes {
 		return BackupManifest{}, errors.New("backup archive is missing or does not match its manifest")
 	}
@@ -615,7 +622,11 @@ func backupManifestSignature(data []byte, key string) string {
 }
 
 func verifyBackupManifestSignature(root string, data []byte, manifest BackupManifest, signingKey string) error {
-	signature, err := os.ReadFile(filepath.Join(root, "manifest.sig"))
+	signaturePath, err := safePath(root, "manifest.sig")
+	if err != nil {
+		return err
+	}
+	signature, err := os.ReadFile(signaturePath)
 	if errors.Is(err, os.ErrNotExist) {
 		if signingKey != "" || manifest.SignatureAlgorithm != "" {
 			return errors.New("backup manifest signature is missing")
@@ -644,10 +655,18 @@ func VerifySiteBackup(root string, signingKey ...string) (BackupManifest, error)
 	if err != nil {
 		return BackupManifest{}, err
 	}
-	if err := VerifyBackupArchive(filepath.Join(root, manifest.Archive), manifest); err != nil {
+	archivePath, err := safePath(root, manifest.Archive)
+	if err != nil {
 		return BackupManifest{}, err
 	}
-	data, err := os.ReadFile(filepath.Join(root, "manifest.json"))
+	if err := VerifyBackupArchive(archivePath, manifest); err != nil {
+		return BackupManifest{}, err
+	}
+	manifestPath, err := safePath(root, "manifest.json")
+	if err != nil {
+		return BackupManifest{}, err
+	}
+	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return BackupManifest{}, err
 	}
@@ -678,7 +697,11 @@ func listBackupsPage(root, site string, limit int, signingKey ...string) ([]Back
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		path := filepath.Join(root, entry.Name())
+		path, err := safePath(root, entry.Name())
+		if err != nil {
+			log.Printf("skip backup entry outside backup root %s", entry.Name())
+			continue
+		}
 		manifest, err := VerifySiteBackup(path, signingKey...)
 		if err != nil {
 			// A damaged artifact must not hide every healthy backup from the

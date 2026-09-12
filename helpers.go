@@ -78,6 +78,26 @@ func helperCommandContext(ctx context.Context, cfg Config, path string, args ...
 	return exec.CommandContext(ctx, cfg.Sudo, append([]string{"--non-interactive", path}, args...)...)
 }
 
+// safePath joins path components beneath root and rejects absolute components,
+// traversal, and symlinked parents. Callers should use this for any path that
+// contains request data or persisted metadata.
+func safePath(root string, parts ...string) (string, error) {
+	if root == "" {
+		return "", errors.New("path root is empty")
+	}
+	target := root
+	for _, part := range parts {
+		if part == "" || filepath.IsAbs(part) {
+			return "", errors.New("path component is invalid")
+		}
+		target = filepath.Join(target, part)
+	}
+	if err := ensureInside(root, target); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
 // runHelperCommand executes a privileged helper with a bounded lifetime and
 // bounded output. Every request-facing helper invocation should use this
 // wrapper so a wedged systemd/webserver/database helper cannot exhaust worker

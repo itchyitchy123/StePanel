@@ -58,3 +58,20 @@ func TestOpenRegularNoFollowRejectsReplacedFile(t *testing.T) {
 		t.Fatal("replaced file was accepted")
 	}
 }
+
+func TestSafePathRejectsTraversalAndSymlinkParents(t *testing.T) {
+	root := t.TempDir()
+	if _, err := safePath(root, "..", "outside"); err == nil {
+		t.Fatal("path traversal was accepted")
+	}
+	if err := os.Mkdir(filepath.Join(root, "real"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(filepath.Join(root, "real"), link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := safePath(root, "link", "file"); err == nil {
+		t.Fatal("symlinked parent was accepted")
+	}
+}

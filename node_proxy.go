@@ -60,13 +60,17 @@ func (a *App) selectNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	version := strings.TrimPrefix(input.Version, "v")
-	installed := filepath.Join(a.Config.NVMDir, "versions", "node", "v"+version)
+	installed, err := safePath(a.Config.NVMDir, "versions", "node", "v"+version)
+	if err != nil {
+		http.Error(w, "invalid Node version", 422)
+		return
+	}
 	if info, err := os.Stat(installed); err != nil || !info.IsDir() {
 		http.Error(w, "requested Node version is not installed", 422)
 		return
 	}
-	siteRoot := filepath.Join(a.Config.WebRoot, "sites", input.Site)
-	if err := ensureInside(a.Config.WebRoot, siteRoot); err != nil {
+	siteRoot, err := safePath(a.Config.WebRoot, "sites", input.Site)
+	if err != nil {
 		http.Error(w, err.Error(), 422)
 		return
 	}
@@ -76,7 +80,12 @@ func (a *App) selectNode(w http.ResponseWriter, r *http.Request) {
 	}
 	releaseUnlock := a.siteOperations.Acquire(input.Site)
 	defer releaseUnlock()
-	if err := writeAtomic(filepath.Join(siteRoot, ".nvmrc"), []byte("v"+version+"\n"), 0640); err != nil {
+	nvmrc, err := safePath(siteRoot, ".nvmrc")
+	if err != nil {
+		http.Error(w, "invalid Node version path", 422)
+		return
+	}
+	if err := writeAtomic(nvmrc, []byte("v"+version+"\n"), 0640); err != nil {
 		http.Error(w, "unable to select Node version", 500)
 		return
 	}
@@ -108,7 +117,11 @@ func (a *App) deployProxy(w http.ResponseWriter, r *http.Request) {
 	name := proxyConfigName(a.Config.WebServer, input.Site, input.Domain)
 	releaseUnlock := a.siteOperations.AcquireMany(input.Site, "proxy:"+name)
 	defer releaseUnlock()
-	path := filepath.Join(a.Config.ProxyRoot, name)
+	path, err := safePath(a.Config.ProxyRoot, name)
+	if err != nil {
+		http.Error(w, "invalid proxy path", 422)
+		return
+	}
 	if err := runHelperCommand(r.Context(), a.Config, a.Config.ProxyCtl, "apply", input.Site, strings.ToLower(input.Domain), backend); err != nil {
 		http.Error(w, "proxy helper rejected the configuration or webserver reload failed", http.StatusServiceUnavailable)
 		return
@@ -167,7 +180,11 @@ func (a *App) proxyManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid proxy", 422)
 		return
 	}
-	path := filepath.Join(a.Config.ProxyRoot, name)
+	path, err := safePath(a.Config.ProxyRoot, name)
+	if err != nil {
+		http.Error(w, "invalid proxy path", 422)
+		return
+	}
 	if _, err := os.Stat(path); err != nil {
 		http.Error(w, "proxy not found", http.StatusNotFound)
 		return

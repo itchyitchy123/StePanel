@@ -413,8 +413,12 @@ func (a Auth) credentialFingerprintFor(username, passwordHash string) string {
 			generation = account.SessionGeneration
 		}
 	}
-	digest := sha256.Sum256([]byte(username + "\x00" + key + "\x00" + strconv.FormatUint(generation, 10)))
-	return hex.EncodeToString(digest[:16])
+	// This is a revocation fingerprint, not a password hash. Use a keyed,
+	// domain-separated digest so sensitive credential material is never exposed
+	// to a plain hashing primitive, while keeping the value stable across restarts.
+	digest := hmac.New(sha256.New, []byte(a.Secret))
+	_, _ = digest.Write([]byte("stepanel/credential-fingerprint/v1\x00" + username + "\x00" + key + "\x00" + strconv.FormatUint(generation, 10)))
+	return hex.EncodeToString(digest.Sum(nil)[:16])
 }
 
 func (a Auth) passwordHashFor(username string) (string, bool) {
