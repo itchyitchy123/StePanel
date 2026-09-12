@@ -11,6 +11,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if and .Values.networkPolicy.enabled (eq (len .Values.networkPolicy.ingressNamespaceSelector) 0) }}
 {{- fail "networkPolicy.ingressNamespaceSelector must identify the trusted ingress namespace" }}
 {{- end }}
+{{- if not .Values.ingress.enabled }}
+{{- fail "ingress.enabled must be true for production TLS termination" }}
+{{- end }}
 {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.image.digest) }}
 {{- fail "image.digest must be an immutable sha256 digest" }}
 {{- end }}
