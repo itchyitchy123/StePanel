@@ -343,6 +343,12 @@ func ValidateConfig(c Config) error {
 		}
 	}
 	if c.Production {
+		if len(strings.TrimSpace(c.EnvironmentKey)) < 32 || strings.ContainsAny(c.EnvironmentKey, "\r\n") {
+			problems = append(problems, errors.New("production requires STEPANEL_ENVIRONMENT_KEY of at least 32 characters without newlines"))
+		}
+		if len(strings.TrimSpace(c.BackupSigningKey)) < 32 || strings.ContainsAny(c.BackupSigningKey, "\r\n") {
+			problems = append(problems, errors.New("production requires STEPANEL_BACKUP_SIGNING_KEY of at least 32 characters without newlines"))
+		}
 		if strings.TrimSpace(os.Getenv("STEPANEL_ADMIN_TOTP_SECRET")) == "" {
 			problems = append(problems, errors.New("production requires STEPANEL_ADMIN_TOTP_SECRET for administrator MFA"))
 		}

@@ -95,6 +95,11 @@ func safePath(root string, parts ...string) (string, error) {
 	if err := ensureInside(root, target); err != nil {
 		return "", err
 	}
+	if info, err := os.Lstat(target); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("path component is a symlink")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
 	return target, nil
 }
 

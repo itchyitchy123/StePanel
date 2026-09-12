@@ -54,6 +54,11 @@ objects; changing or losing the key makes existing signatures unverifiable.
 This authenticates the manifest but does not make storage immutable. Use
 provider Object Lock or equivalent immutable retention for compromise recovery.
 
+Production mode requires both `STEPANEL_ENVIRONMENT_KEY` and
+`STEPANEL_BACKUP_SIGNING_KEY`, each at least 32 characters without newlines.
+The installer generates and preserves them on upgrades; container and
+Kubernetes deployments must supply them through their secret manager.
+
 `STEPANEL_SESSION_SECRET`, session state, and account state must be backed up
 together when session recovery is required. Rotating the session secret is a
 deliberate logout of existing sessions. If account or session state may have

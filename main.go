@@ -853,8 +853,8 @@ func (a *App) handleCertificateJob(ctx context.Context, item Job) ([]byte, error
 	}
 	certificateCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
-	if err := helperCommandContext(certificateCtx, a.Config, a.Config.Certbot, request.Domain, request.Email).Run(); err != nil {
-		return nil, err
+	if output, err := runBoundedCommand(certificateCtx, helperCommandContext(certificateCtx, a.Config, a.Config.Certbot, request.Domain, request.Email)); err != nil {
+		return nil, fmt.Errorf("certificate helper failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	if err := AuditAs(a.Config.AuditLog, request.Actor, "certificate.issued", request.Domain, "Let's Encrypt certificate requested"); err != nil {
 		log.Printf("certificate issued but audit persistence is unavailable: %v", err)

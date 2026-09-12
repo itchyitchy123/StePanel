@@ -149,6 +149,16 @@ spec:
                 secretKeyRef:
                   name: stepanel-secrets
                   key: account-key
+            - name: STEPANEL_ENVIRONMENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stepanel-secrets
+                  key: environment-key
+            - name: STEPANEL_BACKUP_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stepanel-secrets
+                  key: backup-signing-key
           readinessProbe:
             httpGet:
               path: /readyz
