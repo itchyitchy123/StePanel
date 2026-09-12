@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,17 +16,9 @@ func TestRecoverSiteTransactionAfterProcessDeath(t *testing.T) {
 	if _, err := BeginSiteTransaction(recovery, home, "test.process-death", "site"); err != nil {
 		t.Fatal(err)
 	}
+	// Leave the journal uncommitted, matching the state a process death or
+	// power loss would leave behind.
 	writeTestFile(t, filepath.Join(home, "index.html"), "partial")
-	child := exec.Command("sleep", "30")
-	if err := child.Start(); err != nil {
-		t.Fatal(err)
-	}
-	if err := child.Process.Kill(); err != nil {
-		t.Fatal(err)
-	}
-	if err := child.Wait(); err == nil {
-		t.Fatal("process-death child unexpectedly exited successfully")
-	}
 	if _, err := RecoverSiteTransactions(recovery); err != nil {
 		t.Fatal(err)
 	}
