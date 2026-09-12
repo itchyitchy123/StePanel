@@ -153,6 +153,10 @@ and test the rclone destination before running the installer; rclone must be
 installed and available on `PATH`. Provider-side
 retention lock/immutability remains an operator responsibility.
 
+Production also requires stable `STEPANEL_ENVIRONMENT_KEY` and
+`STEPANEL_BACKUP_SIGNING_KEY` values, each at least 32 characters. The installer
+generates them on a fresh installation and preserves them during upgrades.
+
 FTP is opt-in. Installation alone leaves a newly installed vsftpd service
 disabled. Activation requires `STEPANEL_ACTIVATE_FTP=1` and readable certificate
 and private-key paths; the resulting configuration requires TLS for both login
@@ -200,9 +204,9 @@ In an interactive terminal, the installer asks for the database engine and versi
 | `STEPANEL_WORKER_MODE` | `embedded` or `external` | Run jobs in the panel process or in the separately supervised worker service; the installer selects `external` |
 | `STEPANEL_CONTROL_PLANE_DB` | Absolute path in production | SQLite control-plane database for durable jobs, customer accounts, site ownership, and sessions |
 | `STEPANEL_ACCOUNT_STATE` | Absolute path in production | Optional private customer-account state file; defaults beside session state |
-| `STEPANEL_ENVIRONMENT_KEY` | Secret string | Enables AES-GCM encrypted site environment storage; keep stable and back it up securely |
+| `STEPANEL_ENVIRONMENT_KEY` | Secret string, at least 32 characters in production | AES-GCM key for encrypted site environment storage; keep stable and back it up securely |
 | `STEPANEL_ACCOUNT_KEY` | Secret string | Encrypts customer TOTP secrets and sensitive durable job payloads (including WordPress restore credentials); required for those features and must be backed up with the control-plane database |
-| `STEPANEL_BACKUP_SIGNING_KEY` | Secret string | Signs backup manifests with HMAC-SHA256; keep outside the backup root and escrow separately for disaster recovery |
+| `STEPANEL_BACKUP_SIGNING_KEY` | Secret string, at least 32 characters in production | Signs backup manifests with HMAC-SHA256; keep outside the backup root and escrow separately for disaster recovery |
 | `STEPANEL_ENVIRONMENT_STATE` | Filesystem path | Site environment state file; defaults beside the job state |
 | `STEPANEL_REDIS_STATE` | Filesystem path | Redis/Valkey site allocation state; defaults beside the job state |
 

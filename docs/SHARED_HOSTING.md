@@ -102,7 +102,9 @@ The customer completes the two steps through `/api/account/password` and
 
 ## Site environment variables
 
-Set `STEPANEL_ENVIRONMENT_KEY` to enable encrypted site environment storage.
+Production requires `STEPANEL_ENVIRONMENT_KEY` (at least 32 characters) for
+encrypted site environment storage. Keep it stable and back it up with the
+control-plane database.
 Use `GET`, `PUT`, and `DELETE /api/sites/environment/{site}` to inspect metadata,
 replace variables, or remove them. Secret variables are encrypted at rest and
 are returned only as metadata; values are never returned after they are written.
