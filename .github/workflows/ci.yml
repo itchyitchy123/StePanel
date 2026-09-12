@@ -119,6 +119,7 @@ jobs:
             -e STEPANEL_SESSION_SECRET=ci-session-secret-012345678901234567890123 \
             -e STEPANEL_AUDIT_KEY=ci-audit-key-012345678901234567890123456789 \
             -e STEPANEL_OFFSITE_TARGET=local:/tmp/stepanel-offsite \
+            -e STEPANEL_REQUIRE_OFFSITE_BACKUP=1 \
             stepanel:ci
           ready=0
           for _ in $(seq 1 30); do
